@@ -14,12 +14,12 @@
 //! - `api_key`: _encrypted_ [`String`] - The API key to invoke the OpenAI API
 //!   with. Encrypted with the Tool's key pair.
 //!   TODO: <TODO: encryption ticket>.
-//! - `messages`: [`Vec`] of [`Message`] - The messages to send to the chat
-//!   completion API. The minimum length of the vector is 1.
-//! - `context`: _optional_ [`Vec`] of [`Message`] - The context to provide
-//!   to the chat completion API. This is useful for providing additional
-//!   context as a DAG default value. Defaults to [`Vec::default`]. Not that
-//!   context messages are  **prepended** to the `messages` input port.
+//! - `prompt`: [`MessageBag`] - The message(s) to send to the chat completion
+//!   API. The minimum length of the vector is 1 if using [`MessageBag::Many`].
+//! - `context`: _optional_ [`MessageBag`] - The context to provide to the chat
+//!   completion API. This is useful for providing additional context as a DAG
+//!   default value. Defaults to [`Vec::default`]. Note that context messages
+//!   are  **prepended** to the `messages` input port.
 //! - `model`: _optional_ [`String`] - The model to use for chat completion.
 //!   Defaults to [`DEFAULT_MODEL`].
 //! - `max_completion_tokens`: _optional_ [`u32`] - The maximum number of tokens
@@ -63,7 +63,7 @@
 use {
     anyhow::anyhow,
     async_openai::{
-        config::OpenAIConfig,
+        config::{OpenAIConfig, OPENAI_API_BASE},
         error::OpenAIError,
         types::{
             ChatCompletionRequestAssistantMessageArgs,
@@ -97,12 +97,13 @@ const DEFAULT_TEMPERATURE: f32 = 1.0;
 ///
 /// It can be either a full message with an explicit message type or a
 /// short message, defaulting to the `User` type.
-#[derive(Debug, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum Message {
     /// A full message with an explicit message type and content and name.
     Full {
         /// The role of the author of the message.
+        #[serde(default)]
         role: MessageKind,
         /// The content of the message.
         value: String,
@@ -168,8 +169,11 @@ impl TryFrom<Message> for ChatCompletionRequestMessage {
 ///
 /// It can be `System`, `User`, or `Assistant`. When deserializing, the message
 /// can be a string in which case this enum defaults to `User`.
+///
+/// This enum is case-insensitive.
 #[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema, EnumString)]
 #[serde(rename_all = "lowercase", try_from = "String")]
+#[strum(ascii_case_insensitive)]
 enum MessageKind {
     #[default]
     User,
@@ -222,6 +226,29 @@ struct OpenAIJsonSchema {
     strict: Option<bool>,
 }
 
+/// Allow the interface to accept a [`Vec`] or a single [`Message`].
+#[derive(Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum MessageBag {
+    One(Message),
+    Many(Vec<Message>),
+}
+
+impl Default for MessageBag {
+    fn default() -> Self {
+        MessageBag::Many(Vec::default())
+    }
+}
+
+impl Into<Vec<Message>> for MessageBag {
+    fn into(self) -> Vec<Message> {
+        match self {
+            MessageBag::One(message) => vec![message],
+            MessageBag::Many(messages) => messages,
+        }
+    }
+}
+
 /// Represents the input for the OpenAI chat completion Tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -229,11 +256,11 @@ struct Input {
     /// The OpenAI API key.
     // TODO: <TODO: encryption ticket>.
     api_key: String,
-    /// The messages to send to the chat completion API.
-    messages: Vec<Message>,
+    /// The prompt to send to the chat completion API.
+    prompt: MessageBag,
     /// The context to provide to the chat completion API.
     #[serde(default)]
-    context: Vec<Message>,
+    context: MessageBag,
     /// The model to use for chat completion.
     #[serde(default = "default_model")]
     model: String,
@@ -261,7 +288,7 @@ fn default_temperature() -> f32 {
 }
 
 /// Represents the output of the OpenAI chat completion Tool.
-#[derive(Serialize, JsonSchema)]
+#[derive(Debug, PartialEq, Eq, Serialize, JsonSchema)]
 enum Output {
     Text {
         id: String,
@@ -283,32 +310,45 @@ enum Output {
 /// This struct implements the `NexusTool` trait to integrate with the Nexus
 /// framework. It provides the logic for invoking the OpenAI chat completion
 /// API.
-struct OpenaiChatCompletion;
+struct OpenaiChatCompletion {
+    api_base: String,
+}
 
 impl NexusTool for OpenaiChatCompletion {
     type Input = Input;
     type Output = Output;
+
+    fn new() -> Self {
+        Self {
+            api_base: OPENAI_API_BASE.to_string(),
+        }
+    }
 
     fn fqn() -> ToolFqn {
         fqn!("xyz.taluslabs.llm.openai.chat-completion@1")
     }
 
     /// Performs a health check on the Tool and its dependencies.
-    async fn health() -> AnyResult<StatusCode> {
+    async fn health(&self) -> AnyResult<StatusCode> {
         status::check_api_health().await
     }
 
     /// Invokes the tool logic to generate a chat completion.
-    async fn invoke(request: Self::Input) -> AnyResult<Self::Output> {
-        let cfg = OpenAIConfig::new().with_api_key(request.api_key);
+    async fn invoke(&self, request: Self::Input) -> AnyResult<Self::Output> {
+        let cfg = OpenAIConfig::new()
+            .with_api_key(request.api_key)
+            .with_api_base(&self.api_base);
+
         let client = Client::with_config(cfg);
 
         // Parse context messages into OpenAI message types.
-        let context = request.context.into_iter().map(TryInto::try_into);
+        let context: Vec<Message> = request.context.into();
+        let context = context.into_iter().map(TryInto::try_into);
 
-        // Chain the input messages and collect.
+        // Chain the input prompt and collect.
+        let prompt: Vec<Message> = request.prompt.into();
         let messages = context
-            .chain(request.messages.into_iter().map(TryInto::try_into))
+            .chain(prompt.into_iter().map(TryInto::try_into))
             .collect::<Result<Vec<ChatCompletionRequestMessage>, OpenAIError>>();
 
         // Should something go wrong, return an error. This is however very
@@ -440,19 +480,34 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        mockito::{Matcher, Server},
+        schemars::schema_for,
+        serde_json::json,
+    };
+
+    impl OpenaiChatCompletion {
+        /// Creates a new instance of the OpenAI Chat Completion tool with the given
+        /// API base URL.
+        fn with_api_base(api_base: &str) -> Self {
+            Self {
+                api_base: api_base.to_string(),
+            }
+        }
+    }
 
     #[test]
-    fn test_message_kind_deserialization() {
+    fn test_message_kind_deserialization_case_insensitive() {
         let json = r#""system""#;
         let kind: MessageKind = serde_json::from_str(json).unwrap();
         assert_eq!(kind, MessageKind::System);
 
-        let json = r#""user""#;
+        let json = r#""USER""#;
         let kind: MessageKind = serde_json::from_str(json).unwrap();
         assert_eq!(kind, MessageKind::User);
 
-        let json = r#""assistant""#;
+        let json = r#""aSSiStaNt""#;
         let kind: MessageKind = serde_json::from_str(json).unwrap();
         assert_eq!(kind, MessageKind::Assistant);
 
@@ -486,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_message_deserialization_full() {
-        let json = r#"{"type": "system", "value": "Hello"}"#;
+        let json = r#"{"role": "system", "value": "Hello"}"#;
         let message: Message = serde_json::from_str(json).unwrap();
         assert_eq!(
             message,
@@ -497,7 +552,7 @@ mod tests {
             }
         );
 
-        let json = r#"{"type": "system", name: "robot", "value": "Hello"}"#;
+        let json = r#"{"role": "system", "name": "robot", "value": "Hello"}"#;
         let message: Message = serde_json::from_str(json).unwrap();
         assert_eq!(
             message,
@@ -533,19 +588,43 @@ mod tests {
     #[test]
     fn test_input_deserialization() {
         let json = r#"{
-            "apiKey": "your_api_key",
-            "messages": [
-                {"type": "system", name: "robot", "value": "You are a helpful assistant."},
+            "api_key": "your_api_key",
+            "prompt": {"role": "system", "name": "robot", "value": "You are a helpful assistant."}
+        }"#;
+        let input: Input = serde_json::from_str(json).unwrap();
+
+        assert!(
+            matches!(input.prompt, MessageBag::One(Message::Full { role, value, name })
+                if role == MessageKind::System
+                    && value == "You are a helpful assistant."
+                    && name == Some("robot".to_string())
+            ),
+        );
+
+        let json = r#"{
+            "api_key": "your_api_key",
+            "prompt": "hello"
+        }"#;
+        let input: Input = serde_json::from_str(json).unwrap();
+
+        assert!(
+            matches!(input.prompt, MessageBag::One(Message::Short(s)) if s == "hello".to_string())
+        );
+
+        let json = r#"{
+            "api_key": "your_api_key",
+            "prompt": [
+                {"role": "system", "name": "robot", "value": "You are a helpful assistant."},
                 "Hello",
-                {"type": "assistant", "value": "The Los Angeles Dodgers won the World Series in 2020."}
+                {"role": "assistant", "value": "The Los Angeles Dodgers won the World Series in 2020."}
             ]
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
         assert_eq!(input.api_key, "your_api_key");
         assert_eq!(input.model, DEFAULT_MODEL);
         assert_eq!(
-            input.messages,
-            vec![
+            input.prompt,
+            MessageBag::Many(vec![
                 Message::Full {
                     role: MessageKind::System,
                     name: Some("robot".to_string()),
@@ -557,30 +636,298 @@ mod tests {
                     name: None,
                     value: "The Los Angeles Dodgers won the World Series in 2020.".to_string()
                 }
-            ]
+            ])
         );
     }
 
     #[test]
     fn test_input_empty_message() {
         let json = r#"{
-            "apiKey": "your_api_key",
-            "messages": []
+            "api_key": "your_api_key",
+            "prompt": []
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
         assert_eq!(input.api_key, "your_api_key");
         assert_eq!(input.model, DEFAULT_MODEL);
-        assert!(input.messages.is_empty());
+        assert!(matches!(input.prompt, MessageBag::Many(messages) if messages.is_empty()));
     }
 
     #[test]
     fn test_input_missing_message() {
         let json = r#"{
-            "apiKey": "your_api_key"
+            "api_key": "your_api_key"
         }"#;
 
         let input: Result<Input, _> = serde_json::from_str(json);
 
         assert!(input.is_err());
+    }
+
+    async fn create_server_and_tool() -> (mockito::ServerGuard, OpenaiChatCompletion) {
+        let server = Server::new_async().await;
+
+        let tool = OpenaiChatCompletion::with_api_base(
+            format!("http://{}/v1", server.host_with_port()).as_str(),
+        );
+
+        (server, tool)
+    }
+
+    fn mock_response_body(completion: &str) -> String {
+        json!({
+            "id": "completion_id",
+            "created": 1234567890,
+            "model": DEFAULT_MODEL,
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "system",
+                        "content": completion,
+                    }
+                }
+            ],
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_minimal_config() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let json = r#"{
+            "api_key": "your_api_key",
+            "prompt": "Hello"
+        }"#;
+
+        let input: Input = serde_json::from_str(json).unwrap();
+
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("authorization", "Bearer your_api_key")
+            .match_body(Matcher::PartialJson(json!({
+                "model": DEFAULT_MODEL,
+                "max_completion_tokens": DEFAULT_MAX_COMPLETION_TOKENS,
+                "temperature": DEFAULT_TEMPERATURE,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Hello"
+                    }
+                ]
+            })))
+            .with_body(mock_response_body("Hello, world!"))
+            .create_async()
+            .await;
+
+        let output = tool.invoke(input).await.unwrap();
+
+        assert_eq!(
+            output,
+            Output::Text {
+                id: "completion_id".to_string(),
+                role: MessageKind::System,
+                completion: "Hello, world!".to_string()
+            }
+        );
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_all_config() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let json = r#"{
+            "api_key": "your_api_key",
+            "max_completion_tokens": 256,
+            "temperature": 0.5,
+            "model": "gpt-4o",
+            "context": [
+                {
+                    "role": "system",
+                    "name": "robot",
+                    "value": "You are a helpful assistant."
+                }
+            ],
+            "prompt": [
+                {
+                    "role": "assistant",
+                    "value": "You are another helpful assistant."
+                },
+                "Hello"
+            ]
+        }"#;
+
+        let input: Input = serde_json::from_str(json).unwrap();
+
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("authorization", "Bearer your_api_key")
+            .match_body(Matcher::PartialJson(json!({
+                "model": "gpt-4o",
+                "max_completion_tokens": 256,
+                "temperature": 0.5,
+                "messages": [
+                    {
+                        "role": "system",
+                        "name": "robot",
+                        "content": "You are a helpful assistant."
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "You are another helpful assistant."
+                    },
+                    {
+                        "role": "user",
+                        "content": "Hello"
+                    }
+                ]
+            })))
+            .with_body(mock_response_body("Hello, world!"))
+            .create_async()
+            .await;
+
+        let output = tool.invoke(input).await.unwrap();
+
+        assert_eq!(
+            output,
+            Output::Text {
+                id: "completion_id".to_string(),
+                role: MessageKind::System,
+                completion: "Hello, world!".to_string()
+            }
+        );
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_json_output() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        #[derive(PartialEq, Eq, Serialize, JsonSchema)]
+        struct Completion {
+            hello: String,
+            world: String,
+        }
+
+        let schema = schema_for!(Completion);
+
+        let json = json!({
+            "api_key": "your_api_key",
+            "json_schema": {
+                "name": "completion",
+                "description": "A completion JSON schema",
+                "strict": true,
+                "schema": schema
+            },
+            "prompt": "generate json"
+        });
+
+        let input: Input = serde_json::from_value(json).unwrap();
+
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("authorization", "Bearer your_api_key")
+            .match_body(Matcher::PartialJson(json!({
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "completion",
+                        "description": "A completion JSON schema",
+                        "strict": true,
+                        "schema": schema
+                    }
+                },
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "generate json"
+                    }
+                ]
+            })))
+            .with_body(mock_response_body(
+                r#"{"hello": "world", "world": "hello"}"#,
+            ))
+            .create_async()
+            .await;
+
+        let output = tool.invoke(input).await.unwrap();
+
+        let expected = Completion {
+            hello: "world".to_string(),
+            world: "hello".to_string(),
+        };
+
+        assert_eq!(
+            output,
+            Output::Json {
+                id: "completion_id".to_string(),
+                role: MessageKind::System,
+                completion: serde_json::to_value(&expected).unwrap()
+            }
+        );
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_schema_mismatch() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        #[derive(PartialEq, Eq, Serialize, JsonSchema)]
+        struct Completion {
+            hello: String,
+            world: String,
+        }
+
+        let schema = schema_for!(Completion);
+
+        let json = json!({
+            "api_key": "your_api_key",
+            "json_schema": {
+                "name": "completion",
+                "description": "A completion JSON schema",
+                "strict": true,
+                "schema": schema
+            },
+            "prompt": "generate json"
+        });
+
+        let input: Input = serde_json::from_value(json).unwrap();
+
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("authorization", "Bearer your_api_key")
+            .match_body(Matcher::PartialJson(json!({
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "completion",
+                        "description": "A completion JSON schema",
+                        "strict": true,
+                        "schema": schema
+                    }
+                },
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "generate json"
+                    }
+                ]
+            })))
+            .with_body(mock_response_body(r#"{"a": "world", "b": "hello"}"#))
+            .create_async()
+            .await;
+
+        let output = tool.invoke(input).await.unwrap();
+
+        assert!(
+            matches!(output, Output::Err {  reason} if reason.to_string().contains("JSON completion does not match schema"))
+        );
+
+        mock.assert_async().await;
     }
 }

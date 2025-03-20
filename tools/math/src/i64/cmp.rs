@@ -49,6 +49,10 @@ impl NexusTool for I64Cmp {
     type Input = Input;
     type Output = Output;
 
+    fn new() -> Self {
+        Self
+    }
+
     fn fqn() -> ToolFqn {
         fqn!("xyz.taluslabs.math.i64.cmp@1")
     }
@@ -57,13 +61,13 @@ impl NexusTool for I64Cmp {
         "/i64/cmp"
     }
 
-    async fn health() -> AnyResult<StatusCode> {
+    async fn health(&self) -> AnyResult<StatusCode> {
         // This tool has no external dependencies and as such, it is always
         // healthy if the endpoint is reachable.
         Ok(StatusCode::OK)
     }
 
-    async fn invoke(Self::Input { a, b }: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, Self::Input { a, b }: Self::Input) -> AnyResult<Self::Output> {
         match a.cmp(&b) {
             Ordering::Greater => Ok(Output::Gt { a, b }),
             Ordering::Equal => Ok(Output::Eq { a, b }),
@@ -78,18 +82,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_i64_cmp() {
+        let tool: I64Cmp = I64Cmp::new();
+
         let input = Input { a: 1, b: 2 };
-        let output = I64Cmp::invoke(input).await.unwrap();
+        let output = tool.invoke(input).await.unwrap();
 
         assert!(matches!(output, Output::Lt { a: 1, b: 2 }));
 
         let input = Input { a: 2, b: 1 };
-        let output = I64Cmp::invoke(input).await.unwrap();
+        let output = tool.invoke(input).await.unwrap();
 
         assert!(matches!(output, Output::Gt { a: 2, b: 1 }));
 
         let input = Input { a: 1, b: 1 };
-        let output = I64Cmp::invoke(input).await.unwrap();
+        let output = tool.invoke(input).await.unwrap();
 
         assert!(matches!(output, Output::Eq { a: 1, b: 1 }));
     }

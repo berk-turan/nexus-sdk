@@ -30,7 +30,7 @@ use {
 ///
 /// The metadata of the tool includes the domain, name, version, input schema,
 /// and output schema.
-pub trait NexusTool: Send + 'static {
+pub trait NexusTool: Send + Sync + 'static {
     /// The input type of the tool. It must implement `JsonSchema` and
     /// `DeserializeOwned`. It is used to generate the input schema of the tool.
     /// It is also used to deserialize the input payload.
@@ -49,20 +49,23 @@ pub trait NexusTool: Send + 'static {
     /// that returns the output of the tool.
     ///
     /// It is used to generate the `/invoke` endpoint.
-    fn invoke(input: Self::Input) -> impl Future<Output = AnyResult<Self::Output>> + Send;
+    fn invoke(&self, input: Self::Input) -> impl Future<Output = AnyResult<Self::Output>> + Send;
     /// Returns the health status of the tool. For now, this only returns an
     /// HTTP status code.
     ///
     /// TODO: <https://github.com/Talus-Network/nexus-sdk/issues/7>
     ///
     /// It is used to generate the `/health` endpoint.
-    fn health() -> impl Future<Output = AnyResult<StatusCode>> + Send;
+    fn health(&self) -> impl Future<Output = AnyResult<StatusCode>> + Send;
     /// Returns the relative path on a webserver that the tool resides on. This
     /// defaults to an empty path (root URL). But can be overriden by the
     /// implementor.
     fn path() -> &'static str {
         ""
     }
+    /// Construct a new instance of the tool. This is mainly here so that
+    /// dependencies can be injected for testing purposes.
+    fn new() -> Self;
     /// Returns the metadata of the tool. It includes the domain, name, version,
     /// input schema, and output schema.
     ///

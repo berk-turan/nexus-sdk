@@ -49,6 +49,10 @@ impl NexusTool for I64Mul {
     type Input = Input;
     type Output = Output;
 
+    fn new() -> Self {
+        Self
+    }
+
     fn fqn() -> ToolFqn {
         fqn!("xyz.taluslabs.math.i64.mul@1")
     }
@@ -57,13 +61,13 @@ impl NexusTool for I64Mul {
         "/i64/mul"
     }
 
-    async fn health() -> AnyResult<StatusCode> {
+    async fn health(&self) -> AnyResult<StatusCode> {
         // This tool has no external dependencies and as such, it is always
         // healthy if the endpoint is reachable.
         Ok(StatusCode::OK)
     }
 
-    async fn invoke(Self::Input { a, b }: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, Self::Input { a, b }: Self::Input) -> AnyResult<Self::Output> {
         match a.checked_mul(b) {
             Some(result) => Ok(Output::Ok { result }),
             None => Ok(Output::Err {
@@ -79,18 +83,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_i64_mul() {
+        let tool = I64Mul::new();
+
         let input = Input { a: 2, b: 3 };
-        let output = I64Mul::invoke(input).await.unwrap();
+        let output = tool.invoke(input).await.unwrap();
 
         assert!(matches!(output, Output::Ok { result: 6 }));
 
         let input = Input { a: i64::MAX, b: 2 };
-        let output = I64Mul::invoke(input).await.unwrap();
+        let output = tool.invoke(input).await.unwrap();
 
         assert!(matches!(output, Output::Err { .. }));
 
         let input = Input { a: i64::MIN, b: 2 };
-        let output = I64Mul::invoke(input).await.unwrap();
+        let output = tool.invoke(input).await.unwrap();
 
         assert!(matches!(output, Output::Err { .. }));
     }

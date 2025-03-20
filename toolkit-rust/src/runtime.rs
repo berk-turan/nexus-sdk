@@ -138,7 +138,10 @@ pub fn routes_for_<T: NexusTool>() -> impl Filter<Extract = impl Reply, Error = 
 }
 
 async fn health_handler<T: NexusTool>() -> Result<impl Reply, Rejection> {
-    let status = T::health()
+    let tool = T::new();
+
+    let status = tool
+        .health()
         .await
         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
@@ -231,8 +234,10 @@ async fn invoke_handler<T: NexusTool>(input: serde_json::Value) -> Result<impl R
         }
     };
 
+    let tool = T::new();
+
     // Invoke the tool logic.
-    match T::invoke(input).await {
+    match tool.invoke(input).await {
         Ok(output) => Ok(warp::reply::with_status(
             warp::reply::json(&output),
             StatusCode::OK,

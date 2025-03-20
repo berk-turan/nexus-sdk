@@ -25,15 +25,19 @@ impl NexusTool for DummyTool {
     type Input = Input;
     type Output = Output;
 
+    fn new() -> Self {
+        Self
+    }
+
     fn fqn() -> ToolFqn {
         fqn!("xyz.dummy.tool@1")
     }
 
-    async fn health() -> AnyResult<StatusCode> {
+    async fn health(&self) -> AnyResult<StatusCode> {
         Ok(StatusCode::OK)
     }
 
-    async fn invoke(Self::Input { prompt }: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, Self::Input { prompt }: Self::Input) -> AnyResult<Self::Output> {
         Ok(Self::Output::Ok {
             message: format!("You said: {}", prompt),
         })
@@ -46,6 +50,10 @@ impl NexusTool for Dummy500Tool {
     type Input = Input;
     type Output = Output;
 
+    fn new() -> Self {
+        Self
+    }
+
     fn fqn() -> ToolFqn {
         fqn!("xyz.dummy.tool@1")
     }
@@ -54,11 +62,11 @@ impl NexusTool for Dummy500Tool {
         "path"
     }
 
-    async fn health() -> AnyResult<StatusCode> {
+    async fn health(&self) -> AnyResult<StatusCode> {
         Ok(StatusCode::OK)
     }
 
-    async fn invoke(_: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, _: Self::Input) -> AnyResult<Self::Output> {
         anyhow::bail!("Something went wrong")
     }
 }
