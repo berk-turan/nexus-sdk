@@ -1,20 +1,79 @@
-//! This is a Nexus tool that interacts with the OpenAI Chat Completion API.
+//! # `xyz.taluslabs.llm.openai.chat-completion@1`
+//!
+//! Standard Nexus Tool that interacts with the OpenAI chat completion API. It
+//! allows for plain text completions as well as JSON. For JSON, expected output
+//! schema has to be provided.
 //!
 //! It defines the input and output structures, as well as the logic for
 //! invoking the OpenAI API to generate chat completions.
 //!
-//! It uses the `async-openai` crate to interact with the OpenAI API, and the
-//! `nexus-toolkit-rust` crate to integrate as a Nexus tool.
+//! It uses the [`async_openai`] crate to interact with the OpenAI API.
+//!
+//! ## Input
+//!
+//! - `api_key`: _encrypted_ [`String`] - The API key to invoke the OpenAI API
+//!   with. Encrypted with the Tool's key pair.
+//!   TODO: <TODO: encryption ticket>.
+//! - `messages`: [`Vec`] of [`Message`] - The messages to send to the chat
+//!   completion API. The minimum length of the vector is 1.
+//! - `context`: _optional_ [`Vec`] of [`Message`] - The context to provide
+//!   to the chat completion API. This is useful for providing additional
+//!   context as a DAG default value. Defaults to [`Vec::default`]. Not that
+//!   context messages are  **prepended** to the `messages` input port.
+//! - `model`: _optional_ [`String`] - The model to use for chat completion.
+//!   Defaults to [`DEFAULT_MODEL`].
+//! - `max_completion_tokens`: _optional_ [`u32`] - The maximum number of tokens
+//!   to generate. Defaults to [`DEFAULT_MAX_COMPLETION_TOKENS`].
+//! - `temperature`: _optional_ [`f32`] - The temperature to use. This must be
+//!   a floating point number between 0 and 2. Defaults to 1. Defaults to
+//!   [`DEFAULT_TEMPERATURE`].
+//! - `json_schema`: _optional_ [`OpenAIJsonSchema`] - The JSON schema for the
+//!   expected output. Providing this will force the [`Output::Json`] variant.
+//!   The LLM response will be parsed into this schema. Defaults to [`None`].
+//!   Note that this is only supported for newer OpenAI models. See
+//!   <https://platform.openai.com/docs/guides/structured-outputs>.
+//!
+//! ## Output Variants
+//!
+//! - `text` - The chat completion was successful and evaluated to plain text.
+//! - `json` - The chat completion was successful and evaluated to JSON.
+//! - `err` - An error occurred during the chat completion.
+//!
+//! ## Output Ports
+//!
+//! ### `text`
+//!
+//! - `id`: [`String`] - Unique identifier for the completion.
+//! - `role`: [`MessageKind`] - The role of the author of the message.
+//! - `completion`: [`String`] - The chat completion result as plain text.
+//!
+//! ### `json`
+//!
+//! - `id`: [`String`] - Unique identifier for the completion.
+//! - `role`: [`MessageKind`] - The role of the author of the message.
+//! - `completion`: [`serde_json::Value`] - The chat completion result as JSON.
+//!   Note that this is opaque for the Tool but the structure is defined by
+//!   [`Input::json_schema`]. One could say the Tool output is _generic over
+//!   this schema_.
+//!
+//! ### `err`
+//!
+//! - `reason`: [`String`] - The reason for the error.
 
 use {
+    anyhow::anyhow,
     async_openai::{
         config::OpenAIConfig,
+        error::OpenAIError,
         types::{
             ChatCompletionRequestAssistantMessageArgs,
             ChatCompletionRequestMessage,
             ChatCompletionRequestSystemMessageArgs,
             ChatCompletionRequestUserMessageArgs,
             CreateChatCompletionRequestArgs,
+            ResponseFormat,
+            ResponseFormatJsonSchema,
+            Role,
         },
         Client,
     },
@@ -22,16 +81,17 @@ use {
     nexus_types::*,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
-    std::str::FromStr,
     strum_macros::EnumString,
 };
 
 mod status;
 
-/// The maximum number of tokens to generate in a chat completion.
-const MAX_TOKENS: u32 = 512;
 /// The default model to use for chat completions.
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
+/// The maximum number of tokens to generate in a chat completion.
+const DEFAULT_MAX_COMPLETION_TOKENS: u32 = 512;
+/// The default temperature to use for chat completions.
+const DEFAULT_TEMPERATURE: f32 = 1.0;
 
 /// Represents a message that can be sent to the OpenAI Chat Completion API.
 ///
@@ -40,193 +100,262 @@ const DEFAULT_MODEL: &str = "gpt-4o-mini";
 #[derive(Debug, Deserialize, JsonSchema, PartialEq)]
 #[serde(untagged)]
 enum Message {
-    /// A full message with an explicit message type and content.
+    /// A full message with an explicit message type and content and name.
     Full {
-        /// The type of the message.
-        #[serde(default, rename = "type")]
-        message_type: MessageType,
+        /// The role of the author of the message.
+        role: MessageKind,
         /// The content of the message.
         value: String,
+        /// The name of the participant, this is used to differentiate between
+        /// participants of the same role.
+        name: Option<String>,
     },
     /// A short message, which defaults to the `User` message type.
     Short(String),
 }
 
-/// Represents the type of a message in a chat completion.
-///
-/// It can be `System`, `User`, or `Assistant`. This enum supports
-/// case-insensitive deserialization from JSON and provides a default
-/// value of `User`.
-#[derive(Debug, Deserialize, JsonSchema, EnumString, Default, PartialEq)]
-#[strum(ascii_case_insensitive)]
-#[serde(rename_all = "lowercase", try_from = "String")]
-enum MessageType {
-    /// A system message, used to set the behavior of the assistant.
-    System,
-    #[default]
-    /// A user message, representing a message from the user.
-    User,
-    /// An assistant message, representing a message from the assistant.
-    Assistant,
-}
+/// Attempts to convert a [`Message`] to an
+/// [`async_openai::types::ChatCompletionRequestMessage`].
+impl TryFrom<Message> for ChatCompletionRequestMessage {
+    type Error = async_openai::error::OpenAIError;
 
-impl TryFrom<String> for MessageType {
-    type Error = String;
+    fn try_from(value: Message) -> Result<Self, Self::Error> {
+        if let Message::Short(value) = value {
+            return ChatCompletionRequestUserMessageArgs::default()
+                .content(value)
+                .build()
+                .map(Into::into);
+        }
 
-    /// Converts a `String` to a `MessageType`, performing a case-insensitive
-    /// match.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The string to convert.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the `MessageType` if the conversion is
-    /// successful, or an error string if the conversion fails.
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        MessageType::from_str(&value).map_err(|_| format!("Invalid MessageType: {}", value))
+        let Message::Full { role, value, name } = value else {
+            unreachable!();
+        };
+
+        match role {
+            MessageKind::System => {
+                let mut message = ChatCompletionRequestSystemMessageArgs::default();
+
+                if let Some(name) = name {
+                    message.name(name);
+                }
+
+                message.content(value).build().map(Into::into)
+            }
+            MessageKind::User => {
+                let mut message = ChatCompletionRequestUserMessageArgs::default();
+
+                if let Some(name) = name {
+                    message.name(name);
+                }
+
+                message.content(value).build().map(Into::into)
+            }
+            MessageKind::Assistant => {
+                let mut message = ChatCompletionRequestAssistantMessageArgs::default();
+
+                if let Some(name) = name {
+                    message.name(name);
+                }
+
+                message.content(value).build().map(Into::into)
+            }
+            _ => unimplemented!("Tool and Function roles are not supported"),
+        }
     }
 }
 
-/// Represents the input for the OpenAI Chat Completion tool.
+/// Represents the type of a message in a chat completion request or response.
 ///
-/// It defines the structure for the input data required to invoke the tool,
-/// including the API key, the model to use, and the messages to send.
+/// It can be `System`, `User`, or `Assistant`. When deserializing, the message
+/// can be a string in which case this enum defaults to `User`.
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema, EnumString)]
+#[serde(rename_all = "lowercase", try_from = "String")]
+enum MessageKind {
+    #[default]
+    User,
+    System,
+    Assistant,
+    Tool,
+    Funtion,
+}
+
+/// Attemps to convert a [`String`] to a [`MessageKind`].
+impl TryFrom<String> for MessageKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value
+            .parse::<MessageKind>()
+            .map_err(|_| anyhow!("Invalid MessageKind: {}", value))
+    }
+}
+
+/// Convert a [`async_openai::types::Role`] to a [`MessageKind`].
+impl From<Role> for MessageKind {
+    fn from(value: Role) -> Self {
+        match value {
+            Role::System => MessageKind::System,
+            Role::User => MessageKind::User,
+            Role::Assistant => MessageKind::Assistant,
+            Role::Function => MessageKind::Funtion,
+            Role::Tool => MessageKind::Tool,
+        }
+    }
+}
+
+/// Defines the structure of the `json_schema` input port.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct OpenAIJsonSchema {
+    /// The name of the schema. Must match `[a-zA-Z0-9-_]`, with a maximum
+    /// length of 64.
+    name: String,
+    /// The JSON schema for the expected output.
+    schema: schemars::Schema,
+    /// A description of the response format, used by the model to determine
+    /// how to respond in the format.
+    description: Option<String>,
+    /// Whether to enable strict schema adherence when generating the output. If
+    /// set to true, the model will always follow the exact schema defined in the
+    /// `schema` field. Only a subset of JSON Schema is supported when `strict`
+    /// is `true`. See <https://platform.openai.com/docs/guides/structured-outputs>.
+    strict: Option<bool>,
+}
+
+/// Represents the input for the OpenAI chat completion Tool.
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 struct Input {
-    // TODO: Add encryption to the API key.
     /// The OpenAI API key.
-    pub api_key: String,
-    /// The model to use for chat completion.
-    /// If not specified, the [DEFAULT_MODEL] will be used.
-    #[serde(default = "default_model")]
-    pub model: String,
+    // TODO: <TODO: encryption ticket>.
+    api_key: String,
     /// The messages to send to the chat completion API.
-    pub messages: Vec<Message>,
+    messages: Vec<Message>,
+    /// The context to provide to the chat completion API.
+    #[serde(default)]
+    context: Vec<Message>,
+    /// The model to use for chat completion.
+    #[serde(default = "default_model")]
+    model: String,
+    /// The maximum number of tokens to generate.
+    #[serde(default = "default_max_completion_tokens")]
+    max_completion_tokens: u32,
+    /// The temperature to use for chat completions.
+    #[serde(default = "default_temperature")]
+    temperature: f32,
+    /// The JSON schema for the expected output.
+    #[serde(default)]
+    json_schema: Option<OpenAIJsonSchema>,
 }
 
 fn default_model() -> String {
     DEFAULT_MODEL.to_string()
 }
 
-/// Represents a single response choice from the OpenAI Chat Completion API.
-#[derive(Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Response {
-    /// The role of the author of the message.
-    pub role: String,
-    /// The content of the message.
-    pub message: String,
+fn default_max_completion_tokens() -> u32 {
+    DEFAULT_MAX_COMPLETION_TOKENS
 }
 
-/// Represents the output of the OpenAI Chat Completion tool.
-///
-/// It defines the structure for the output data returned by the tool,
-/// including the list of response choices.
+fn default_temperature() -> f32 {
+    DEFAULT_TEMPERATURE
+}
+
+/// Represents the output of the OpenAI chat completion Tool.
 #[derive(Serialize, JsonSchema)]
 enum Output {
-    Ok { choices: Vec<Response> },
-    Err { reason: String },
+    Text {
+        id: String,
+        role: MessageKind,
+        completion: String,
+    },
+    Json {
+        id: String,
+        role: MessageKind,
+        completion: serde_json::Value,
+    },
+    Err {
+        reason: String,
+    },
 }
 
 /// The OpenAI Chat Completion tool.
 ///
 /// This struct implements the `NexusTool` trait to integrate with the Nexus
-/// framework. It provides the logic for invoking the OpenAI Chat Completion
-/// API and handling the input and output data.
+/// framework. It provides the logic for invoking the OpenAI chat completion
+/// API.
 struct OpenaiChatCompletion;
 
 impl NexusTool for OpenaiChatCompletion {
     type Input = Input;
     type Output = Output;
 
-    /// Returns the fully qualified name of the tool.
     fn fqn() -> ToolFqn {
         fqn!("xyz.taluslabs.llm.openai.chat-completion@1")
     }
 
-    /// Performs a health check on the tool's dependencies.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the HTTP status code indicating the health of
-    /// the tool.
+    /// Performs a health check on the Tool and its dependencies.
     async fn health() -> AnyResult<StatusCode> {
         status::check_api_health().await
     }
 
     /// Invokes the tool logic to generate a chat completion.
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - The input data for the tool.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the output of the tool. Possible output variants are:
-    ///
-    /// *   `Ok(Output::Ok { choices: Vec<Response> })`: The API call was successful, and the response contains a list of choices.
-    /// *   `Ok(Output::Err { reason: String })`: An error occurred. The `reason` contains a description of the error.
     async fn invoke(request: Self::Input) -> AnyResult<Self::Output> {
         let cfg = OpenAIConfig::new().with_api_key(request.api_key);
         let client = Client::with_config(cfg);
 
-        let message_results: Vec<Result<ChatCompletionRequestMessage, String>> = request
-            .messages
-            .into_iter()
-            .map(|m| match m {
-                Message::Full {
-                    message_type,
-                    value,
-                } => match message_type {
-                    MessageType::System => ChatCompletionRequestSystemMessageArgs::default()
-                        .content(value)
-                        .build()
-                        .map(|m| m.into())
-                        .map_err(|e| e.to_string()),
-                    MessageType::User => ChatCompletionRequestUserMessageArgs::default()
-                        .content(value)
-                        .build()
-                        .map(|m| m.into())
-                        .map_err(|e| e.to_string()),
-                    MessageType::Assistant => ChatCompletionRequestAssistantMessageArgs::default()
-                        .content(value)
-                        .build()
-                        .map(|m| m.into())
-                        .map_err(|e| e.to_string()),
-                },
-                Message::Short(value) => ChatCompletionRequestUserMessageArgs::default()
-                    .content(value)
-                    .build()
-                    .map(|m| m.into())
-                    .map_err(|e| e.to_string()),
-            })
-            .collect();
+        // Parse context messages into OpenAI message types.
+        let context = request.context.into_iter().map(TryInto::try_into);
 
-        let messages: Result<Vec<ChatCompletionRequestMessage>, String> =
-            message_results.into_iter().collect();
+        // Chain the input messages and collect.
+        let messages = context
+            .chain(request.messages.into_iter().map(TryInto::try_into))
+            .collect::<Result<Vec<ChatCompletionRequestMessage>, OpenAIError>>();
 
+        // Should something go wrong, return an error. This is however very
+        // unlikely as the inputs are validated against a schema defined here.
         let messages = match messages {
             Ok(messages) => messages,
-            Err(err) => return Ok(Output::Err { reason: err }),
+            Err(err) => {
+                return Ok(Output::Err {
+                    reason: err.to_string(),
+                })
+            }
         };
 
-        let request = CreateChatCompletionRequestArgs::default()
-            .max_tokens(MAX_TOKENS)
+        // Create the request to send to the OpenAI API and assign some basic
+        // parameters.
+        let mut openai_request = CreateChatCompletionRequestArgs::default();
+
+        let mut openai_request = openai_request
+            .max_completion_tokens(request.max_completion_tokens)
             .model(request.model)
-            .messages(messages)
-            .build();
+            .temperature(request.temperature)
+            .messages(messages);
 
-        if request.is_err() {
-            return Ok(Output::Err {
-                reason: format!("Error building request: {}", request.err().unwrap()),
-            });
+        // If a JSON schema is provided, set it on the request.
+        if let Some(schema) = request.json_schema.clone() {
+            let json_schema = ResponseFormatJsonSchema {
+                name: schema.name,
+                schema: Some(schema.schema.to_value()),
+                description: schema.description,
+                strict: schema.strict,
+            };
+
+            openai_request =
+                openai_request.response_format(ResponseFormat::JsonSchema { json_schema });
         }
-        let request = request.unwrap();
 
-        let response = match client.chat().create(request).await {
+        // Build the request and handle any errors.
+        let openai_request = match openai_request.build() {
+            Ok(request) => request,
+            Err(err) => {
+                return Ok(Output::Err {
+                    reason: format!("Error building OpenAI request: {}", err),
+                })
+            }
+        };
+
+        let response = match client.chat().create(openai_request).await {
             Ok(response) => response,
             Err(err) => {
                 return Ok(Output::Err {
@@ -235,21 +364,69 @@ impl NexusTool for OpenaiChatCompletion {
             }
         };
 
-        let mut choices = Vec::with_capacity(response.choices.len());
-        for choice in response.choices.into_iter() {
-            let role = choice.message.role.to_string();
-            let message = if let Some(msg) = choice.message.content {
-                msg.to_string()
-            } else {
+        // Parse the response into the expected output format. Current Tool
+        // design only supports a single choice so we take the first one.
+        //
+        // This design is also better for the Nexus interface as having a single
+        // plaintext field with the completion is better suited.
+        let choice = match response.choices.first() {
+            Some(choice) => choice,
+            None => {
                 return Ok(Output::Err {
-                    reason: "Invalid message in API response".to_string(),
-                });
-            };
+                    reason: "No choices returned from OpenAI API".to_string(),
+                })
+            }
+        };
 
-            choices.push(Response { role, message });
+        if let Some(refusal) = &choice.message.refusal {
+            return Ok(Output::Err {
+                reason: refusal.to_string(),
+            });
         }
 
-        Ok(Output::Ok { choices })
+        let completion = match &choice.message.content {
+            Some(completion) => completion.to_string(),
+            None => {
+                return Ok(Output::Err {
+                    reason: "No completion returned from OpenAI API".to_string(),
+                })
+            }
+        };
+
+        // Plain text completion.
+        if request.json_schema.is_none() {
+            return Ok(Output::Text {
+                id: response.id,
+                role: choice.message.role.into(),
+                completion,
+            });
+        }
+
+        // Parse the JSON completion into a serde_json::Value and validate it
+        // against the provided schema.
+        let completion = match serde_json::from_str(&completion) {
+            Ok(completion) => completion,
+            Err(err) => {
+                return Ok(Output::Err {
+                    reason: format!("Error parsing JSON completion: {}", err),
+                })
+            }
+        };
+
+        let Some(OpenAIJsonSchema { schema, .. }) = request.json_schema else {
+            unreachable!();
+        };
+
+        match jsonschema::draft202012::validate(&schema.to_value(), &completion) {
+            Ok(()) => Ok(Output::Json {
+                id: response.id,
+                role: choice.message.role.into(),
+                completion,
+            }),
+            Err(e) => Ok(Output::Err {
+                reason: format!("JSON completion does not match schema: {}", e),
+            }),
+        }
     }
 }
 
@@ -266,18 +443,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_message_type_deserialization_case_insensitive() {
+    fn test_message_kind_deserialization() {
         let json = r#""system""#;
-        let message_type: MessageType = serde_json::from_str(json).unwrap();
-        assert_eq!(message_type, MessageType::System);
+        let kind: MessageKind = serde_json::from_str(json).unwrap();
+        assert_eq!(kind, MessageKind::System);
 
-        let json = r#""USER""#;
-        let message_type: MessageType = serde_json::from_str(json).unwrap();
-        assert_eq!(message_type, MessageType::User);
+        let json = r#""user""#;
+        let kind: MessageKind = serde_json::from_str(json).unwrap();
+        assert_eq!(kind, MessageKind::User);
 
-        let json = r#""aSsIsTaNt""#;
-        let message_type: MessageType = serde_json::from_str(json).unwrap();
-        assert_eq!(message_type, MessageType::Assistant);
+        let json = r#""assistant""#;
+        let kind: MessageKind = serde_json::from_str(json).unwrap();
+        assert_eq!(kind, MessageKind::Assistant);
+
+        let json = r#""invalid""#;
+        let kind: Result<MessageKind, _> = serde_json::from_str(json);
+        assert!(kind.is_err());
+    }
+
+    #[test]
+    fn test_message_kind_from_role() {
+        let role = Role::System;
+        let kind: MessageKind = role.into();
+        assert_eq!(kind, MessageKind::System);
+
+        let role = Role::User;
+        let kind: MessageKind = role.into();
+        assert_eq!(kind, MessageKind::User);
+
+        let role = Role::Assistant;
+        let kind: MessageKind = role.into();
+        assert_eq!(kind, MessageKind::Assistant);
+
+        let role = Role::Function;
+        let kind: MessageKind = role.into();
+        assert_eq!(kind, MessageKind::Funtion);
+
+        let role = Role::Tool;
+        let kind: MessageKind = role.into();
+        assert_eq!(kind, MessageKind::Tool);
     }
 
     #[test]
@@ -287,7 +491,19 @@ mod tests {
         assert_eq!(
             message,
             Message::Full {
-                message_type: MessageType::System,
+                role: MessageKind::System,
+                name: None,
+                value: "Hello".to_string()
+            }
+        );
+
+        let json = r#"{"type": "system", name: "robot", "value": "Hello"}"#;
+        let message: Message = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            message,
+            Message::Full {
+                role: MessageKind::System,
+                name: Some("robot".to_string()),
                 value: "Hello".to_string()
             }
         );
@@ -307,7 +523,8 @@ mod tests {
         assert_eq!(
             message,
             Message::Full {
-                message_type: MessageType::User,
+                role: MessageKind::User,
+                name: None,
                 value: "Hello".to_string()
             }
         );
@@ -318,7 +535,7 @@ mod tests {
         let json = r#"{
             "apiKey": "your_api_key",
             "messages": [
-                {"type": "system", "value": "You are a helpful assistant."},
+                {"type": "system", name: "robot", "value": "You are a helpful assistant."},
                 "Hello",
                 {"type": "assistant", "value": "The Los Angeles Dodgers won the World Series in 2020."}
             ]
@@ -330,12 +547,14 @@ mod tests {
             input.messages,
             vec![
                 Message::Full {
-                    message_type: MessageType::System,
+                    role: MessageKind::System,
+                    name: Some("robot".to_string()),
                     value: "You are a helpful assistant.".to_string()
                 },
                 Message::Short("Hello".to_string()),
                 Message::Full {
-                    message_type: MessageType::Assistant,
+                    role: MessageKind::Assistant,
+                    name: None,
                     value: "The Los Angeles Dodgers won the World Series in 2020.".to_string()
                 }
             ]

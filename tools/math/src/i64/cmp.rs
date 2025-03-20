@@ -1,24 +1,24 @@
 //! # `xyz.taluslabs.math.i64.cmp@1`
 //!
-//! Standard Nexus Tool that compares two [i64] numbers and returns the result.
+//! Standard Nexus Tool that compares two [`i64`] numbers and returns the result.
 //!
 //! ## Input
 //!
-//! - `a: i64`: The first number to compare.
-//! - `b: i64`: The second number to compare.
+//! - `a`: [`i64`] - The first number to compare.
+//! - `b`: [`i64`] - The second number to compare.
 //!
 //! ## Output Variants
 //!
-//! - `gt`: The first number is greater than the second.
-//! - `eq`: The first number is equal to the second.
-//! - `lt`: The first number is less than the second.
+//! - `gt` - The first number is greater than the second.
+//! - `eq` - The first number is equal to the second.
+//! - `lt` - The first number is less than the second.
 //!
 //! ## Output Ports
 //!
 //! Each Output Variant has the following output ports:
 //!
-//! - `a: i64`: The first number.
-//! - `b: i64`: The second number.
+//! - `a`: [`i64`] - The first number.
+//! - `b`: [`i64`] - The second number.
 
 use {
     nexus_toolkit::*,
@@ -29,6 +29,7 @@ use {
 };
 
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     a: i64,
     b: i64,

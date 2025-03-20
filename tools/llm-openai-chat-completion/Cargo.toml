@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow.workspace = true
 async-openai = "0.27"
 chrono.workspace = true
+jsonschema.workspace = true
 reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
