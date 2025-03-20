@@ -13,7 +13,7 @@
 //!
 //! - `api_key`: _encrypted_ [`String`] - The API key to invoke the OpenAI API
 //!   with. Encrypted with the Tool's key pair.
-//!   TODO: <TODO: encryption ticket>.
+//!   TODO: <https://github.com/Talus-Network/nexus-sdk/issues/29>.
 //! - `prompt`: [`MessageBag`] - The message(s) to send to the chat completion
 //!   API. The minimum length of the vector is 1 if using [`MessageBag::Many`].
 //! - `context`: _optional_ [`MessageBag`] - The context to provide to the chat
@@ -254,7 +254,7 @@ impl From<MessageBag> for Vec<Message> {
 #[serde(deny_unknown_fields)]
 struct Input {
     /// The OpenAI API key.
-    // TODO: <TODO: encryption ticket>.
+    // TODO: <https://github.com/Talus-Network/nexus-sdk/issues/29>.
     api_key: String,
     /// The prompt to send to the chat completion API.
     prompt: MessageBag,
