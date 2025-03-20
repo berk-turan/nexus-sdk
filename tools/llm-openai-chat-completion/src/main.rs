@@ -240,9 +240,9 @@ impl Default for MessageBag {
     }
 }
 
-impl Into<Vec<Message>> for MessageBag {
-    fn into(self) -> Vec<Message> {
-        match self {
+impl From<MessageBag> for Vec<Message> {
+    fn from(bag: MessageBag) -> Self {
+        match bag {
             MessageBag::One(message) => vec![message],
             MessageBag::Many(messages) => messages,
         }
