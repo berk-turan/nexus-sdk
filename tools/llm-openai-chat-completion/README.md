@@ -8,39 +8,39 @@ It uses the [`async_openai`] crate to interact with the OpenAI API.
 
 ## Input
 
-### `api_key`: [`Encrypted`][`String`]
+**`api_key`: [`Encrypted<String>`]**
 
 The API key to invoke the OpenAI API with. Encrypted with the Tool's key pair.
 
 TODO: <https://github.com/Talus-Network/nexus-sdk/issues/29>.
 
-### `prompt`: [`MessageBag`]
+**`prompt`: [`MessageBag`]**
 
 The message(s) to send to the chat completion API. The minimum length of the vector is 1 if using [`MessageBag::Many`].
 
-### `context`: _opt_ [`MessageBag`]
+_opt_ **`context`: [`MessageBag`]** _default_: [`Vec::default`]
 
-The context to provide to the chat completion API. This is useful for providing additional context as a DAG default value. Defaults to [`Vec::default`]. Note that context messages are **prepended** to the `messages` input port.
+The context to provide to the chat completion API. This is useful for providing additional context as a DAG default value. Note that context messages are **prepended** to the `messages` input port.
 
-### `model`: _opt_ [`String`]
+_opt_ **`model`: [`String`]** _default_: [`DEFAULT_MODEL`]
 
-The model to use for chat completion. Defaults to [`DEFAULT_MODEL`].
+The model to use for chat completion.
 
-### `max_completion_tokens`: _opt_ [`u32`]
+_opt_ **`max_completion_tokens`: [`u32`]** _default_: [`DEFAULT_MAX_COMPLETION_TOKENS`]
 
-The maximum number of tokens to generate. Defaults to [`DEFAULT_MAX_COMPLETION_TOKENS`].
+The maximum number of tokens to generate.
 
-### `temperature`: _opt_ [`f32`]
+_opt_ **`temperature`: [`f32`]** _default_: [`DEFAULT_TEMPERATURE`]
 
-The temperature to use. This must be a floating point number between 0 and 2. Defaults to 1. Defaults to [`DEFAULT_TEMPERATURE`].
+The temperature to use. This must be a floating point number between 0 and 2. Defaults to 1.
 
-### `json_schema`: _opt_ [`OpenAIJsonSchema`]
+_opt_ **`json_schema`: [`OpenAIJsonSchema`]** _default_: [`None`]
 
-The JSON schema for the expected output. Providing this will force the [`Output::Json`] variant. The LLM response will be parsed into this schema. Defaults to [`None`]. Note that this is only supported for newer OpenAI models. See <https://platform.openai.com/docs/guides/structured-outputs>.
+The JSON schema for the expected output. Providing this will force the [`Output::Json`] variant. The LLM response will be parsed into this schema. Note that this is only supported for newer OpenAI models. See <https://platform.openai.com/docs/guides/structured-outputs>.
 
 ## Output Variants & Ports
 
-### `text`
+**`text`**
 
 The chat completion was successful and evaluated to plain text.
 
@@ -48,7 +48,7 @@ The chat completion was successful and evaluated to plain text.
 - **`text.role`: [`MessageKind`]** - The role of the author of the message.
 - **`text.completion`: [`String`]** - The chat completion result as plain text.
 
-### `json`
+**`json`**
 
 The chat completion was successful and evaluated to JSON.
 
@@ -56,7 +56,7 @@ The chat completion was successful and evaluated to JSON.
 - **`json.role`: [`MessageKind`]** - The role of the author of the message.
 - **`json.completion`: [`serde_json::Value`]** - The chat completion result as JSON. Note that this is opaque for the Tool but the structure is defined by [`Input::json_schema`]. One could say the Tool output is _generic over this schema_.
 
-### `err`
+**`err`**
 
 An error occurred during the chat completion.
 
