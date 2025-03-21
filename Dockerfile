@@ -13,10 +13,6 @@ COPY toolkit-rust toolkit-rust
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
 
-ENV GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no"
-
-RUN mkdir ../sui
-
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target/release \
     --mount=type=ssh <<EOT
