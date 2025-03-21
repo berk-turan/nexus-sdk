@@ -46,10 +46,6 @@ Docs:
 - [Tool Development Guidelines][tool-development-docs]
 - [Nexus Toolkit Rust][toolkit-rust-docs]
 
-Docs:
-
-- TODO: <https://github.com/Talus-Network/nexus-sdk/issues/41>
-
 Epics:
 
 - https://github.com/Talus-Network/nexus-next/issues/69
