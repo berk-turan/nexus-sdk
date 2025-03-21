@@ -195,7 +195,7 @@ impl From<MessageBag> for Vec<Message> {
 struct Input {
     /// The OpenAI API key.
     // TODO: <https://github.com/Talus-Network/nexus-sdk/issues/29>.
-    api_key: String,
+    api_key: Secret<String>,
     /// The prompt to send to the chat completion API.
     prompt: MessageBag,
     /// The context to provide to the chat completion API.
@@ -276,7 +276,7 @@ impl NexusTool for OpenaiChatCompletion {
     /// Invokes the tool logic to generate a chat completion.
     async fn invoke(&self, request: Self::Input) -> Self::Output {
         let cfg = OpenAIConfig::new()
-            .with_api_key(request.api_key)
+            .with_api_key(&*request.api_key)
             .with_api_base(&self.api_base);
 
         let client = Client::with_config(cfg);
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn test_input_deserialization() {
         let json = r#"{
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "prompt": {"role": "system", "name": "robot", "value": "You are a helpful assistant."}
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
@@ -538,7 +538,7 @@ mod tests {
         );
 
         let json = r#"{
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "prompt": "hello"
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
@@ -548,7 +548,7 @@ mod tests {
         );
 
         let json = r#"{
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "prompt": [
                 {"role": "system", "name": "robot", "value": "You are a helpful assistant."},
                 "Hello",
@@ -556,7 +556,7 @@ mod tests {
             ]
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
-        assert_eq!(input.api_key, "your_api_key");
+        assert_eq!(&*input.api_key, "your_api_key");
         assert_eq!(input.model, DEFAULT_MODEL);
         assert_eq!(
             input.prompt,
@@ -579,11 +579,11 @@ mod tests {
     #[test]
     fn test_input_empty_message() {
         let json = r#"{
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "prompt": []
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
-        assert_eq!(input.api_key, "your_api_key");
+        assert_eq!(&*input.api_key, "your_api_key");
         assert_eq!(input.model, DEFAULT_MODEL);
         assert!(matches!(input.prompt, MessageBag::Many(messages) if messages.is_empty()));
     }
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn test_input_missing_message() {
         let json = r#"{
-            "api_key": "your_api_key"
+            "api_key": "best-encryption-ever-\"your_api_key\""
         }"#;
 
         let input: Result<Input, _> = serde_json::from_str(json);
@@ -633,7 +633,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let json = r#"{
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "prompt": "Hello"
         }"#;
 
@@ -676,7 +676,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let json = r#"{
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "max_completion_tokens": 256,
             "temperature": 0.5,
             "model": "gpt-4o",
@@ -752,7 +752,7 @@ mod tests {
         let schema = schema_for!(Completion);
 
         let json = json!({
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "json_schema": {
                 "name": "completion",
                 "description": "A completion JSON schema",
@@ -822,7 +822,7 @@ mod tests {
         let schema = schema_for!(Completion);
 
         let json = json!({
-            "api_key": "your_api_key",
+            "api_key": "best-encryption-ever-\"your_api_key\"",
             "json_schema": {
                 "name": "completion",
                 "description": "A completion JSON schema",
