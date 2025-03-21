@@ -153,6 +153,29 @@ impl NexusTool for HttpStatus {
 
 Defines the Tool's main logic. This is where the Tool processes the input and produces the output.
 
+```rs
+use nexus_toolkit::*;
+
+struct HttpStatus;
+
+impl NexusTool for HttpStatus {
+    // ...
+
+    /// Fetches the HTTP status of a given URL.
+    async fn invoke(&self, input: Self::Input) -> Self::Output {
+        let response = reqwest::Client::new().get(&input.url).send().await;
+
+        match response {
+            Ok(response) => Output::Ok { status: response.status().as_u16() },
+            Err(e) => Output::Err { reason: e.to_string() },
+        }
+    }
+    // ...
+}
+```
+
+> Notice that the `invoke` function does not return a `Result`. This is because errors are valid output variants of a Nexus Tool. The `invoke` function should handle any errors and return them as part of the output.
+
 ---
 
 ### `nexus_toolkit::bootstrap!`
@@ -160,17 +183,45 @@ Defines the Tool's main logic. This is where the Tool processes the input and pr
 The `bootstrap!` macro hides away the boilerplate code needed to create the
 underlying HTTP server that adheres to the [Nexus Tool interface][nexus-next-tool-docs].
 
+It has a flexible interface that accepts an `Into<SocketAddr>` value and a struct that `impl NexusTool`.
+
+```rs
+use nexus_toolkit::*;
+
+// ...
+
+/// Bootstrap a single Tool at 127.0.0.1:8080.
+#[tokio::main]
+async fn main() {
+    bootstrap!(MyTool)
+}
+
+/// Bootstrap muliple Tools at 127.0.0.1:8080.
+///
+/// When definining multiple Tools, their `NexusTool::path` must be unique.
+#[tokio::main]
+async fn main() {
+    bootstrap!([MyTool, MyOtherTool])
+}
+
+/// Bootstrap a single Tool at a custom address.
+#[tokio::main]
+async fn main() {
+    bootstrap!(([0, 0, 0, 0], 8081), MyTool)
+}
+
+/// Bootstrap multiple Tools at a custom address.
+///
+/// When definining multiple Tools, their `NexusTool::path` must be unique.
+#[tokio::main]
+async fn main() {
+    bootstrap!(([0, 0, 0, 0], 8081), [MyTool, MyOtherTool])
+}
+```
+
 <!-- List of References -->
 
 [nexus-toolkit-rust-repo]: https://github.com/Talus-Network/nexus-sdk/tree/main/toolkit-rust
 [nexus-next-tool-docs]: ../nexus-next/Tool.md
 [nexus-next-workflow-docs]: ../nexus-next/packages/Workflow.md
 [nexus-cli-docs]: ./CLI.md
-
-```
-
-```
-
-```
-
-```
