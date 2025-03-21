@@ -67,11 +67,11 @@ impl NexusTool for I64Cmp {
         Ok(StatusCode::OK)
     }
 
-    async fn invoke(&self, Self::Input { a, b }: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, Self::Input { a, b }: Self::Input) -> Self::Output {
         match a.cmp(&b) {
-            Ordering::Greater => Ok(Output::Gt { a, b }),
-            Ordering::Equal => Ok(Output::Eq { a, b }),
-            Ordering::Less => Ok(Output::Lt { a, b }),
+            Ordering::Greater => Output::Gt { a, b },
+            Ordering::Equal => Output::Eq { a, b },
+            Ordering::Less => Output::Lt { a, b },
         }
     }
 }
@@ -85,17 +85,17 @@ mod tests {
         let tool: I64Cmp = I64Cmp::new();
 
         let input = Input { a: 1, b: 2 };
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(matches!(output, Output::Lt { a: 1, b: 2 }));
 
         let input = Input { a: 2, b: 1 };
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(matches!(output, Output::Gt { a: 2, b: 1 }));
 
         let input = Input { a: 1, b: 1 };
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(matches!(output, Output::Eq { a: 1, b: 1 }));
     }
