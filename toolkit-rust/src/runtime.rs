@@ -237,22 +237,10 @@ async fn invoke_handler<T: NexusTool>(input: serde_json::Value) -> Result<impl R
     let tool = T::new();
 
     // Invoke the tool logic.
-    match tool.invoke(input).await {
-        Ok(output) => Ok(warp::reply::with_status(
-            warp::reply::json(&output),
-            StatusCode::OK,
-        )),
-        Err(e) => {
-            let reply = json!({
-                "error": "tool_invocation_error",
-                "details": e.to_string(),
-            });
+    let output = tool.invoke(input).await;
 
-            // Reply with 500 if the tool invocation fails.
-            Ok(warp::reply::with_status(
-                warp::reply::json(&reply),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ))
-        }
-    }
+    Ok(warp::reply::with_status(
+        warp::reply::json(&output),
+        StatusCode::OK,
+    ))
 }

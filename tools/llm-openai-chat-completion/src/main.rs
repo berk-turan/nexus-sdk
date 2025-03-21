@@ -334,7 +334,7 @@ impl NexusTool for OpenaiChatCompletion {
     }
 
     /// Invokes the tool logic to generate a chat completion.
-    async fn invoke(&self, request: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, request: Self::Input) -> Self::Output {
         let cfg = OpenAIConfig::new()
             .with_api_key(request.api_key)
             .with_api_base(&self.api_base);
@@ -356,9 +356,9 @@ impl NexusTool for OpenaiChatCompletion {
         let messages = match messages {
             Ok(messages) => messages,
             Err(err) => {
-                return Ok(Output::Err {
+                return Output::Err {
                     reason: err.to_string(),
-                })
+                }
             }
         };
 
@@ -389,18 +389,18 @@ impl NexusTool for OpenaiChatCompletion {
         let openai_request = match openai_request.build() {
             Ok(request) => request,
             Err(err) => {
-                return Ok(Output::Err {
+                return Output::Err {
                     reason: format!("Error building OpenAI request: {}", err),
-                })
+                }
             }
         };
 
         let response = match client.chat().create(openai_request).await {
             Ok(response) => response,
             Err(err) => {
-                return Ok(Output::Err {
+                return Output::Err {
                     reason: format!("Error calling OpenAI API: {}", err),
-                })
+                }
             }
         };
 
@@ -412,34 +412,34 @@ impl NexusTool for OpenaiChatCompletion {
         let choice = match response.choices.first() {
             Some(choice) => choice,
             None => {
-                return Ok(Output::Err {
+                return Output::Err {
                     reason: "No choices returned from OpenAI API".to_string(),
-                })
+                }
             }
         };
 
         if let Some(refusal) = &choice.message.refusal {
-            return Ok(Output::Err {
+            return Output::Err {
                 reason: refusal.to_string(),
-            });
+            };
         }
 
         let completion = match &choice.message.content {
             Some(completion) => completion.to_string(),
             None => {
-                return Ok(Output::Err {
+                return Output::Err {
                     reason: "No completion returned from OpenAI API".to_string(),
-                })
+                }
             }
         };
 
         // Plain text completion.
         if request.json_schema.is_none() {
-            return Ok(Output::Text {
+            return Output::Text {
                 id: response.id,
                 role: choice.message.role.into(),
                 completion,
-            });
+            };
         }
 
         // Parse the JSON completion into a serde_json::Value and validate it
@@ -447,9 +447,9 @@ impl NexusTool for OpenaiChatCompletion {
         let completion = match serde_json::from_str(&completion) {
             Ok(completion) => completion,
             Err(err) => {
-                return Ok(Output::Err {
+                return Output::Err {
                     reason: format!("Error parsing JSON completion: {}", err),
-                })
+                }
             }
         };
 
@@ -458,14 +458,14 @@ impl NexusTool for OpenaiChatCompletion {
         };
 
         match jsonschema::draft202012::validate(&schema.to_value(), &completion) {
-            Ok(()) => Ok(Output::Json {
+            Ok(()) => Output::Json {
                 id: response.id,
                 role: choice.message.role.into(),
                 completion,
-            }),
-            Err(e) => Ok(Output::Err {
+            },
+            Err(e) => Output::Err {
                 reason: format!("JSON completion does not match schema: {}", e),
-            }),
+            },
         }
     }
 }
@@ -721,7 +721,7 @@ mod tests {
             .create_async()
             .await;
 
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert_eq!(
             output,
@@ -789,7 +789,7 @@ mod tests {
             .create_async()
             .await;
 
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert_eq!(
             output,
@@ -854,7 +854,7 @@ mod tests {
             .create_async()
             .await;
 
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         let expected = Completion {
             hello: "world".to_string(),
@@ -922,7 +922,7 @@ mod tests {
             .create_async()
             .await;
 
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(
             matches!(output, Output::Err {  reason} if reason.to_string().contains("JSON completion does not match schema"))

@@ -49,7 +49,7 @@ pub trait NexusTool: Send + Sync + 'static {
     /// that returns the output of the tool.
     ///
     /// It is used to generate the `/invoke` endpoint.
-    fn invoke(&self, input: Self::Input) -> impl Future<Output = AnyResult<Self::Output>> + Send;
+    fn invoke(&self, input: Self::Input) -> impl Future<Output = Self::Output> + Send;
     /// Returns the health status of the tool. For now, this only returns an
     /// HTTP status code.
     ///
