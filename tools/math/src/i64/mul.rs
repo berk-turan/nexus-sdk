@@ -67,12 +67,12 @@ impl NexusTool for I64Mul {
         Ok(StatusCode::OK)
     }
 
-    async fn invoke(&self, Self::Input { a, b }: Self::Input) -> AnyResult<Self::Output> {
+    async fn invoke(&self, Self::Input { a, b }: Self::Input) -> Self::Output {
         match a.checked_mul(b) {
-            Some(result) => Ok(Output::Ok { result }),
-            None => Ok(Output::Err {
+            Some(result) => Output::Ok { result },
+            None => Output::Err {
                 reason: format!("Multiplying '{a}' and '{b}' results in an overflow"),
-            }),
+            },
         }
     }
 }
@@ -86,17 +86,17 @@ mod tests {
         let tool = I64Mul::new();
 
         let input = Input { a: 2, b: 3 };
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(matches!(output, Output::Ok { result: 6 }));
 
         let input = Input { a: i64::MAX, b: 2 };
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(matches!(output, Output::Err { .. }));
 
         let input = Input { a: i64::MIN, b: 2 };
-        let output = tool.invoke(input).await.unwrap();
+        let output = tool.invoke(input).await;
 
         assert!(matches!(output, Output::Err { .. }));
     }

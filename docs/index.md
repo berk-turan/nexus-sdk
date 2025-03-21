@@ -43,6 +43,7 @@ The codebase resides in [this repository][repo-nexus-sdk].
 
 Docs:
 
+- [Tool Development Guidelines][tool-development-docs]
 - [Nexus Toolkit Rust][toolkit-rust-docs]
 
 Docs:
@@ -60,6 +61,7 @@ Epics:
 [repo-nexus-sdk]: https://github.com/Talus-Network/nexus-sdk
 [cli-docs]: ./CLI.md
 [toolkit-rust-docs]: ./toolkit-rust.md
+[tool-development-docs]: ./tool-development.md
 
 <!-- Note: these links will only work in the composite gitbook docs repo, not in the source repo. -->
 
