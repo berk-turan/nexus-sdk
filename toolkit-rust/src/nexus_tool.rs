@@ -34,7 +34,7 @@ pub trait NexusTool: Send + Sync + 'static {
     /// The input type of the tool. It must implement `JsonSchema` and
     /// `DeserializeOwned`. It is used to generate the input schema of the tool.
     /// It is also used to deserialize the input payload.
-    type Input: JsonSchema + DeserializeOwned;
+    type Input: JsonSchema + DeserializeOwned + Send;
     /// The output type of the tool. It must implement `JsonSchema` and
     /// `Serialize`. It is used to generate the output schema of the tool. It is
     /// also used to serialize the output payload.
@@ -42,7 +42,7 @@ pub trait NexusTool: Send + Sync + 'static {
     /// **Important:** The output type must be a Rust `enum` so that a top-level
     /// `oneOf` is generated. This is to adhere to Nexus' output variants. This
     /// fact is validated by the CLI.
-    type Output: JsonSchema + Serialize;
+    type Output: JsonSchema + Serialize + Send;
     /// Returns the FQN of the Tool.
     fn fqn() -> ToolFqn;
     /// Invokes the tool with the given input. It is an asynchronous function
@@ -65,7 +65,7 @@ pub trait NexusTool: Send + Sync + 'static {
     }
     /// Construct a new instance of the tool. This is mainly here so that
     /// dependencies can be injected for testing purposes.
-    fn new() -> Self;
+    fn new() -> impl Future<Output = Self> + Send;
     /// Returns the metadata of the tool. It includes the domain, name, version,
     /// input schema, and output schema.
     ///

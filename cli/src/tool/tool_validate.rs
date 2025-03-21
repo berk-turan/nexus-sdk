@@ -128,7 +128,7 @@ mod tests {
         type Input = Input;
         type Output = Output;
 
-        fn new() -> Self {
+        async fn new() -> Self {
             Self
         }
 
@@ -153,7 +153,7 @@ mod tests {
         type Input = Input;
         type Output = Output;
 
-        fn new() -> Self {
+        async fn new() -> Self {
             Self
         }
 

@@ -49,7 +49,7 @@ impl NexusTool for I64Mul {
     type Input = Input;
     type Output = Output;
 
-    fn new() -> Self {
+    async fn new() -> Self {
         Self
     }
 
@@ -83,7 +83,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_i64_mul() {
-        let tool = I64Mul::new();
+        let tool = I64Mul::new().await;
 
         let input = Input { a: 2, b: 3 };
         let output = tool.invoke(input).await;

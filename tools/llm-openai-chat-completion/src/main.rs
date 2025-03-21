@@ -318,7 +318,7 @@ impl NexusTool for OpenaiChatCompletion {
     type Input = Input;
     type Output = Output;
 
-    fn new() -> Self {
+    async fn new() -> Self {
         Self {
             api_base: OPENAI_API_BASE.to_string(),
         }
