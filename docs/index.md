@@ -43,6 +43,10 @@ The codebase resides in [this repository][repo-nexus-sdk].
 
 Docs:
 
+- [Nexus Toolkit Rust][toolkit-rust-docs]
+
+Docs:
+
 - TODO: <https://github.com/Talus-Network/nexus-sdk/issues/41>
 
 Epics:
@@ -54,8 +58,10 @@ Epics:
 [repo-nexus-sui]: https://github.com/Talus-Network/nexus-next/tree/main/sui
 [repo-nexus-rust]: https://github.com/Talus-Network/nexus-next/tree/main/be
 [repo-nexus-sdk]: https://github.com/Talus-Network/nexus-sdk
-[CLI-docs]: ./CLI.md
+[cli-docs]: ./CLI.md
+[toolkit-rust-docs]: ./toolkit-rust.md
+
 <!-- Note: these links will only work in the composite gitbook docs repo, not in the source repo. -->
+
 [nexus-next-docs]: ../nexus-next/index.md
 [nexus-next-glossary]: ../nexus-next/Glossary.md
-
