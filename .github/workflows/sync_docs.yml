@@ -3,7 +3,7 @@ name: Sync Documentation
 on:
   push:
     branches:
-      - main  # or your default branch
+      - test-workflow  # or your default branch
     paths:
       - 'docs/**'  # Only trigger when docs are changed
   workflow_dispatch:
@@ -55,6 +55,3 @@ jobs:
               documentation
               automated pr
               ${{ env.REPO_NAME }}
-            team-reviewers: |
-              engineering
-              
