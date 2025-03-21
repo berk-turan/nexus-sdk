@@ -140,10 +140,10 @@ mod tests {
             Ok(StatusCode::OK)
         }
 
-        async fn invoke(&self, Self::Input { prompt }: Self::Input) -> AnyResult<Self::Output> {
-            Ok(Self::Output::Ok {
+        async fn invoke(&self, Self::Input { prompt }: Self::Input) -> Self::Output {
+            Self::Output::Ok {
                 message: format!("You said: {}", prompt),
-            })
+            }
         }
     }
 
@@ -169,10 +169,10 @@ mod tests {
             Ok(StatusCode::OK)
         }
 
-        async fn invoke(&self, Self::Input { prompt }: Self::Input) -> AnyResult<Self::Output> {
-            Ok(Self::Output::Ok {
+        async fn invoke(&self, Self::Input { prompt }: Self::Input) -> Self::Output {
+            Self::Output::Ok {
                 message: format!("You said: {}", prompt),
-            })
+            }
         }
     }
 
