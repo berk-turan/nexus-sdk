@@ -258,7 +258,7 @@ impl NexusTool for OpenaiChatCompletion {
     type Input = Input;
     type Output = Output;
 
-    fn new() -> Self {
+    async fn new() -> Self {
         Self {
             api_base: OPENAI_API_BASE.to_string(),
         }
@@ -374,13 +374,13 @@ impl NexusTool for OpenaiChatCompletion {
         };
 
         // Plain text completion.
-        if request.json_schema.is_none() {
+        let Some(OpenAIJsonSchema { schema, .. }) = request.json_schema else {
             return Output::Text {
                 id: response.id,
                 role: choice.message.role.into(),
                 completion,
             };
-        }
+        };
 
         // Parse the JSON completion into a serde_json::Value and validate it
         // against the provided schema.
@@ -391,10 +391,6 @@ impl NexusTool for OpenaiChatCompletion {
                     reason: format!("Error parsing JSON completion: {}", err),
                 }
             }
-        };
-
-        let Some(OpenAIJsonSchema { schema, .. }) = request.json_schema else {
-            unreachable!();
         };
 
         match jsonschema::draft202012::validate(&schema.to_value(), &completion) {

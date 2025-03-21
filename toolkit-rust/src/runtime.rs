@@ -140,7 +140,7 @@ pub fn routes_for_<T: NexusTool>() -> impl Filter<Extract = impl Reply, Error = 
 }
 
 async fn health_handler<T: NexusTool>() -> Result<impl Reply, Rejection> {
-    let tool = T::new();
+    let tool = T::new().await;
 
     let status = tool
         .health()
@@ -236,7 +236,7 @@ async fn invoke_handler<T: NexusTool>(input: serde_json::Value) -> Result<impl R
         }
     };
 
-    let tool = T::new();
+    let tool = T::new().await;
 
     // Invoke the tool logic.
     let output = tool.invoke(input).await;

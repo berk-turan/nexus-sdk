@@ -31,7 +31,7 @@ impl NexusTool for I64Cmp {
     type Input = Input;
     type Output = Output;
 
-    fn new() -> Self {
+    async fn new() -> Self {
         Self
     }
 
@@ -64,7 +64,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_i64_cmp() {
-        let tool: I64Cmp = I64Cmp::new();
+        let tool: I64Cmp = I64Cmp::new().await;
 
         let input = Input { a: 1, b: 2 };
         let output = tool.invoke(input).await;

@@ -26,7 +26,7 @@ impl NexusTool for DummyTool {
     type Input = Input;
     type Output = Output;
 
-    fn new() -> Self {
+    async fn new() -> Self {
         Self
     }
 
@@ -51,7 +51,7 @@ impl NexusTool for DummyErrTool {
     type Input = Input;
     type Output = Output;
 
-    fn new() -> Self {
+    async fn new() -> Self {
         Self
     }
 
