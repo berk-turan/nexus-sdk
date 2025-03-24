@@ -1,21 +1,19 @@
 //! # `xyz.taluslabs.social.twitter.post-tweet@1`
 //!
 //! Standard Nexus Tool that posts a content to Twitter.
-//!
 
-use ::{
-    nexus_toolkit::*,
-    nexus_types::*,
-    schemars::JsonSchema,
-    serde::{Deserialize, Serialize},
-    serde_json::Value,
+use {
+    crate::tweet::TWITTER_API_BASE,
+    oauth1_request::{post, signature_method::HmacSha1, Token},
+    reqwest::Client,
+    ::{
+        nexus_sdk::{fqn, ToolFqn},
+        nexus_toolkit::*,
+        schemars::JsonSchema,
+        serde::{Deserialize, Serialize},
+        serde_json::Value,
+    },
 };
-
-use oauth1_request::{post, signature_method::HmacSha1, Token};
-
-use reqwest::Client;
-
-use crate::tweet::TWITTER_API_BASE;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -156,8 +154,10 @@ impl NexusTool for PostTweet {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use ::{mockito::Server, serde_json::json};
+    use {
+        super::*,
+        ::{mockito::Server, serde_json::json},
+    };
 
     impl PostTweet {
         fn with_api_base(api_base: &str) -> Self {
