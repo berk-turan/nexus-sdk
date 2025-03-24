@@ -6,7 +6,7 @@ pub(crate) use {
     nexus_types::{sui::traits::*, *},
     serde::{Deserialize, Serialize},
     std::path::{Path, PathBuf},
-    nexus_types::sui::{ sui_config_dir, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
+    nexus_types::sui::{ sui_config_dir, SUI_CLIENT_CONFIG},
 };
 
 // Where to find config file.
