@@ -28,7 +28,12 @@ jobs:
           repository: Talus-Network/gitbook-docs
           path: gitbook-docs
           token: ${{ secrets.GH_ACCESS_TOKEN }}  # Access Token with repo access
-      
+          
+      - name: Configure Git signing
+        run: |
+            git config --global commit.gpgsign true
+            git config --global user.signingkey 41898282+github-actions[bot]  
+
       - name: Sync documentation
         run: |
           mkdir -p gitbook-docs/${{ env.REPO_NAME }}
