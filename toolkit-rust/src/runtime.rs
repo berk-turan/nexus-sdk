@@ -18,7 +18,7 @@ use {
 ///
 /// # Examples
 ///
-/// ### One tool running on `127.0.0.1:8080`
+/// ### One tool running on `0.0.0.0:8080`
 ///
 /// ```ignore
 /// use nexus_toolkit::bootstrap;
@@ -29,7 +29,7 @@ use {
 /// }
 /// ```
 ///
-/// ### Multiple tools running on `127.0.0.1:8080`
+/// ### Multiple tools running on `0.0.0.0:8080`
 ///
 /// ```ignore
 /// use nexus_toolkit::bootstrap;
@@ -47,7 +47,7 @@ use {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     bootstrap!(([127, 0, 0, 1], 8081), YourTool);
+///     bootstrap!(([0, 0, 0, 0], 8081), YourTool);
 /// }
 /// ```
 ///
@@ -58,7 +58,7 @@ use {
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     bootstrap!(([127, 0, 0, 1], 8081), [YourTool, AnotherTool]);
+///     bootstrap!(([0, 0, 0, 0], 8081), [YourTool, AnotherTool]);
 /// }
 /// ```
 #[macro_export]
@@ -84,7 +84,7 @@ macro_rules! bootstrap {
     }};
     // Default address.
     ([$($tool:ty),+ $(,)?]) => {
-        bootstrap!(([127, 0, 0, 1], 8080), [$($tool, )*]);
+        bootstrap!(([0, 0, 0, 0], 8080), [$($tool, )*]);
     };
     // Only 1 tool.
     ($addr:expr, $tool:ty) => {
@@ -92,7 +92,7 @@ macro_rules! bootstrap {
     };
     // Only 1 tool with default address.
     ($tool:ty) => {
-        bootstrap!(([127, 0, 0, 1], 8080), [$tool]);
+        bootstrap!(([0, 0, 0, 0], 8080), [$tool]);
     };
 }
 
