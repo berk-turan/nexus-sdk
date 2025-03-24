@@ -1,54 +1,21 @@
-//! # `xyz.taluslabs.social.twitter.tweet@1`
+//! # `xyz.taluslabs.social.twitter.post-tweet@1`
 //!
-//! Standard Nexus Tool that tweets a content to Twitter.
-//!
-//! ## Input
-//!
-//! - `consumer_key`: [`String`] - Twitter API application's Consumer Key.
-//! - `consumer_secret_key`: [`String`] - Twitter API application's Consumer Secret Key.
-//! - `access_token`: [`String`] - Access Token for user's Twitter account.
-//! - `access_token_secret`: [`String`] - Access Token Secret for user's Twitter account.
-//! - `content`: [`String`] - The content to tweet.
-//!
-//! ## Output
-//!
-//! - `ok` - The tweet was posted successfully.
-//! - `err` - The tweet was not posted due to an error.
-//!
-//! ## Output Ports
-//!
-//! ### `ok`
-//!
-//! - `result`: [`TweetResponse`] - The tweet data.
-//!
-//! ### `err`
-//!
-//! - `reason`: [`String`] - The reason the tweet was not posted.
-//!
-//! ### Error case
-//!
-//! ```json
-//! {
-//!   "err": {
-//!     "reason": "Error message describing what went wrong"
-//!   }
-//! }
-//! ```
+//! Standard Nexus Tool that posts a content to Twitter.
 //!
 
 use ::{
     nexus_toolkit::*,
     nexus_types::*,
     schemars::JsonSchema,
-    serde::{ Deserialize, Serialize },
+    serde::{Deserialize, Serialize},
     serde_json::Value,
 };
 
-use oauth1_request::{ Token, post, signature_method::HmacSha1 };
+use oauth1_request::{post, signature_method::HmacSha1, Token};
 
 use reqwest::Client;
 
-use crate::twitter::TWITTER_API_BASE;
+use crate::tweet::TWITTER_API_BASE;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -89,11 +56,11 @@ pub(crate) enum Output {
     },
 }
 
-pub(crate) struct Tweet {
+pub(crate) struct PostTweet {
     api_base: String,
 }
 
-impl NexusTool for Tweet {
+impl NexusTool for PostTweet {
     type Input = Input;
     type Output = Output;
 
@@ -104,11 +71,11 @@ impl NexusTool for Tweet {
     }
 
     fn fqn() -> ToolFqn {
-        fqn!("xyz.taluslabs.social.twitter.tweet@1")
+        fqn!("xyz.taluslabs.social.twitter.post-tweet@1")
     }
 
     fn path() -> &'static str {
-        "/twitter/tweet"
+        "/twitter/post-tweet"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {
@@ -121,7 +88,7 @@ impl NexusTool for Tweet {
             request.consumer_key,
             request.consumer_secret_key,
             request.access_token,
-            request.access_token_secret
+            request.access_token_secret,
         );
 
         // Generate OAuth authorization header
@@ -139,7 +106,8 @@ impl NexusTool for Tweet {
             .header("Authorization", auth_header)
             .header("Content-Type", "application/json")
             .body(request_body)
-            .send().await;
+            .send()
+            .await;
 
         // Handle the response and potential errors
         match response {
@@ -151,37 +119,37 @@ impl NexusTool for Tweet {
                             Ok(json) => {
                                 if let Some(data) = json.get("data") {
                                     match serde_json::from_value::<TweetResponse>(data.clone()) {
-                                        Ok(tweet_data) =>
-                                            Output::Ok {
-                                                result: tweet_data,
-                                            },
-                                        Err(e) =>
-                                            Output::Err {
-                                                reason: format!("Failed to parse tweet data: {}", e),
-                                            },
+                                        Ok(tweet_data) => Output::Ok { result: tweet_data },
+                                        Err(e) => Output::Err {
+                                            reason: format!("Failed to parse tweet data: {}", e),
+                                        },
+                                    }
+                                } else if let Some(errors) = json.get("errors") {
+                                    Output::Err {
+                                        reason: format!("Twitter API returned errors: {}", errors),
                                     }
                                 } else {
                                     Output::Err {
-                                        reason: json.to_string(),
+                                        reason: format!(
+                                            "Response missing both data and errors: {}",
+                                            json
+                                        ),
                                     }
                                 }
                             }
-                            Err(e) =>
-                                Output::Err {
-                                    reason: format!("Invalid JSON response: {}", e),
-                                },
+                            Err(e) => Output::Err {
+                                reason: format!("Invalid JSON response: {}", e),
+                            },
                         }
                     }
-                    Err(e) =>
-                        Output::Err {
-                            reason: format!("Failed to read Twitter API response: {}", e),
-                        },
+                    Err(e) => Output::Err {
+                        reason: format!("Failed to read Twitter API response: {}", e),
+                    },
                 }
             }
-            Err(e) =>
-                Output::Err {
-                    reason: format!("Failed to send tweet to Twitter API: {}", e),
-                },
+            Err(e) => Output::Err {
+                reason: format!("Failed to send tweet to Twitter API: {}", e),
+            },
         }
     }
 }
@@ -189,9 +157,9 @@ impl NexusTool for Tweet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::{ mockito::Server, serde_json::json };
+    use ::{mockito::Server, serde_json::json};
 
-    impl Tweet {
+    impl PostTweet {
         fn with_api_base(api_base: &str) -> Self {
             Self {
                 api_base: api_base.to_string(),
@@ -199,9 +167,9 @@ mod tests {
         }
     }
 
-    async fn create_server_and_tool() -> (mockito::ServerGuard, Tweet) {
+    async fn create_server_and_tool() -> (mockito::ServerGuard, PostTweet) {
         let server = Server::new_async().await;
-        let tool = Tweet::with_api_base(&(server.url() + "/tweets"));
+        let tool = PostTweet::with_api_base(&(server.url() + "/tweets"));
         (server, tool)
     }
 
@@ -227,14 +195,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                "data": {
-                    "id": "1234567890",
-                    "edit_history_tweet_ids": ["1234567890"],
-                    "text": "Hello, Twitter!"
-                }
-            }).to_string()
+                    "data": {
+                        "id": "1234567890",
+                        "edit_history_tweet_ids": ["1234567890"],
+                        "text": "Hello, Twitter!"
+                    }
+                })
+                .to_string(),
             )
-            .create_async().await;
+            .create_async()
+            .await;
 
         // Test the tweet request
         let result = tool.invoke(create_test_input()).await;
@@ -265,13 +235,15 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                "errors": [{
-                    "message": "Unauthorized",
-                    "code": 32
-                }]
-            }).to_string()
+                    "errors": [{
+                        "message": "Unauthorized",
+                        "code": 32
+                    }]
+                })
+                .to_string(),
             )
-            .create_async().await;
+            .create_async()
+            .await;
 
         // Test the tweet request
         let result = tool.invoke(create_test_input()).await;
@@ -301,7 +273,8 @@ mod tests {
             .mock("POST", "/tweets")
             .with_status(200)
             .with_body("invalid json")
-            .create_async().await;
+            .create_async()
+            .await;
 
         // Test the tweet request
         let result = tool.invoke(create_test_input()).await;
@@ -310,7 +283,10 @@ mod tests {
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
             Output::Err { reason } => {
-                assert!(reason.contains("Invalid JSON"), "Error should indicate invalid JSON");
+                assert!(
+                    reason.contains("Invalid JSON"),
+                    "Error should indicate invalid JSON"
+                );
             }
         }
 
@@ -329,12 +305,14 @@ mod tests {
             .with_status(200)
             .with_body(
                 json!({
-                "meta": {
-                    "status": "ok"
-                }
-            }).to_string()
+                    "meta": {
+                        "status": "ok"
+                    }
+                })
+                .to_string(),
             )
-            .create_async().await;
+            .create_async()
+            .await;
 
         // Test the tweet request
         let result = tool.invoke(create_test_input()).await;
@@ -344,8 +322,8 @@ mod tests {
             Output::Ok { .. } => panic!("Expected error, got success"),
             Output::Err { reason } => {
                 assert!(
-                    reason.contains("Missing data"),
-                    "Error should indicate missing data field"
+                    reason.contains("{\"meta\":{\"status\":\"ok\"}}"),
+                    "Error should contain the raw JSON response"
                 );
             }
         }

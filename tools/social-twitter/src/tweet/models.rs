@@ -1,6 +1,6 @@
-use serde::{ Deserialize, Serialize };
-use serde_json::Value;
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TweetsResponse {
@@ -18,7 +18,7 @@ pub struct SingleTweetResponse {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Tweet {
-    pub id: String, // mandatory
+    pub id: String,   // mandatory
     pub text: String, // mandatory
     pub author_id: Option<String>,
     pub created_at: Option<String>,
@@ -151,7 +151,7 @@ pub struct Geo {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Coordinates {
-    pub coordinates: Vec<f64>, // [longitude, latitude]
+    pub coordinates: [f64; 2], // [longitude, latitude]
     #[serde(rename = "type")]
     pub coord_type: String,
 }
@@ -194,10 +194,20 @@ pub struct PublicMetrics {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub enum ReferencedTweetType {
+    #[serde(rename = "retweeted")]
+    Retweeted,
+    #[serde(rename = "quoted")]
+    Quoted,
+    #[serde(rename = "replied_to")]
+    RepliedTo,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ReferencedTweet {
     pub id: String,
     #[serde(rename = "type")]
-    pub ref_type: String, // "retweeted", "quoted", "replied_to"
+    pub ref_type: ReferencedTweetType,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

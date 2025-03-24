@@ -1,0 +1,9 @@
+//! # `xyz.taluslabs.social.twitter.*`
+//!
+//! This module contains tools for Twitter operations.
+
+pub(crate) mod get_tweet;
+pub(crate) mod models;
+pub(crate) mod post_tweet;
+
+pub const TWITTER_API_BASE: &str = "https://api.twitter.com/2";
