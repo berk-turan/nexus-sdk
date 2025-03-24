@@ -6,6 +6,7 @@ pub(crate) use {
     nexus_types::{sui::traits::*, *},
     serde::{Deserialize, Serialize},
     std::path::{Path, PathBuf},
+    nexus_types::sui::{ sui_config_dir, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
 };
 
 // Where to find config file.
@@ -140,7 +141,7 @@ pub(crate) fn parse_json_string(json: &str) -> AnyResult<serde_json::Value> {
 // == Used by serde ==
 
 fn default_sui_wallet_path() -> PathBuf {
-    home::home_dir()
-        .expect("Home dir must exist.")
-        .join(".sui/sui_config/client.yaml")
+    let config_dir = sui_config_dir().expect("Unable to determine SUI config directory");
+    let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
+    wallet_conf_path
 }

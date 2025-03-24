@@ -11,7 +11,13 @@ default = ["tool_fqn"]
 tool_fqn = ["regex", "lazy-regex"]
 
 # Sui Types feature gives access to the re-exported Sui types.
-sui_types = ["sui_sdk", "move_core_types", "sui_keys", "shared_crypto"]
+sui_types = [
+    "sui_sdk",
+    "move_core_types",
+    "sui_keys",
+    "shared_crypto",
+    "sui_config",
+]
 
 # Sui idents feature enables the use of the `idents` module and adds sui-sdk
 # and move-core-types as dependencies.
@@ -65,6 +71,12 @@ optional = true
 git = "https://github.com/MystenLabs/sui"
 tag = "testnet-v1.38.1"
 package = "sui-keys"
+optional = true
+
+[dependencies.sui_config]
+git = "https://github.com/MystenLabs/sui"
+tag = "testnet-v1.38.1"
+package = "sui-config"
 optional = true
 
 [dependencies.shared_crypto]

@@ -15,8 +15,11 @@ pub use {
         language_storage::{StructTag as MoveStructTag, TypeTag as MoveTypeTag},
     },
     shared_crypto::intent::Intent,
+    sui_keys::keystore::FileBasedKeystore as FileBasedKeystore,
+    sui_config::{sui_config_dir, Config, PersistedConfig, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
     sui_sdk::{
         error::Error,
+        sui_client_config::{SuiClientConfig, SuiEnv},
         rpc_types::{
             Coin,
             EventFilter,
@@ -63,5 +66,6 @@ pub mod traits {
     pub use {
         sui_keys::keystore::AccountKeystore,
         sui_sdk::rpc_types::SuiTransactionBlockEffectsAPI as TransactionBlockEffectsAPI,
+        sui_config::Config
     };
 }

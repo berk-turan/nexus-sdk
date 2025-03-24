@@ -4232,6 +4232,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "bip32",
  "clap",
  "colored 3.0.0",
  "convert_case 0.7.1",
@@ -4279,6 +4280,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared-crypto",
+ "sui-config",
  "sui-keys",
  "sui-sdk",
 ]

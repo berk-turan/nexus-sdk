@@ -1,20 +1,28 @@
 use {
     crate::{loading, prelude::*},
     reqwest::{header, Client, StatusCode},
+    nexus_types::sui::{FileBasedKeystore, SuiClientConfig, SuiEnv, WalletContext, PersistedConfig, sui_config_dir, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
+    bip32::DerivationPath
 };
 
+use nexus_types::sui::SignatureScheme::ED25519;
 /// Build Sui client for the provided Sui net.
 pub(crate) async fn build_sui_client(net: SuiNet) -> AnyResult<sui::Client, NexusCliError> {
     let building_handle = loading!("Building Sui client...");
+    let client;
 
     let builder = sui::ClientBuilder::default();
 
-    let client = match net {
-        SuiNet::Localnet => builder.build_localnet().await,
-        SuiNet::Devnet => builder.build_devnet().await,
-        SuiNet::Testnet => builder.build_testnet().await,
-        SuiNet::Mainnet => todo!("Mainnet not yet supported"),
-    };
+    if let Ok(sui_rpc_url) = std::env::var("SUI_RPC_URL") {
+        client =  builder.build(sui_rpc_url).await
+    } else {
+        client = match net {
+            SuiNet::Localnet => builder.build_localnet().await,
+            SuiNet::Devnet => builder.build_devnet().await,
+            SuiNet::Testnet => builder.build_testnet().await,
+            SuiNet::Mainnet => todo!("Mainnet not yet supported"),
+        };
+    }
 
     match client {
         Ok(client) => {
@@ -421,5 +429,84 @@ pub(crate) async fn fetch_gas_coin(
             Ok(coin)
         }
         None => Ok(coins.remove(0)),
+    }
+}
+
+pub fn retrieve_wallet_with_mnemonic(
+    config: SuiConf,
+    mnemonic: &str,
+    key_scheme: sui::SignatureScheme,
+    derivation_path: Option<DerivationPath>,
+    alias: Option<String>,
+) -> Result<sui::WalletContext, anyhow::Error> {
+    // Determine configuration paths.
+    let config_dir = sui_config_dir()?;
+    let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
+    let keystore_path = config_dir.join(SUI_KEYSTORE_FILENAME);
+
+    // Ensure the keystore exists.
+    if !keystore_path.exists() {
+        let keystore = FileBasedKeystore::new(&keystore_path)?;
+        keystore.save()?;
+    }
+
+    // If the wallet config file does not exist, create it.
+    if !wallet_conf_path.exists() {
+        let keystore = FileBasedKeystore::new(&keystore_path)?;
+        let mut client_config = SuiClientConfig::new(keystore.into());
+        if let Some(env) = get_sui_env(config.net) {
+            client_config.add_env(env);
+        }
+        if client_config.active_env.is_none() {
+            client_config.active_env = client_config.envs.first().map(|env| env.alias.clone());
+        }
+
+        client_config.save(&wallet_conf_path)?;
+        println!("Client config file is stored in {:?}.", &wallet_conf_path);
+    }
+
+    // Import the mnemonic into the keystore.
+    let mut keystore = FileBasedKeystore::new(&keystore_path)?;
+    keystore.import_from_mnemonic(mnemonic, key_scheme, derivation_path, alias)?;
+
+    // Read the existing client configuration.
+    let mut client_config: SuiClientConfig = PersistedConfig::read(&wallet_conf_path)?;
+
+    // Set the default active address.
+    let default_active_address = if let Some(address) = keystore.addresses().first() {
+        *address
+    } else {
+        keystore.generate_and_add_new_key(ED25519, None, None, None)?.0
+    };
+
+    // Optionally ensure there is more than one address.
+    if keystore.addresses().len() < 2 {
+        keystore.generate_and_add_new_key(ED25519, None, None, None)?;
+    }
+
+    client_config.active_address = Some(default_active_address);
+    client_config.save(&wallet_conf_path)?;
+
+    // Create and return the wallet context.
+    let wallet = WalletContext::new(&wallet_conf_path, Some(std::time::Duration::from_secs(60)), None)?;
+    Ok(wallet)
+}
+
+fn get_sui_env(net: SuiNet) -> Option<SuiEnv> {
+        if let Ok(sui_rpc_url) = std::env::var("SUI_RPC_URL") {
+        Some(SuiEnv {
+            alias: "localnet".to_string(),
+            rpc: sui_rpc_url,
+            ws: None,
+            basic_auth: None,
+        })}
+     else {
+        let client = match net {
+            SuiNet::Localnet => SuiEnv::localnet(),
+            SuiNet::Devnet => SuiEnv::devnet(),
+            SuiNet::Testnet => SuiEnv::testnet(),
+            SuiNet::Mainnet => todo!("Mainnet not yet supported"),
+        };
+        Some(client)
     }
 }
