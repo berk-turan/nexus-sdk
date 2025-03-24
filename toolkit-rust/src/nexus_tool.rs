@@ -1,6 +1,8 @@
+//! See <https://github.com/Talus-Network/gitbook-docs/nexus-sdk/toolkit-rust.md>
+
 use {
     anyhow::Result as AnyResult,
-    nexus_types::ToolFqn,
+    nexus_sdk::ToolFqn,
     reqwest::Url,
     schemars::JsonSchema,
     serde::{de::DeserializeOwned, Serialize},
