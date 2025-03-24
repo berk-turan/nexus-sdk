@@ -1,11 +1,12 @@
 use {
-    nexus_types::*,
+    nexus_sdk::*,
     nexus_toolkit::*,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
 };
 
 #[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct Input {
     // Add your Tool's input ports
 }
