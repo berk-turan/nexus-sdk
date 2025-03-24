@@ -12,19 +12,18 @@
 //!
 //! ## Output
 //!
-//! ### Success case
+//! - `ok` - The tweet was posted successfully.
+//! - `err` - The tweet was not posted due to an error.
 //!
-//! ```json
-//! {
-//!   "ok": {
-//!     "result": {
-//!       "id": "1234567890",
-//!       "edit_history_tweet_ids": ["1234567890"],
-//!       "text": "Hello, Twitter!"
-//!     }
-//!   }
-//! }
-//! ```
+//! ## Output Ports
+//!
+//! ### `ok`
+//!
+//! - `result`: [`TweetResponse`] - The tweet data.
+//!
+//! ### `err`
+//!
+//! - `reason`: [`String`] - The reason the tweet was not posted.
 //!
 //! ### Error case
 //!
@@ -108,6 +107,10 @@ impl NexusTool for Tweet {
         fqn!("xyz.taluslabs.social.twitter.tweet@1")
     }
 
+    fn path() -> &'static str {
+        "/twitter/tweet"
+    }
+
     async fn health(&self) -> AnyResult<StatusCode> {
         Ok(StatusCode::OK)
     }
@@ -127,6 +130,7 @@ impl NexusTool for Tweet {
         // Initialize HTTP client
         let client = Client::new();
 
+        //@todo!("Add support for media");
         let request_body = format!(r#"{{"text": "{}"}}"#, request.content);
 
         // Attempt to send tweet and handle response

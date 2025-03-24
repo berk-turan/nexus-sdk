@@ -9,5 +9,5 @@ mod twitter;
 /// This function bootstraps the tool and starts the server.
 #[tokio::main]
 async fn main() {
-    bootstrap!(twitter::tweet::Tweet)
+    bootstrap!([twitter::tweet::Tweet, twitter::single_tweet::SingleTweet]);
 }
