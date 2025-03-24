@@ -11,6 +11,9 @@ on:
 
 jobs:
   sync-docs:
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     name: Sync docs to gitbook-docs repo
     
@@ -28,11 +31,6 @@ jobs:
           repository: Talus-Network/gitbook-docs
           path: gitbook-docs
           token: ${{ secrets.GH_ACCESS_TOKEN }}  # Access Token with repo access
-          
-      - name: Configure Git signing
-        run: |
-            git config --global commit.gpgsign true
-            git config --global user.signingkey 41898282+github-actions[bot]  
 
       - name: Sync documentation
         run: |
@@ -63,7 +61,6 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
-            token: ${{ secrets.GH_ACCESS_TOKEN }}  # Access Token with repo access
             path: gitbook-docs
             commit-message: "Update docs from ${{ env.REPO_NAME }} (commit: ${{ github.sha }})"
             sign-commits: true
