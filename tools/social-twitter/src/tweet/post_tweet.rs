@@ -126,6 +126,23 @@ impl NexusTool for PostTweet {
                                     Output::Err {
                                         reason: format!("Twitter API returned errors: {}", errors),
                                     }
+                                } else if let Some(detail) = json.get("detail") {
+                                    // Handle the specific error pattern with detail/status/title fields
+                                    let status =
+                                        json.get("status").and_then(|s| s.as_u64()).unwrap_or(0);
+                                    let title = json
+                                        .get("title")
+                                        .and_then(|t| t.as_str())
+                                        .unwrap_or("Unknown");
+
+                                    Output::Err {
+                                        reason: format!(
+                                            "Twitter API error: {} (Status: {}, Title: {})",
+                                            detail.as_str().unwrap_or("Unknown error"),
+                                            status,
+                                            title
+                                        ),
+                                    }
                                 } else {
                                     Output::Err {
                                         reason: format!(
@@ -324,6 +341,49 @@ mod tests {
                 assert!(
                     reason.contains("{\"meta\":{\"status\":\"ok\"}}"),
                     "Error should contain the raw JSON response"
+                );
+            }
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_duplicate_content_error() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock for duplicate content error response (403 Forbidden)
+        let mock = server
+            .mock("POST", "/tweets")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "detail": "You are not allowed to create a Tweet with duplicate content.",
+                    "status": 403,
+                    "title": "Forbidden",
+                    "type": "about:blank"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the tweet request
+        let result = tool.invoke(create_test_input()).await;
+
+        // Verify the error response
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(
+                    reason.contains("Twitter API error:")
+                        && reason.contains("duplicate content")
+                        && reason.contains("Status: 403"),
+                    "Error should include the formatted error details. Got: {}",
+                    reason
                 );
             }
         }
