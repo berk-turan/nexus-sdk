@@ -14,5 +14,6 @@ async fn main() {
         tweet::get_tweet::GetTweet,
         tweet::like_tweet::LikeTweet,
         tweet::mentioned_tweets::MentionedTweets,
+        tweet::get_user_tweets::GetUserTweets,
     ]);
 }

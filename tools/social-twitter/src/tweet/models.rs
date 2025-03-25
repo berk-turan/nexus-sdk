@@ -6,17 +6,25 @@ use {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TweetsResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Vec<Tweet>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ApiError>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub includes: Option<Includes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SingleTweetResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Tweet>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ApiError>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub includes: Option<Includes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
 }
 
@@ -24,36 +32,63 @@ pub struct SingleTweetResponse {
 pub struct Tweet {
     pub id: String,   // mandatory
     pub text: String, // mandatory
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub author_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Attachments>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub community_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context_annotations: Option<Vec<ContextAnnotation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_controls: Option<EditControls>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_history_tweet_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub entities: Option<Entities>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo: Option<Geo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub in_reply_to_user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub non_public_metrics: Option<NonPublicMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub note_tweet: Option<NoteTweet>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub organic_metrics: Option<OrganicMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub possibly_sensitive: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub promoted_metrics: Option<PromotedMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub public_metrics: Option<PublicMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub referenced_tweets: Option<Vec<ReferencedTweet>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_settings: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Scopes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub withheld: Option<Withheld>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Attachments {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub media_keys: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub poll_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub media_source_tweet_id: Option<Vec<String>>,
 }
 
@@ -86,10 +121,15 @@ pub struct EditControls {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Entities {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<Annotation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cashtags: Option<Vec<Cashtag>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hashtags: Option<Vec<Hashtag>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mentions: Option<Vec<Mention>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub urls: Option<Vec<UrlEntity>>,
 }
 
@@ -97,7 +137,9 @@ pub struct Entities {
 pub struct Annotation {
     pub end: i32,
     pub start: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub normalized_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub probability: Option<f64>,
     #[serde(rename = "type")]
     pub annotation_type: String,
@@ -130,13 +172,21 @@ pub struct UrlEntity {
     pub end: i32,
     pub start: i32,
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expanded_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<UrlImage>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub media_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unwound_url: Option<String>,
 }
 
@@ -149,7 +199,9 @@ pub struct UrlImage {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Geo {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub coordinates: Option<Coordinates>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub place_id: Option<String>,
 }
 
@@ -162,6 +214,7 @@ pub struct Coordinates {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct NonPublicMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub impression_count: Option<i32>,
 }
 
@@ -181,9 +234,13 @@ pub struct OrganicMetrics {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PromotedMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub impression_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub like_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retweet_count: Option<i32>,
 }
 
@@ -194,6 +251,7 @@ pub struct PublicMetrics {
     pub like_count: i32,
     pub reply_count: i32,
     pub retweet_count: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quote_count: Option<i32>,
 }
 
@@ -237,11 +295,17 @@ pub struct ApiError {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Includes {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub media: Option<Vec<Media>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub places: Option<Vec<Place>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub polls: Option<Vec<Poll>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub topics: Option<Vec<Topic>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tweets: Option<Vec<Tweet>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub users: Option<Vec<User>>,
 }
 
@@ -249,8 +313,10 @@ pub struct Includes {
 pub struct Media {
     #[serde(rename = "type")]
     pub media_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<i32>,
     pub media_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<i32>,
 }
 
@@ -258,9 +324,13 @@ pub struct Media {
 pub struct Place {
     pub full_name: String,
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contained_within: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub country_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geo: Option<GeoPlace>,
 }
 
@@ -270,6 +340,7 @@ pub struct GeoPlace {
     pub properties: Value,
     #[serde(rename = "type")]
     pub geo_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geometry: Option<Geometry>,
 }
 
@@ -305,33 +376,49 @@ pub struct Topic {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct User {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     pub id: String,
     pub name: String,
     pub protected: bool,
     pub username: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub entities: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub public_metrics: Option<PublicUserMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verified: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PublicUserMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub followers_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub following_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tweet_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub listed_count: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct Meta {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub newest_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub oldest_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result_count: Option<i32>,
 }
 
@@ -475,4 +562,12 @@ pub enum PlaceField {
     Id,
     Name,
     PlaceType,
+}
+
+/// Available Exclude fields
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExcludeField {
+    Replies,
+    Retweets,
 }
