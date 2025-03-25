@@ -248,10 +248,7 @@ impl NexusTool for MentionedTweets {
 
                 if !status.is_success() {
                     return Output::Err {
-                        reason: format!(
-                            "Twitter API returned error status: {}. Response: {}",
-                            status, response_text
-                        ),
+                        reason: format!("Twitter API returned error status: {}", status),
                     };
                 }
 
@@ -267,12 +264,8 @@ impl NexusTool for MentionedTweets {
                     },
                     Err(e) => {
                         // Log the response text for debugging
-                        eprintln!("Failed to parse response: {}", response_text);
                         Output::Err {
-                            reason: format!(
-                                "Failed to parse Twitter API response: {}. Response: {}",
-                                e, response_text
-                            ),
+                            reason: format!("Failed to parse Twitter API response: {}", e),
                         }
                     }
                 }
