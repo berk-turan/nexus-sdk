@@ -58,7 +58,7 @@ jobs:
             exit 0
           fi
 
-      - uses: crazy-max/ghaction-import-gpg@v5
+      - uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.DEVOPS_GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.DEVOPS_GPG_PASSPHRASE }}
@@ -71,9 +71,9 @@ jobs:
           token: ${{secrets.GH_ACCESS_TOKEN}}
           path: gitbook-docs
           commit-message: "Update docs from ${{ env.REPO_NAME }} (commit: ${{ github.sha }})"
-          committer: "devops@taluslabs.xyz <devops@taluslabs.xyz>"
-          author: "devops@taluslabs.xyz <devops@taluslabs.xyz>"
-          sign-commits: true
+          committer: "devops@taluslabs.xyz"
+          author: "devops@taluslabs.xyz"
+          #sign-commits: true
           branch: docs-update-${{ env.REPO_NAME }}-${{ github.sha }}
           delete-branch: true
           title: "Docs update from ${{ env.REPO_NAME }}"
