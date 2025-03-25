@@ -1,12 +1,15 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use {
+    schemars::JsonSchema,
+    serde::{Deserialize, Serialize},
+    serde_json::Value,
+};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct TweetsResponse {
     pub data: Option<Vec<Tweet>>,
     pub errors: Option<Vec<ApiError>>,
     pub includes: Option<Includes>,
+    pub meta: Option<Meta>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -14,6 +17,7 @@ pub struct SingleTweetResponse {
     pub data: Option<Tweet>,
     pub errors: Option<Vec<ApiError>>,
     pub includes: Option<Includes>,
+    pub meta: Option<Meta>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -320,4 +324,155 @@ pub struct PublicUserMetrics {
     pub following_count: Option<i32>,
     pub tweet_count: Option<i32>,
     pub listed_count: Option<i32>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct Meta {
+    pub newest_id: Option<String>,
+    pub next_token: Option<String>,
+    pub oldest_id: Option<String>,
+    pub previous_token: Option<String>,
+    pub result_count: Option<i32>,
+}
+
+/// Available Tweet fields that can be requested
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TweetField {
+    Article,
+    Attachments,
+    AuthorId,
+    CardUri,
+    CommunityId,
+    ContextAnnotations,
+    ConversationId,
+    CreatedAt,
+    DisplayTextRange,
+    EditControls,
+    EditHistoryTweetIds,
+    Entities,
+    Geo,
+    Id,
+    InReplyToUserId,
+    Lang,
+    MediaMetadata,
+    NonPublicMetrics,
+    NoteTweet,
+    OrganicMetrics,
+    PossiblySensitive,
+    PromotedMetrics,
+    PublicMetrics,
+    ReferencedTweets,
+    ReplySettings,
+    Scopes,
+    Source,
+    Text,
+    Withheld,
+}
+
+/// Available expansion fields
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpansionField {
+    #[serde(rename = "article.cover_media")]
+    ArticleCoverMedia,
+    #[serde(rename = "article.media_entities")]
+    ArticleMediaEntities,
+    #[serde(rename = "attachments.media_keys")]
+    AttachmentsMediaKeys,
+    #[serde(rename = "attachments.media_source_tweet")]
+    AttachmentsMediaSourceTweet,
+    #[serde(rename = "attachments.poll_ids")]
+    AttachmentsPollIds,
+    AuthorId,
+    EditHistoryTweetIds,
+    #[serde(rename = "entities.mentions.username")]
+    EntitiesMentionsUsername,
+    #[serde(rename = "geo.place_id")]
+    GeoPlaceId,
+    InReplyToUserId,
+    #[serde(rename = "entities.note.mentions.username")]
+    EntitiesNoteMentionsUsername,
+    #[serde(rename = "referenced_tweets.id")]
+    ReferencedTweetsId,
+    #[serde(rename = "referenced_tweets.id.attachments.media_keys")]
+    ReferencedTweetsIdAttachmentsMediaKeys,
+    #[serde(rename = "referenced_tweets.id.author_id")]
+    ReferencedTweetsIdAuthorId,
+}
+
+/// Available Media fields
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaField {
+    AltText,
+    DurationMs,
+    Height,
+    MediaKey,
+    NonPublicMetrics,
+    OrganicMetrics,
+    PreviewImageUrl,
+    PromotedMetrics,
+    PublicMetrics,
+    #[serde(rename = "type")]
+    Type,
+    Url,
+    Variants,
+    Width,
+}
+
+/// Available Poll fields
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PollField {
+    DurationMinutes,
+    EndDatetime,
+    Id,
+    Options,
+    VotingStatus,
+}
+
+/// Available User fields
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UserField {
+    Affiliation,
+    ConnectionStatus,
+    CreatedAt,
+    Description,
+    Entities,
+    Id,
+    IsIdentityVerified,
+    Location,
+    MostRecentTweetId,
+    Name,
+    Parody,
+    PinnedTweetId,
+    ProfileBannerUrl,
+    ProfileImageUrl,
+    Protected,
+    PublicMetrics,
+    ReceivesYourDm,
+    Subscription,
+    SubscriptionType,
+    Url,
+    Username,
+    Verified,
+    VerifiedFollowersCount,
+    VerifiedType,
+    Withheld,
+}
+
+/// Available Place fields
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaceField {
+    ContainedWithin,
+    Country,
+    CountryCode,
+    FullName,
+    Geo,
+    Id,
+    Name,
+    PlaceType,
 }
