@@ -1,11 +1,11 @@
 use {
     crate::{loading, prelude::*},
     reqwest::{header, Client, StatusCode},
-    nexus_types::sui::{FileBasedKeystore, SuiClientConfig, SuiEnv, WalletContext, PersistedConfig, sui_config_dir, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
+    nexus_sdk::sui::{FileBasedKeystore, SuiClientConfig, SuiEnv, WalletContext, PersistedConfig, sui_config_dir, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
     bip32::DerivationPath
 };
 
-use nexus_types::sui::SignatureScheme::ED25519;
+use nexus_sdk::sui::SignatureScheme::ED25519;
 /// Build Sui client for the provided Sui net.
 pub(crate) async fn build_sui_client(net: SuiNet) -> AnyResult<sui::Client, NexusCliError> {
     let building_handle = loading!("Building Sui client...");

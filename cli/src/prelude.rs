@@ -3,10 +3,10 @@ pub(crate) use {
     anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult},
     clap::{builder::ValueParser, Args, Parser, Subcommand, ValueEnum},
     colored::Colorize,
-    nexus_types::{sui::traits::*, *},
+    nexus_sdk::{sui::traits::*, *},
     serde::{Deserialize, Serialize},
     std::path::{Path, PathBuf},
-    nexus_types::sui::{ sui_config_dir, SUI_CLIENT_CONFIG},
+    nexus_sdk::sui::{ sui_config_dir, SUI_CLIENT_CONFIG},
 };
 
 // Where to find config file.

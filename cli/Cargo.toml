@@ -1,7 +1,15 @@
 [package]
 name = "nexus-cli"
-version = "0.1.0"
-edition = "2021"
+description = "Nexus CLI provides an interface to interact with the Nexus Workflow."
+
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -20,14 +28,13 @@ toml.workspace = true
 bip32.workspace = true
 
 # === Nexus deps ===
-[dependencies.nexus-types]
+[dependencies.nexus-sdk]
 workspace = true
 features = ["full"]
 
 [dev-dependencies]
 assert_matches = "1.5.0"
 schemars.workspace = true
-serial_test = "3.2.0"
 warp = "0.3.7"
 
 nexus-toolkit.workspace = true

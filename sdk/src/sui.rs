@@ -15,7 +15,7 @@ pub use {
         language_storage::{StructTag as MoveStructTag, TypeTag as MoveTypeTag},
     },
     shared_crypto::intent::Intent,
-    sui_keys::keystore::FileBasedKeystore as FileBasedKeystore,
+    sui_keys::{key_derive::generate_new_key, keystore::Keystore, keystore::FileBasedKeystore as FileBasedKeystore},
     sui_config::{sui_config_dir, Config, PersistedConfig, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
     sui_sdk::{
         error::Error,
@@ -27,6 +27,7 @@ pub use {
             ObjectChange,
             SuiEvent as Event,
             SuiExecutionStatus as ExecutionStatus,
+            SuiObjectData as ObjectData,
             SuiObjectDataFilter as ObjectDataFilter,
             SuiObjectDataOptions as ObjectDataOptions,
             SuiObjectRef as ObjectRef,
@@ -40,7 +41,7 @@ pub use {
         types::{
             base_types::{ObjectID, SequenceNumber, SuiAddress as Address},
             crypto::SignatureScheme,
-            digests::TransactionDigest,
+            digests::{ObjectDigest, TransactionDigest},
             dynamic_field::{DynamicFieldInfo, DynamicFieldName},
             event::EventID,
             gas_coin::MIST_PER_SUI,

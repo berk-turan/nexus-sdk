@@ -17,8 +17,8 @@ use {
         },
         Client,
     },
+    nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
-    nexus_types::*,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
     strum_macros::EnumString,
@@ -421,6 +421,10 @@ mod tests {
         mockito::{Matcher, Server},
         schemars::schema_for,
         serde_json::json,
+        reqwest::Client, 
+        std::time::Duration,
+        tokio::time::sleep,
+        warp::http::StatusCode as WarpStatusCode,
     };
 
     impl OpenaiChatCompletion {
@@ -432,6 +436,41 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_openai_chat_completion_health() {
+        // Spawn the server running OpenaiChatCompletion.
+        // This will start the server on the default address (0.0.0.0:8080).
+        tokio::spawn(async {
+            bootstrap!(OpenaiChatCompletion);
+        });
+
+        // Wait briefly to allow the server to start.
+        sleep(Duration::from_secs(1)).await;
+
+        let client = Client::new();
+        let response = client
+            .get("http://localhost:8080/health")
+            .send()
+            .await
+            .expect("Failed to send GET request to health endpoint");
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "No body".to_string());
+        println!("Health endpoint response status: {}", status);
+        println!("Health endpoint response body: {}", body);
+
+        // Compare the numeric status code (200 for OK)
+        assert_eq!(
+            status.as_u16(),
+            WarpStatusCode::OK.as_u16(),
+            "Expected health check to return OK status"
+        );
+    }
+
 
     #[test]
     fn test_message_kind_deserialization_case_insensitive() {

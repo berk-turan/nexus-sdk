@@ -36,7 +36,7 @@ struct PageInfo {
     /// The URL of the page.
     url: String,
     /// The time zone of the page.
-    time_zone: String,
+    time_zone: Option<String>,
     /// The last time the page was updated.
     updated_at: DateTime<FixedOffset>, // Parsed with original offset
 }
@@ -63,12 +63,18 @@ struct StatusInfo {
 /// *   `Err(e)` if there is an error sending the request or parsing the response.
 pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     let client = Client::new();
+    let req_resp = client.get(HEALTH_URL).send().await?;
 
-    // Send GET request and parse JSON response
-    let response: ApiResponse = client.get(HEALTH_URL).send().await?.json().await?;
-    if response.status.indicator != HEALTH_OK {
+    let raw_response = req_resp.text().await?;
+    println!("Raw API response: {}", raw_response);
+
+    let response: ApiResponse = serde_json::from_str(&raw_response)
+        .map_err(|e| anyhow::anyhow!("Failed to deserialize ApiResponse: {}. Raw response: {}", e, raw_response))?;
+    
+    if response.status.indicator != HEALTH_OK && response.status.indicator != "minor" {
         return Ok(StatusCode::SERVICE_UNAVAILABLE);
     }
+
 
     Ok(StatusCode::OK)
 }
