@@ -152,51 +152,51 @@ The bearer token for the user's Twitter account.
 
 The ID of the User to lookup for mentions.
 
-**`since_id`: [`String`] (optional)**
+_opt_ **`since_id`: [`Option<String>`]** _default_: [`None`]
 
 The minimum Post ID to be included in the result set. Takes precedence over start_time if both are specified.
 
-**`until_id`: [`String`] (optional)**
+_opt_ **`until_id`: [`Option<String>`]** _default_: [`None`]
 
 The maximum Post ID to be included in the result set. Takes precedence over end_time if both are specified.
 
-**`max_results`: [`Integer`] (optional)**
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
 
 The maximum number of results to retrieve (range: 5-100).
 
-**`pagination_token`: [`String`] (optional)**
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
 
 Used to get the next 'page' of results.
 
-**`start_time`: [`String`] (optional)**
+_opt_ **`start_time`: [`Option<String>`]** _default_: [`None`]
 
 The earliest UTC timestamp (YYYY-MM-DDTHH:mm:ssZ) from which the Posts will be provided.
 
-**`end_time`: [`String`] (optional)**
+_opt_ **`end_time`: [`Option<String>`]** _default_: [`None`]
 
 The latest UTC timestamp (YYYY-MM-DDTHH:mm:ssZ) to which the Posts will be provided.
 
-**`tweet_fields`: [`Array[TweetField]`] (optional)**
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
 
 A list of Tweet fields to display.
 
-**`expansions`: [`Array[ExpansionField]`] (optional)**
+_opt_ **`expansions`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
 
 A list of fields to expand.
 
-**`media_fields`: [`Array[MediaField]`] (optional)**
+_opt_ **`media_fields`: [`Option<Vec<MediaField>>`]** _default_: [`None`]
 
 A list of Media fields to display.
 
-**`poll_fields`: [`Array[PollField]`] (optional)**
+_opt_ **`poll_fields`: [`Option<Vec<PollField>>`]** _default_: [`None`]
 
 A list of Poll fields to display.
 
-**`user_fields`: [`Array[UserField]`] (optional)**
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
 
 A list of User fields to display.
 
-**`place_fields`: [`Array[PlaceField]`] (optional)**
+_opt_ **`place_fields`: [`Option<Vec<PlaceField>>`]** _default_: [`None`]
 
 A list of Place fields to display.
 
