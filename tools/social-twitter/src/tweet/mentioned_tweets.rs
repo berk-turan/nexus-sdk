@@ -236,20 +236,48 @@ impl NexusTool for MentionedTweets {
 
         match req_builder.send().await {
             Ok(response) => {
-                if !response.status().is_success() {
-                    return Output::Err {
-                        reason: format!("Twitter API returned error status: {}", response.status()),
-                    };
-                }
+                let status = response.status();
 
-                // First try to parse as standard Twitter error format
                 match response.text().await {
-                    Ok(text) => match serde_json::from_str::<TweetsResponse>(&text) {
-                        Ok(response) => Output::Ok { result: response },
-                        Err(e) => Output::Err {
-                            reason: format!("Failed to parse Twitter API response: {}", e),
-                        },
-                    },
+                    Ok(text) => {
+                        // First check if response contains error
+                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if let Some(errors) = error.get("errors") {
+                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
+                                {
+                                    let message = first_error
+                                        .get("message")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("Unknown error");
+                                    let code = first_error
+                                        .get("code")
+                                        .and_then(|c| c.as_u64())
+                                        .unwrap_or(0);
+                                    return Output::Err {
+                                        reason: format!(
+                                            "Twitter API error: {} (code: {})",
+                                            message, code
+                                        ),
+                                    };
+                                }
+                            }
+                        }
+
+                        // If no explicit error was found but status is not success
+                        if !status.is_success() {
+                            return Output::Err {
+                                reason: format!("Twitter API returned error status: {}", status),
+                            };
+                        }
+
+                        // If no error and status is success, try to parse as successful response
+                        match serde_json::from_str::<TweetsResponse>(&text) {
+                            Ok(response) => Output::Ok { result: response },
+                            Err(e) => Output::Err {
+                                reason: format!("Failed to parse Twitter API response: {}", e),
+                            },
+                        }
+                    }
                     Err(e) => Output::Err {
                         reason: format!("Failed to read Twitter API response: {}", e),
                     },
@@ -381,7 +409,41 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status"));
+                assert!(reason.contains("Twitter API error: Unauthorized (code: 32)"), "Expected error message to contain 'Twitter API error: Unauthorized (code: 32)', got: {}", reason);
+            }
+            Output::Ok { .. } => panic!("Expected error, got success"),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_error() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/users/2244994945/mentions")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(429)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "errors": [{
+                        "message": "Rate limit exceeded",
+                        "code": 88
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Twitter API error: Rate limit exceeded (code: 88)"), "Expected error message to contain 'Twitter API error: Rate limit exceeded (code: 88)', got: {}", reason);
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -407,7 +469,8 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Failed to parse Twitter API response"));
+                assert!(reason.contains("Failed to parse Twitter API response"), 
+                    "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }

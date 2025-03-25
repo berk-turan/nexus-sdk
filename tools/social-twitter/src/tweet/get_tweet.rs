@@ -84,14 +84,40 @@ impl NexusTool for GetTweet {
 
                 // Try to parse response as JSON
                 match response.text().await {
-                    Ok(text) => match serde_json::from_str::<SingleTweetResponse>(&text) {
-                        Ok(tweets_response) => Output::Ok {
-                            result: tweets_response,
-                        },
-                        Err(e) => Output::Err {
-                            reason: format!("Failed to parse Twitter API response: {}", e),
-                        },
-                    },
+                    Ok(text) => {
+                        // First check if response contains error
+                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if let Some(errors) = error.get("errors") {
+                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
+                                {
+                                    let message = first_error
+                                        .get("message")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("Unknown error");
+                                    let code = first_error
+                                        .get("code")
+                                        .and_then(|c| c.as_u64())
+                                        .unwrap_or(0);
+                                    return Output::Err {
+                                        reason: format!(
+                                            "Twitter API error: {} (code: {})",
+                                            message, code
+                                        ),
+                                    };
+                                }
+                            }
+                        }
+
+                        // If no error, try to parse as successful response
+                        match serde_json::from_str::<SingleTweetResponse>(&text) {
+                            Ok(tweets_response) => Output::Ok {
+                                result: tweets_response,
+                            },
+                            Err(e) => Output::Err {
+                                reason: format!("Failed to parse Twitter API response: {}", e),
+                            },
+                        }
+                    }
                     Err(e) => Output::Err {
                         reason: format!("Failed to read Twitter API response: {}", e),
                     },
