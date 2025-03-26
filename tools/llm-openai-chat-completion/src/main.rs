@@ -421,11 +421,12 @@ mod tests {
         mockito::{Matcher, Server},
         portpicker::pick_unused_port,
         reqwest::Client,
+        rstest::rstest,
         schemars::schema_for,
         serde_json::json,
+        serial_test::serial,
         std::time::Duration,
         tokio::time::sleep,
-        warp::http::StatusCode as WarpStatusCode,
     };
 
     impl OpenaiChatCompletion {
@@ -437,38 +438,53 @@ mod tests {
             }
         }
     }
-
+    #[rstest(
+        indicator, expected_status,
+        case("none", 200),    // Healthy
+        case("minor", 200),   // Degraded but acceptable
+        case("major", 503)      // Major outage
+    )]
     #[tokio::test]
-    async fn test_openai_chat_completion_health_success() {
+    #[serial]
+    async fn test_openai_chat_completion_health_success(indicator: &str, expected_status: u16) {
+        // Start a mockito server.
         let mut server = Server::new_async().await;
-
         let free_port = pick_unused_port().expect("No free port available");
         let addr = ([127, 0, 0, 1], free_port);
 
-        let _mock = server
-            .mock("GET", "/api/v2/status.json")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                r#"{
-                "page": {
+        // Build a response with the test case indicator.
+        let response_body = format!(
+            r#"{{
+                "page": {{
                     "id": "01JMDK9XYNY6RXSED6SDWW50WY",
                     "name": "OpenAI",
                     "url": "https://status.openai.com/",
                     "time_zone": "UTC",
                     "updated_at": "2025-03-25T20:10:18Z"
-                },
-                "status": {
-                    "indicator": "none",
-                    "description": "All systems operational."
-                }
-            }"#,
-            )
+                }},
+                "status": {{
+                    "indicator": "{}",
+                    "description": "Test description"
+                }}
+            }}"#,
+            indicator
+        );
+
+        // Create a mock for the health endpoint.
+        let _mock = server
+            .mock("GET", "/api/v2/status.json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&response_body)
             .create_async()
             .await;
 
+        // Override the health URL via an environment variable.
+        // (Your health check code should be modified to use this env var.)
         let mock_health_url = format!("{}/api/v2/status.json", server.url());
         std::env::set_var("HEALTHCHECK_URL", mock_health_url);
+
+        // Spawn the server using your bootstrap macro on a free port.
         tokio::spawn(async move {
             bootstrap!(addr, OpenaiChatCompletion);
         });
@@ -476,22 +492,26 @@ mod tests {
         // Wait briefly to allow the server to start.
         sleep(Duration::from_secs(1)).await;
 
+        // Send a GET request to the /health endpoint.
         let client = Client::new();
         let response = client
             .get(&format!("http://127.0.0.1:{}/health", free_port))
             .send()
             .await
             .expect("Failed to send GET request to health endpoint");
-
         let status = response.status();
 
-        println!("Health endpoint response status: {}", status);
+        println!(
+            "Test case indicator: {}, expected status: {}, got: {}",
+            indicator, expected_status, status
+        );
 
-        // Compare the numeric status code (200 for OK)
+        // Compare the numeric status code.
         assert_eq!(
             status.as_u16(),
-            WarpStatusCode::OK.as_u16(),
-            "Expected health check to return OK status"
+            expected_status,
+            "Expected health check to return status code {}",
+            expected_status
         );
 
         _mock.assert_async().await;
