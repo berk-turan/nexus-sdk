@@ -449,3 +449,178 @@ The list creation failed.
   - Invalid JSON response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.get-list@1`
+
+Standard Nexus Tool that retrieves a list from the Twitter API. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-lookup/api-reference/get-lists-id)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`list_id`: [`String`]**
+
+The ID of the list to retrieve.
+
+_opt_ **`list_fields`: [`Option<Vec<ListField>>`]** _default_: [`None`]
+
+A list of List fields to display.
+
+_opt_ **`expansions`: [`Option<Vec<Expansion>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list was retrieved successfully.
+
+- **`ok.result`: [`ListResponse`]** - The list data containing all fields from the Twitter API response.
+
+**`err`**
+
+The list was not retrieved due to an error.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status
+  - List not found
+  - Unauthorized error
+  - Rate limit exceeded
+  - Failed to parse Twitter API response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.get-list-tweets@1`
+
+Standard Nexus Tool that retrieves tweets from a Twitter list. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-tweets/api-reference/get-lists-id-tweets)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`list_id`: [`String`]**
+
+The ID of the list to retrieve tweets from.
+
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
+
+The maximum number of results to retrieve.
+
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
+
+Used to get the next 'page' of results.
+
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
+
+A list of Tweet fields to display.
+
+_opt_ **`expansions`: [`Option<Vec<Expansion>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`media_fields`: [`Option<Vec<MediaField>>`]** _default_: [`None`]
+
+A list of Media fields to display.
+
+_opt_ **`poll_fields`: [`Option<Vec<PollField>>`]** _default_: [`None`]
+
+A list of Poll fields to display.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+_opt_ **`place_fields`: [`Option<Vec<PlaceField>>`]** _default_: [`None`]
+
+A list of Place fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list tweets were retrieved successfully.
+
+- **`ok.result`: [`ListTweetsResponse`]** - The response containing tweets from the list.
+
+**`err`**
+
+The list tweets retrieval failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status
+  - List not found
+  - Unauthorized error
+  - Rate limit exceeded
+  - Failed to parse Twitter API response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.get-list-members@1`
+
+Standard Nexus Tool that retrieves members of a Twitter list. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-members/api-reference/get-lists-id-members)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`list_id`: [`String`]**
+
+The ID of the list to retrieve members from.
+
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
+
+The maximum number of results to retrieve.
+
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
+
+Used to get the next 'page' of results.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+_opt_ **`expansions`: [`Option<Vec<Expansion>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
+
+A list of Tweet fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list members were retrieved successfully.
+
+- **`ok.result`: [`UsersResponse`]** - The response containing user data for the list members.
+
+**`err`**
+
+The list members retrieval failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status
+  - List not found
+  - Unauthorized error
+  - Rate limit exceeded
+  - Failed to parse Twitter API response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
