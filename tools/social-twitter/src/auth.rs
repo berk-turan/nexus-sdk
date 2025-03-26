@@ -1,5 +1,5 @@
 use {
-    oauth1_request::{post, put, signature_method::HmacSha1, Token},
+    oauth1_request::{delete, post, put, signature_method::HmacSha1, Token},
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
 };
@@ -51,9 +51,21 @@ impl TwitterAuth {
         post(url, &(), &token, HmacSha1::new())
     }
 
+    /// Generate an OAuth authorization header for a POST request
+    pub fn generate_auth_header_for_post(&self, url: &str) -> String {
+        let token = self.to_token();
+        post(url, &(), &token, HmacSha1::new())
+    }
+
     /// Generate an OAuth authorization header for a PUT request
     pub fn generate_auth_header_for_put(&self, url: &str) -> String {
         let token = self.to_token();
         put(url, &(), &token, HmacSha1::new())
+    }
+
+    /// Generate an OAuth authorization header for a DELETE request
+    pub fn generate_auth_header_for_delete(&self, url: &str) -> String {
+        let token = self.to_token();
+        delete(url, &(), &token, HmacSha1::new())
     }
 }

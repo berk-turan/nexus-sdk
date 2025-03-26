@@ -23,6 +23,8 @@ async fn main() {
         list::get_list_tweets::GetListTweets,
         list::get_list_members::GetListMembers,
         list::update_list::UpdateList,
+        list::add_member::AddMember,
+        list::remove_member::RemoveMember,
         user::get_user_by_id::GetUserById,
         user::get_user_by_username::GetUserByUsername,
     ]);

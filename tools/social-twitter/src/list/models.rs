@@ -28,6 +28,20 @@ pub struct ListResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct ListMemberResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<ListMemberData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Vec<ApiError>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ListMemberData {
+    /// Whether the user is a member of the list
+    is_member: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ListData {
     pub id: String,
     pub name: String,
