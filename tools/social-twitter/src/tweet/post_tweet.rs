@@ -107,64 +107,74 @@ impl NexusTool for PostTweet {
             .send()
             .await;
 
-        // Handle the response and potential errors
         match response {
-            Ok(result) => {
-                match result.text().await {
-                    Ok(text) => {
-                        // Parse the JSON response
-                        match serde_json::from_str::<Value>(&text) {
-                            Ok(json) => {
-                                if let Some(data) = json.get("data") {
-                                    match serde_json::from_value::<TweetResponse>(data.clone()) {
-                                        Ok(tweet_data) => Output::Ok { result: tweet_data },
-                                        Err(e) => Output::Err {
-                                            reason: format!("Failed to parse tweet data: {}", e),
-                                        },
-                                    }
-                                } else if let Some(errors) = json.get("errors") {
-                                    Output::Err {
-                                        reason: format!("Twitter API returned errors: {}", errors),
-                                    }
-                                } else if let Some(detail) = json.get("detail") {
-                                    // Handle the specific error pattern with detail/status/title fields
-                                    let status =
-                                        json.get("status").and_then(|s| s.as_u64()).unwrap_or(0);
-                                    let title = json
-                                        .get("title")
-                                        .and_then(|t| t.as_str())
-                                        .unwrap_or("Unknown");
-
-                                    Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (Status: {}, Title: {})",
-                                            detail.as_str().unwrap_or("Unknown error"),
-                                            status,
-                                            title
-                                        ),
-                                    }
-                                } else {
-                                    Output::Err {
-                                        reason: format!(
-                                            "Response missing both data and errors: {}",
-                                            json
-                                        ),
-                                    }
-                                }
-                            }
-                            Err(e) => Output::Err {
-                                reason: format!("Invalid JSON response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
+            Err(e) => {
+                return Output::Err {
+                    reason: format!("Failed to send tweet to Twitter API: {}", e),
                 }
             }
-            Err(e) => Output::Err {
-                reason: format!("Failed to send tweet to Twitter API: {}", e),
-            },
+            Ok(result) => {
+                let text = match result.text().await {
+                    Err(e) => {
+                        return Output::Err {
+                            reason: format!("Failed to read Twitter API response: {}", e),
+                        }
+                    }
+                    Ok(text) => text,
+                };
+
+                let json: Value = match serde_json::from_str(&text) {
+                    Err(e) => {
+                        return Output::Err {
+                            reason: format!("Invalid JSON response: {}", e),
+                        }
+                    }
+                    Ok(json) => json,
+                };
+
+                // Check for errors first
+                if let Some(errors) = json.get("errors") {
+                    return Output::Err {
+                        reason: format!("Twitter API returned errors: {}", errors),
+                    };
+                }
+
+                // Check for error details format
+                if let Some(detail) = json.get("detail") {
+                    let status = json.get("status").and_then(|s| s.as_u64()).unwrap_or(0);
+                    let title = json
+                        .get("title")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("Unknown");
+
+                    return Output::Err {
+                        reason: format!(
+                            "Twitter API error: {} (Status: {}, Title: {})",
+                            detail.as_str().unwrap_or("Unknown error"),
+                            status,
+                            title
+                        ),
+                    };
+                }
+
+                // Try to get the data
+                let data = match json.get("data") {
+                    None => {
+                        return Output::Err {
+                            reason: format!("Response missing both data and errors: {}", json),
+                        }
+                    }
+                    Some(data) => data,
+                };
+
+                // Parse the tweet data
+                match serde_json::from_value::<TweetResponse>(data.clone()) {
+                    Err(e) => Output::Err {
+                        reason: format!("Failed to parse tweet data: {}", e),
+                    },
+                    Ok(tweet_data) => Output::Ok { result: tweet_data },
+                }
+            }
         }
     }
 }

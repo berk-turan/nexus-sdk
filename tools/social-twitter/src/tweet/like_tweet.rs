@@ -102,91 +102,102 @@ impl NexusTool for LikeTweet {
 
         // Handle the response and potential errors
         match response {
-            Ok(result) => {
-                match result.text().await {
-                    Ok(text) => {
-                        // Parse the JSON response
-                        match serde_json::from_str::<Value>(&text) {
-                            Ok(json) => {
-                                // Check for success response format
-                                if let Some(data) = json.get("data") {
-                                    if let Some(liked) = data.get("liked") {
-                                        if liked.as_bool().unwrap_or(false) {
-                                            // Successfully liked the tweet
-                                            return Output::Ok {
-                                                tweet_id: request.tweet_id,
-                                                liked: liked.as_bool().unwrap_or(false),
-                                            };
-                                        }
-                                    }
-
-                                    // Data exists but not with expected format
-                                    Output::Err {
-                                        reason: format!(
-                                            "Unexpected response format from Twitter API: {}",
-                                            json
-                                        ),
-                                    }
-                                }
-                                // Check for error response with code/message format
-                                else if let Some(code) = json.get("code") {
-                                    let message = json
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-
-                                    Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (Code: {})",
-                                            message, code
-                                        ),
-                                    }
-                                }
-                                // Check for error response with detail/status/title format
-                                else if let Some(detail) = json.get("detail") {
-                                    let status =
-                                        json.get("status").and_then(|s| s.as_u64()).unwrap_or(0);
-                                    let title = json
-                                        .get("title")
-                                        .and_then(|t| t.as_str())
-                                        .unwrap_or("Unknown");
-
-                                    Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (Status: {}, Title: {})",
-                                            detail.as_str().unwrap_or("Unknown error"),
-                                            status,
-                                            title
-                                        ),
-                                    }
-                                }
-                                // Check for errors array
-                                else if let Some(errors) = json.get("errors") {
-                                    Output::Err {
-                                        reason: format!("Twitter API returned errors: {}", errors),
-                                    }
-                                } else {
-                                    Output::Err {
-                                        reason: format!(
-                                            "Unexpected response format from Twitter API: {}",
-                                            json
-                                        ),
-                                    }
-                                }
-                            }
-                            Err(e) => Output::Err {
-                                reason: format!("Invalid JSON response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
-                }
-            }
             Err(e) => Output::Err {
                 reason: format!("Failed to send like request to Twitter API: {}", e),
             },
+            Ok(result) => {
+                let text = match result.text().await {
+                    Err(e) => {
+                        return Output::Err {
+                            reason: format!("Failed to read Twitter API response: {}", e),
+                        }
+                    }
+                    Ok(text) => text,
+                };
+
+                let json: Value = match serde_json::from_str(&text) {
+                    Err(e) => {
+                        return Output::Err {
+                            reason: format!("Invalid JSON response: {}", e),
+                        }
+                    }
+                    Ok(json) => json,
+                };
+
+                // Check for error response with code/message format
+                if let Some(code) = json.get("code") {
+                    let message = json
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error");
+
+                    return Output::Err {
+                        reason: format!("Twitter API error: {} (Code: {})", message, code),
+                    };
+                }
+
+                // Check for error response with detail/status/title format
+                if let Some(detail) = json.get("detail") {
+                    let status = json.get("status").and_then(|s| s.as_u64()).unwrap_or(0);
+                    let title = json
+                        .get("title")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("Unknown");
+
+                    return Output::Err {
+                        reason: format!(
+                            "Twitter API error: {} (Status: {}, Title: {})",
+                            detail.as_str().unwrap_or("Unknown error"),
+                            status,
+                            title
+                        ),
+                    };
+                }
+
+                // Check for errors array
+                if let Some(errors) = json.get("errors") {
+                    return Output::Err {
+                        reason: format!("Twitter API returned errors: {}", errors),
+                    };
+                }
+
+                // Check for success response format
+                let data = match json.get("data") {
+                    None => {
+                        return Output::Err {
+                            reason: format!(
+                                "Unexpected response format from Twitter API: {}",
+                                json
+                            ),
+                        }
+                    }
+                    Some(data) => data,
+                };
+
+                let liked = match data.get("liked") {
+                    None => {
+                        return Output::Err {
+                            reason: format!(
+                                "Unexpected response format from Twitter API: {}",
+                                json
+                            ),
+                        }
+                    }
+                    Some(liked) => liked.as_bool().unwrap_or(false),
+                };
+
+                if !liked {
+                    return Output::Err {
+                        reason: format!("Twitter API indicated the tweet was not liked: {}", json),
+                    };
+                }
+
+                // Successfully liked the tweet
+                Output::Ok {
+                    tweet_id: request.tweet_id,
+                    liked,
+                }
+            }
         }
     }
 }
