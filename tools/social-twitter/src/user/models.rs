@@ -1,5 +1,5 @@
 use {
-    crate::tweet::models::ApiError,
+    crate::{list::models::Meta, tweet::models::ApiError},
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
 };
@@ -18,6 +18,8 @@ pub struct UsersResponse {
     pub data: Option<Vec<UserData>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ApiError>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Meta>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
