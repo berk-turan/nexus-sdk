@@ -217,3 +217,66 @@ The tweet mentions retrieval failed.
   - Failed to parse Twitter API response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.create-list@1`
+
+Standard Nexus Tool that creates a list on Twitter.
+Twitter api [reference](https://docs.x.com/x-api/lists/create-list)
+
+## Input
+
+**`consumer_key`: [`String`]**
+
+Consumer API key for Twitter API application.
+
+**`consumer_secret_key`: [`String`]**
+
+Consumer Secret key for Twitter API application.
+
+**`access_token`: [`String`]**
+
+Access Token for user's Twitter account.
+
+**`access_token_secret`: [`String`]**
+
+Access Token Secret for user's Twitter account.
+
+**`name`: [`String`]**
+
+The name of the list to create.
+
+**`description`: [`String`]**
+
+The description of the list to create.
+
+_opt_ **`private`: [`bool`]** _default_: [`false`]
+
+The privacy setting of the list to create:
+
+- `true`: The list is private and can only be viewed by the user who created it
+- `false`: The list is public and can be viewed by anyone (default)
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list was created successfully.
+
+- **`ok.result`: [`ListResponse`]** - The created list data containing:
+  - `id`: The list's unique identifier
+  - `name`: The name of the list
+
+**`err`**
+
+The list creation failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status (Code/Message format)
+  - Twitter API error details (Detail/Status/Title format)
+  - Rate limit exceeded (Status: 429)
+  - Unauthorized error
+  - Invalid JSON response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
