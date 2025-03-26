@@ -38,21 +38,16 @@ Standard Nexus Tool that creates a new tweet using the Twitter API.Twitter api [
 
 ## Input
 
-**`consumer_key`: [`String`]**
+**Authentication Parameters**
 
-Twitter API application's Consumer Key.
+The following authentication parameters are provided as part of the TwitterAuth structure:
 
-**`consumer_secret_key`: [`String`]**
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
 
-Twitter API application's Consumer Secret Key.
-
-**`access_token`: [`String`]**
-
-Access Token for user's Twitter account.
-
-**`access_token_secret`: [`String`]**
-
-Access Token Secret for user's Twitter account.
+**Additional Parameters**
 
 **`content`: [`String`]**
 
@@ -89,21 +84,16 @@ Twitter api [reference](https://docs.x.com/x-api/posts/causes-the-user-in-the-pa
 
 ## Input
 
-**`consumer_key`: [`String`]**
+**Authentication Parameters**
 
-Twitter API application's Consumer Key.
+The following authentication parameters are provided as part of the TwitterAuth structure:
 
-**`consumer_secret_key`: [`String`]**
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
 
-Twitter API application's Consumer Secret Key.
-
-**`access_token`: [`String`]**
-
-Access Token for user's Twitter account.
-
-**`access_token_secret`: [`String`]**
-
-Access Token Secret for user's Twitter account.
+**Additional Parameters**
 
 **`user_id`: [`String`]**
 
@@ -227,21 +217,16 @@ Twitter api [reference](https://docs.x.com/x-api/lists/create-list)
 
 ## Input
 
-**`consumer_key`: [`String`]**
+**Authentication Parameters**
 
-Consumer API key for Twitter API application.
+The following authentication parameters are provided as part of the TwitterAuth structure:
 
-**`consumer_secret_key`: [`String`]**
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
 
-Consumer Secret key for Twitter API application.
-
-**`access_token`: [`String`]**
-
-Access Token for user's Twitter account.
-
-**`access_token_secret`: [`String`]**
-
-Access Token Secret for user's Twitter account.
+**Additional Parameters**
 
 **`name`: [`String`]**
 

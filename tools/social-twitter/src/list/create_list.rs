@@ -4,10 +4,9 @@
 //! Standard Nexus Tool that creates a list on Twitter.
 
 use {
-    crate::tweet::TWITTER_API_BASE,
+    crate::{auth::TwitterAuth, tweet::TWITTER_API_BASE},
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
-    oauth1_request::{post, signature_method::HmacSha1, Token},
     reqwest::Client,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
@@ -15,16 +14,10 @@ use {
 };
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-
 pub(crate) struct Input {
-    /// Consumer API key for Twitter API application
-    consumer_key: String,
-    /// Consumer Secret key for Twitter API application
-    consumer_secret_key: String,
-    /// Access Token for user's Twitter account
-    access_token: String,
-    /// Access Token Secret for user's Twitter account
-    access_token_secret: String,
+    /// Twitter API credentials
+    #[serde(flatten)]
+    auth: TwitterAuth,
     /// The name of the list to create
     name: String,
     /// The description of the list to create
@@ -85,16 +78,8 @@ impl NexusTool for CreateList {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        // Set up OAuth token with provided credentials
-        let token = Token::from_parts(
-            request.consumer_key,
-            request.consumer_secret_key,
-            request.access_token,
-            request.access_token_secret,
-        );
-
-        // Generate OAuth authorization header
-        let auth_header = post(&self.api_base, &(), &token, HmacSha1::new());
+        // Generate OAuth authorization header using the auth helper
+        let auth_header = request.auth.generate_auth_header(&self.api_base);
 
         // Initialize HTTP client
         let client = Client::new();
@@ -218,10 +203,12 @@ mod tests {
 
     fn create_test_input() -> Input {
         Input {
-            consumer_key: "test_consumer_key".to_string(),
-            consumer_secret_key: "test_consumer_secret".to_string(),
-            access_token: "test_access_token".to_string(),
-            access_token_secret: "test_access_token_secret".to_string(),
+            auth: TwitterAuth::new(
+                "test_consumer_key",
+                "test_consumer_secret",
+                "test_access_token",
+                "test_access_token_secret",
+            ),
             name: "Test List".to_string(),
             description: "Test Description".to_string(),
             private: false,

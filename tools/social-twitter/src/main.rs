@@ -4,6 +4,7 @@
 #![doc = include_str!("../README.md")]
 
 use nexus_toolkit::bootstrap;
+mod auth;
 mod list;
 mod tweet;
 mod user;

@@ -3,8 +3,7 @@
 //! Standard Nexus Tool that posts a like to a tweet.
 
 use {
-    crate::tweet::TWITTER_API_BASE,
-    oauth1_request::{post, signature_method::HmacSha1, Token},
+    crate::{auth::TwitterAuth, tweet::TWITTER_API_BASE},
     reqwest::Client,
     ::{
         nexus_sdk::{fqn, ToolFqn},
@@ -18,14 +17,9 @@ use {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    /// Consumer API key for Twitter API application
-    consumer_key: String,
-    /// Consumer Secret key for Twitter API application
-    consumer_secret_key: String,
-    /// Access Token for user's Twitter account
-    access_token: String,
-    /// Access Token Secret for user's Twitter account
-    access_token_secret: String,
+    /// Twitter API credentials
+    #[serde(flatten)]
+    auth: TwitterAuth,
     /// The id of authenticated user
     user_id: String,
     /// Tweet ID to like
@@ -74,20 +68,12 @@ impl NexusTool for LikeTweet {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        // Set up OAuth token with provided credentials
-        let token = Token::from_parts(
-            request.consumer_key,
-            request.consumer_secret_key,
-            request.access_token,
-            request.access_token_secret,
-        );
-
         let client = Client::new();
 
         let url = format!("{}/{}/likes", self.api_base, request.user_id);
 
         // Generate OAuth authorization header with the complete URL
-        let auth_header = post(&url, &(), &token, HmacSha1::new());
+        let auth_header = request.auth.generate_auth_header(&url);
 
         // Format the request body with the tweet_id
         let request_body = format!(r#"{{"tweet_id": "{}"}}"#, request.tweet_id);
@@ -225,10 +211,12 @@ mod tests {
 
     fn create_test_input() -> Input {
         Input {
-            consumer_key: "test_consumer_key".to_string(),
-            consumer_secret_key: "test_consumer_secret".to_string(),
-            access_token: "test_access_token".to_string(),
-            access_token_secret: "test_access_token_secret".to_string(),
+            auth: TwitterAuth::new(
+                "test_consumer_key",
+                "test_consumer_secret",
+                "test_access_token",
+                "test_access_token_secret",
+            ),
             user_id: "12345".to_string(),
             tweet_id: "67890".to_string(),
         }
