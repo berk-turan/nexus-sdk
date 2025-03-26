@@ -12,10 +12,10 @@ mod secret;
 
 pub use {
     anyhow::Result as AnyResult,
+    env_logger,
+    log::debug,
     nexus_tool::NexusTool,
     runtime::routes_for_,
     secret::{BestEncryptionEver, EncryptionStrategy, Secret},
     warp::{self, http::StatusCode},
-    env_logger,
-    log::debug
 };

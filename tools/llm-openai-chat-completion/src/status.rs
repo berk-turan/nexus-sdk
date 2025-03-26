@@ -5,11 +5,11 @@
 
 use {
     chrono::{DateTime, FixedOffset},
-    nexus_toolkit::{AnyResult, StatusCode},
+    log::{debug, error},
     nexus_sdk::types::WithSerdeErrorPath,
+    nexus_toolkit::{AnyResult, StatusCode},
     reqwest::Client,
     serde::Deserialize,
-    log::{error, debug}
 };
 
 /// The URL of the OpenAI status API.
@@ -80,7 +80,6 @@ pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     if response.status.indicator != HEALTH_OK && response.status.indicator != "minor" {
         return Ok(StatusCode::SERVICE_UNAVAILABLE);
     }
-
 
     Ok(StatusCode::OK)
 }

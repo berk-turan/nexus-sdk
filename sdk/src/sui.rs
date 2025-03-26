@@ -15,11 +15,19 @@ pub use {
         language_storage::{StructTag as MoveStructTag, TypeTag as MoveTypeTag},
     },
     shared_crypto::intent::Intent,
-    sui_keys::{key_derive::generate_new_key, keystore::Keystore, keystore::FileBasedKeystore as FileBasedKeystore},
-    sui_config::{sui_config_dir, Config, PersistedConfig, SUI_CLIENT_CONFIG, SUI_KEYSTORE_FILENAME},
+    sui_config::{
+        sui_config_dir,
+        Config,
+        PersistedConfig,
+        SUI_CLIENT_CONFIG,
+        SUI_KEYSTORE_FILENAME,
+    },
+    sui_keys::{
+        key_derive::generate_new_key,
+        keystore::{FileBasedKeystore, Keystore},
+    },
     sui_sdk::{
         error::Error,
-        sui_client_config::{SuiClientConfig, SuiEnv},
         rpc_types::{
             Coin,
             EventFilter,
@@ -38,6 +46,7 @@ pub use {
             SuiTransactionBlockResponse as TransactionBlockResponse,
             SuiTransactionBlockResponseOptions as TransactionBlockResponseOptions,
         },
+        sui_client_config::{SuiClientConfig, SuiEnv},
         types::{
             base_types::{ObjectID, SequenceNumber, SuiAddress as Address},
             crypto::SignatureScheme,
@@ -65,8 +74,8 @@ pub use {
 /// Sui traits re-exported so that we can `use sui::traits::*` in our code.
 pub mod traits {
     pub use {
+        sui_config::Config,
         sui_keys::keystore::AccountKeystore,
         sui_sdk::rpc_types::SuiTransactionBlockEffectsAPI as TransactionBlockEffectsAPI,
-        sui_config::Config
     };
 }

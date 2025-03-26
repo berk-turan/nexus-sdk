@@ -419,9 +419,9 @@ mod tests {
     use {
         super::*,
         mockito::{Matcher, Server},
+        reqwest::Client,
         schemars::schema_for,
         serde_json::json,
-        reqwest::Client, 
         std::time::Duration,
         tokio::time::sleep,
         warp::http::StatusCode as WarpStatusCode,
@@ -470,7 +470,6 @@ mod tests {
             "Expected health check to return OK status"
         );
     }
-
 
     #[test]
     fn test_message_kind_deserialization_case_insensitive() {

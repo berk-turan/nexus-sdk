@@ -78,12 +78,13 @@ impl NexusTool for DummyErrTool {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, 
-    reqwest::Client, 
-    serde_json::json,
-    std::time::Duration,
-    tokio::time::sleep,
-    warp::http::StatusCode as WarpStatusCode,
+    use {
+        super::*,
+        reqwest::Client,
+        serde_json::json,
+        std::time::Duration,
+        tokio::time::sleep,
+        warp::http::StatusCode as WarpStatusCode,
     };
 
     #[tokio::test]
