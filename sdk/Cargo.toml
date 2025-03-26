@@ -33,7 +33,7 @@ sui_idents = ["tool_fqn", "sui_types", "serde_json"]
 
 # Types feature enables the use of the `types` module. Also adds reqwest as a
 # dependency.
-types = ["sui_types", "reqwest"]
+types = ["sui_types", "reqwest", "serde_json"]
 
 # Events feature enables the use of the `events` module.
 events = ["sui_idents", "types"]
@@ -43,14 +43,27 @@ object_crawler = ["sui_types", "serde_json"]
 
 # Test utils feature enables the use of the `test_utils` module. Also adds
 # backoff, sui_move_build and testcontainers-modules as a dependency.
-test_utils = ["types", "tokio-retry", "sui_move_build", "testcontainers-modules"]
+test_utils = [
+    "types",
+    "tokio-retry",
+    "sui_move_build",
+    "testcontainers-modules",
+]
 
 # Enable all features apart from `test_utils`.
-full = ["tool_fqn", "sui_types", "sui_idents", "types", "events", "object_crawler"]
+full = [
+    "tool_fqn",
+    "sui_types",
+    "sui_idents",
+    "types",
+    "events",
+    "object_crawler",
+]
 
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
+serde_path_to_error = "0.1.17"
 
 # === Optional deps ===
 [dependencies.lazy-regex]

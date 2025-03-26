@@ -18,6 +18,8 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 warp.workspace = true
+env_logger.workspace = true
+log.workspace = true
 # === Nexus deps ===
 nexus-sdk.workspace = true
 

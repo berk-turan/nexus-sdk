@@ -6,8 +6,10 @@
 use {
     chrono::{DateTime, FixedOffset},
     nexus_toolkit::{AnyResult, StatusCode},
+    nexus_sdk::types::WithSerdeErrorPath,
     reqwest::Client,
     serde::Deserialize,
+    log::{error, debug}
 };
 
 /// The URL of the OpenAI status API.
@@ -36,7 +38,7 @@ struct PageInfo {
     /// The URL of the page.
     url: String,
     /// The time zone of the page.
-    time_zone: Option<String>,
+    time_zone: String,
     /// The last time the page was updated.
     updated_at: DateTime<FixedOffset>, // Parsed with original offset
 }
@@ -63,14 +65,18 @@ struct StatusInfo {
 /// *   `Err(e)` if there is an error sending the request or parsing the response.
 pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     let client = Client::new();
-    let req_resp = client.get(HEALTH_URL).send().await?;
+    let raw_response = client.get(HEALTH_URL).send().await?.text().await?;
+    debug!("Raw API response: {}", raw_response);
 
-    let raw_response = req_resp.text().await?;
-    println!("Raw API response: {}", raw_response);
+    let wrapped: WithSerdeErrorPath<ApiResponse> = match serde_json::from_str(&raw_response) {
+        Ok(val) => val,
+        Err(e) => {
+            error!("Deserialization error: {}", e);
+            return Ok(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
 
-    let response: ApiResponse = serde_json::from_str(&raw_response)
-        .map_err(|e| anyhow::anyhow!("Failed to deserialize ApiResponse: {}. Raw response: {}", e, raw_response))?;
-    
+    let response: ApiResponse = wrapped.0;
     if response.status.indicator != HEALTH_OK && response.status.indicator != "minor" {
         return Ok(StatusCode::SERVICE_UNAVAILABLE);
     }

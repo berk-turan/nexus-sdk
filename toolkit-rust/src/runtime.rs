@@ -64,6 +64,7 @@ use {
 #[macro_export]
 macro_rules! bootstrap {
     ($addr:expr, [$tool:ty $(, $next_tool:ty)* $(,)?]) => {{
+        let _ = $crate::env_logger::try_init();
         use {
             $crate::warp::{http::StatusCode, Filter},
         };
@@ -78,7 +79,6 @@ macro_rules! bootstrap {
             .map(|| $crate::warp::reply::with_status("", StatusCode::OK));
 
         let routes = routes.or(default_health_route);
-
         // Serve the routes.
         $crate::warp::serve(routes).run($addr).await
     }};

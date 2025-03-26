@@ -16,4 +16,6 @@ pub use {
     runtime::routes_for_,
     secret::{BestEncryptionEver, EncryptionStrategy, Secret},
     warp::{self, http::StatusCode},
+    env_logger,
+    log::debug
 };
