@@ -6,6 +6,7 @@
 use nexus_toolkit::bootstrap;
 mod list;
 mod tweet;
+mod user;
 
 /// This function bootstraps the tool and starts the server.
 #[tokio::main]
@@ -17,5 +18,6 @@ async fn main() {
         tweet::mentioned_tweets::MentionedTweets,
         tweet::get_user_tweets::GetUserTweets,
         list::create_list::CreateList,
+        user::get_user_by_id::GetUserById,
     ]);
 }
