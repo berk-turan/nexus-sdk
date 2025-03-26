@@ -22,13 +22,13 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
       - name: Increase swapfile
         uses: ./.github/actions/increase-swapfile
         with:
           swap_size: "6G"
-
-      - name: Check out repository code
-        uses: actions/checkout@v4
 
       - name: Set up Docker
         uses: docker/setup-docker-action@v4
