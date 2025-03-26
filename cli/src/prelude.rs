@@ -144,6 +144,5 @@ pub(crate) fn parse_json_string(json: &str) -> AnyResult<serde_json::Value> {
 
 fn default_sui_wallet_path() -> PathBuf {
     let config_dir = sui_config_dir().expect("Unable to determine SUI config directory");
-    let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
-    wallet_conf_path
+    config_dir.join(SUI_CLIENT_CONFIG)
 }
