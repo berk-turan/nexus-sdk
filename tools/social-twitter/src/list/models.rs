@@ -37,8 +37,7 @@ pub(crate) struct ListMemberResponse {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ListMemberData {
-    /// Whether the user is a member of the list
-    is_member: bool,
+    pub is_member: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

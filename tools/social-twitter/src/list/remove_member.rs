@@ -157,3 +157,170 @@ impl NexusTool for RemoveMember {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, ::mockito::Server, serde_json::json};
+
+    impl RemoveMember {
+        fn with_api_base(api_base: &str) -> Self {
+            Self {
+                api_base: api_base.to_string(),
+            }
+        }
+    }
+
+    fn create_test_input() -> Input {
+        Input {
+            auth: TwitterAuth::new(
+                "test_consumer_key",
+                "test_consumer_secret",
+                "test_access_token",
+                "test_access_token_secret",
+            ),
+            list_id: "test_list_id".to_string(),
+            user_id: "test_user_id".to_string(),
+        }
+    }
+
+    async fn create_server_and_tool() -> (mockito::ServerGuard, RemoveMember) {
+        let server = Server::new_async().await;
+        let tool = RemoveMember::with_api_base(&(server.url() + "/lists"));
+        (server, tool)
+    }
+
+    #[tokio::test]
+    async fn test_remove_member_successful() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("DELETE", "/lists/test_list_id/members/test_user_id")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "data": {
+                        "is_member": false
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Ok { result } => assert!(!result.data.unwrap().is_member),
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_remove_member_rate_limit_error() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("DELETE", "/lists/test_list_id/members/test_user_id")
+            .with_status(429)
+            .with_body(
+                json!({
+                    "title": "Too Many Requests",
+                    "detail": "Too Many Requests",
+                    "status": 429
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => assert!(reason.contains("Too Many Requests")),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_remove_member_unauthorized() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("DELETE", "/lists/test_list_id/members/test_user_id")
+            .with_status(401)
+            .with_body(
+                json!({
+                    "errors": [{
+                        "message": "Unauthorized",
+                        "code": 32
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => assert!(reason.contains("Unauthorized")),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_remove_member_not_found() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("DELETE", "/lists/test_list_id/members/test_user_id")
+            .with_status(404)
+            .with_body(
+                json!({
+                    "errors": [{
+                        "message": "Not Found",
+                        "code": 34
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => assert!(reason.contains("Not Found")),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_remove_member_invalid_response() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("DELETE", "/lists/test_list_id/members/test_user_id")
+            .with_status(200)
+            .with_body("invalid json")
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => assert!(reason.contains("Invalid JSON response")),
+        }
+
+        mock.assert_async().await;
+    }
+}
