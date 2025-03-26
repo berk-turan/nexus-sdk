@@ -16,10 +16,20 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-tags: false
 
+      # - name: Increase swapfile
+      #   uses: ./.github/actions/increase-swapfile
+      #   with:
+      #     swap_size: "6G"
+      # This is just temporary until the changes are propagated to main.
       - name: Increase swapfile
-        uses: ./.github/actions/increase-swapfile
-        with:
-          swap_size: "6G"
+        run: |
+          sudo swapon --show
+          sudo swapoff -a
+          sudo fallocate -l 6G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          sudo swapon --show
 
       - name: Set up Docker
         uses: docker/setup-docker-action@v4
