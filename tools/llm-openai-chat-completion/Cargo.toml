@@ -28,8 +28,6 @@ env_logger.workspace = true
 # === Nexus deps ===
 nexus-toolkit.workspace = true
 nexus-sdk.workspace = true
-serde_ignored = "0.1.11"
-serde_path_to_error = "0.1.17"
 
 [dev-dependencies]
 mockito.workspace = true

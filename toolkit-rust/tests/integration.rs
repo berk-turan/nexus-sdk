@@ -81,10 +81,7 @@ mod tests {
     use {
         super::*,
         reqwest::Client,
-        serde_json::json,
-        std::time::Duration,
-        tokio::time::sleep,
-        warp::http::StatusCode as WarpStatusCode,
+        serde_json::json
     };
 
     #[tokio::test]

@@ -440,6 +440,7 @@ pub(crate) async fn fetch_gas_coin(
     }
 }
 
+#[allow(dead_code)]
 pub fn retrieve_wallet_with_mnemonic(
     config: SuiConf,
     mnemonic: &str,
