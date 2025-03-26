@@ -12,8 +12,7 @@ use {
     serde::Deserialize,
 };
 
-/// The URL of the OpenAI status API.
-const HEALTH_URL: &str = "https://status.openai.com/api/v2/status.json";
+const DEFAULT_HEALTHCHECK_URL: &str = "https://status.openai.com/api/v2/status.json";
 /// The expected status indicator for a healthy API.
 const HEALTH_OK: &str = "none";
 
@@ -38,7 +37,7 @@ struct PageInfo {
     /// The URL of the page.
     url: String,
     /// The time zone of the page.
-    time_zone: String,
+    time_zone: Option<String>,
     /// The last time the page was updated.
     updated_at: DateTime<FixedOffset>, // Parsed with original offset
 }
@@ -65,7 +64,7 @@ struct StatusInfo {
 /// *   `Err(e)` if there is an error sending the request or parsing the response.
 pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     let client = Client::new();
-    let raw_response = client.get(HEALTH_URL).send().await?.text().await?;
+    let raw_response = client.get(healthcheck_url()).send().await?.text().await?;
     debug!("Raw API response: {}", raw_response);
 
     let wrapped: WithSerdeErrorPath<ApiResponse> = match serde_json::from_str(&raw_response) {
@@ -82,4 +81,8 @@ pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     }
 
     Ok(StatusCode::OK)
+}
+
+fn healthcheck_url() -> String {
+    std::env::var("HEALTHCHECK_URL").unwrap_or_else(|_| DEFAULT_HEALTHCHECK_URL.to_string())
 }

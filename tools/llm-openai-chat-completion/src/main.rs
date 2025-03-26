@@ -419,6 +419,7 @@ mod tests {
     use {
         super::*,
         mockito::{Matcher, Server},
+        portpicker::pick_unused_port,
         reqwest::Client,
         schemars::schema_for,
         serde_json::json,
@@ -438,11 +439,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_openai_chat_completion_health() {
-        // Spawn the server running OpenaiChatCompletion.
-        // This will start the server on the default address (0.0.0.0:8080).
-        tokio::spawn(async {
-            bootstrap!(OpenaiChatCompletion);
+    async fn test_openai_chat_completion_health_success() {
+        let mut server = Server::new_async().await;
+
+        let free_port = pick_unused_port().expect("No free port available");
+        let addr = ([127, 0, 0, 1], free_port);
+
+        let _mock = server
+            .mock("GET", "/api/v2/status.json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                "page": {
+                    "id": "01JMDK9XYNY6RXSED6SDWW50WY",
+                    "name": "OpenAI",
+                    "url": "https://status.openai.com/",
+                    "time_zone": "UTC",
+                    "updated_at": "2025-03-25T20:10:18Z"
+                },
+                "status": {
+                    "indicator": "none",
+                    "description": "All systems operational."
+                }
+            }"#,
+            )
+            .create_async()
+            .await;
+
+        let mock_health_url = format!("{}/api/v2/status.json", server.url());
+        std::env::set_var("HEALTHCHECK_URL", mock_health_url);
+        tokio::spawn(async move {
+            bootstrap!(addr, OpenaiChatCompletion);
         });
 
         // Wait briefly to allow the server to start.
@@ -450,18 +478,14 @@ mod tests {
 
         let client = Client::new();
         let response = client
-            .get("http://localhost:8080/health")
+            .get(&format!("http://127.0.0.1:{}/health", free_port))
             .send()
             .await
             .expect("Failed to send GET request to health endpoint");
 
         let status = response.status();
-        let body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "No body".to_string());
+
         println!("Health endpoint response status: {}", status);
-        println!("Health endpoint response body: {}", body);
 
         // Compare the numeric status code (200 for OK)
         assert_eq!(
@@ -469,6 +493,8 @@ mod tests {
             WarpStatusCode::OK.as_u16(),
             "Expected health check to return OK status"
         );
+
+        _mock.assert_async().await;
     }
 
     #[test]

@@ -33,3 +33,4 @@ serde_path_to_error = "0.1.17"
 
 [dev-dependencies]
 mockito = "1.7.0"
+portpicker.workspace = true
