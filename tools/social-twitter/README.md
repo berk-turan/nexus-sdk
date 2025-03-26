@@ -691,3 +691,105 @@ The list update failed.
   - Invalid JSON response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.add-member@1`
+
+Standard Nexus Tool that adds a member to a list on Twitter.
+Twitter api [reference](https://docs.x.com/x-api/lists/add-a-list-member)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`list_id`: [`String`]**
+
+The ID of the list to add a member to.
+
+**`user_id`: [`String`]**
+
+The ID of the user to add to the list.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The member was successfully added to the list.
+
+- **`ok.result`: [`ListMemberResponse`]** - The response data containing member addition confirmation.
+
+**`err`**
+
+The member addition failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status (Code/Message format)
+  - Twitter API error details (Detail/Status/Title format)
+  - Unauthorized error
+  - List not found
+  - User not found
+  - Rate limit exceeded
+  - Invalid JSON response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.remove-member@1`
+
+Standard Nexus Tool that removes a member from a list on Twitter.
+Twitter api [reference](https://docs.x.com/x-api/lists/remove-a-list-member)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`list_id`: [`String`]**
+
+The ID of the list to remove a member from.
+
+**`user_id`: [`String`]**
+
+The ID of the user to remove from the list.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The member was successfully removed from the list.
+
+- **`ok.result`: [`ListMemberResponse`]** - The response data containing member removal confirmation.
+
+**`err`**
+
+The member removal failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status (Code/Message format)
+  - Twitter API error details (Detail/Status/Title format)
+  - Unauthorized error
+  - List not found
+  - User not found
+  - Rate limit exceeded
+  - Invalid JSON response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
