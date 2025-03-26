@@ -411,9 +411,9 @@ impl NexusTool for OpenaiChatCompletion {
 /// This function bootstraps the tool and starts the server.
 #[tokio::main]
 async fn main() {
-    let addr_str = std::env::var("BIND_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-    let addr: std::net::SocketAddr = addr_str.parse()
+    let addr_str = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+    let addr: std::net::SocketAddr = addr_str
+        .parse()
         .expect("Invalid socket address in BIND_ADDR");
 
     bootstrap!(addr, OpenaiChatCompletion)
