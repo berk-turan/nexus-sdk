@@ -78,11 +78,7 @@ impl NexusTool for DummyErrTool {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        reqwest::Client,
-        serde_json::json
-    };
+    use {super::*, reqwest::Client, serde_json::json};
 
     #[tokio::test]
     async fn test_endpoints_generated_correctly() {
