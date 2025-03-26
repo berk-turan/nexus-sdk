@@ -21,6 +21,7 @@ async fn main() {
         list::create_list::CreateList,
         list::get_list::GetList,
         list::get_list_tweets::GetListTweets,
+        list::get_list_members::GetListMembers,
         user::get_user_by_id::GetUserById,
         user::get_user_by_username::GetUserByUsername,
     ]);

@@ -6,7 +6,17 @@ use {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UserResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<UserData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub errors: Option<Vec<ApiError>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UsersResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Vec<UserData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<Vec<ApiError>>,
 }
 
