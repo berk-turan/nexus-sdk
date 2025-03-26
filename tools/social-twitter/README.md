@@ -414,11 +414,11 @@ The following authentication parameters are provided as part of the TwitterAuth 
 
 **`name`: [`String`]**
 
-The name of the list to create.
+The name of the list to create. Must be between 1 and 25 characters long.
 
 **`description`: [`String`]**
 
-The description of the list to create.
+The description of the list to create. Must not exceed 100 characters.
 
 _opt_ **`private`: [`bool`]** _default_: [`false`]
 
@@ -442,6 +442,8 @@ The list was created successfully.
 The list creation failed.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - "List name must be between 1 and 25 characters"
+  - "List description must not exceed 100 characters"
   - Twitter API error status (Code/Message format)
   - Twitter API error details (Detail/Status/Title format)
   - Rate limit exceeded (Status: 429)
@@ -622,5 +624,70 @@ The list members retrieval failed.
   - Unauthorized error
   - Rate limit exceeded
   - Failed to parse Twitter API response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.update-list@1`
+
+Standard Nexus Tool that updates a list metadata on Twitter.
+Twitter api [reference](https://docs.x.com/x-api/lists/update-list)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`id`: [`String`]**
+
+The ID of the list to update.
+
+_opt_ **`name`: [`Option<String>`]** _default_: [`None`]
+
+The name of the list to update. Must be between 1 and 25 characters long.
+
+_opt_ **`description`: [`Option<String>`]** _default_: [`None`]
+
+The description of the list to update. Must not exceed 100 characters.
+
+_opt_ **`private`: [`Option<bool>`]** _default_: [`None`]
+
+The privacy setting of the list to update:
+
+- `true`: The list is private and can only be viewed by the user who created it
+- `false`: The list is public and can be viewed by anyone
+
+Note: At least one of `name`, `description`, or `private` must be provided.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list was updated successfully.
+
+- **`ok.updated`: [`bool`]** - Confirmation that the list was updated (true).
+
+**`err`**
+
+The list update failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - "At least one of name, description, or private must be provided"
+  - "List name must be between 1 and 25 characters"
+  - "List description must not exceed 100 characters"
+  - Twitter API error status (Code/Message format)
+  - Twitter API error details (Detail/Status/Title format)
+  - Unauthorized error
+  - List not found
+  - Invalid JSON response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API

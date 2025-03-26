@@ -1,4 +1,3 @@
-// https://docs.x.com/x-api/lists/create-list
 //! # `xyz.taluslabs.social.twitter.create-list@1`
 //!
 //! Standard Nexus Tool that creates a list on Twitter.
@@ -18,9 +17,11 @@ pub(crate) struct Input {
     /// Twitter API credentials
     #[serde(flatten)]
     auth: TwitterAuth,
-    /// The name of the list to create
+    /// The name of the list to create (1-25 characters)
+    #[schemars(length(min = 1, max = 25))]
     name: String,
-    /// The description of the list to create
+    /// The description of the list to create (max 100 characters)
+    #[schemars(length(max = 100))]
     description: String,
     /// The privacy setting of the list to create
     /// - public: The list is public and can be viewed by anyone (default)
@@ -78,6 +79,20 @@ impl NexusTool for CreateList {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
+        // Validate name length
+        if request.name.len() < 1 || request.name.len() > 25 {
+            return Output::Err {
+                reason: "List name must be between 1 and 25 characters".to_string(),
+            };
+        }
+
+        // Validate description length
+        if request.description.len() > 100 {
+            return Output::Err {
+                reason: "List description must not exceed 100 characters".to_string(),
+            };
+        }
+
         // Generate OAuth authorization header using the auth helper
         let auth_header = request.auth.generate_auth_header(&self.api_base);
 
@@ -390,5 +405,95 @@ mod tests {
         }
 
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_create_list_name_too_short() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            auth: TwitterAuth::new(
+                "test_consumer_key",
+                "test_consumer_secret",
+                "test_access_token",
+                "test_access_token_secret",
+            ),
+            name: "".to_string(), // Empty name
+            description: "Test Description".to_string(),
+            private: false,
+        };
+
+        let output = tool.invoke(input).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(
+                    reason.contains("List name must be between 1 and 25 characters"),
+                    "Expected name length error message, got: {}",
+                    reason
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_list_name_too_long() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            auth: TwitterAuth::new(
+                "test_consumer_key",
+                "test_consumer_secret",
+                "test_access_token",
+                "test_access_token_secret",
+            ),
+            name: "This is a very long list name that exceeds 25 characters".to_string(), /* Name > 25 chars */
+            description: "Test Description".to_string(),
+            private: false,
+        };
+
+        let output = tool.invoke(input).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(
+                    reason.contains("List name must be between 1 and 25 characters"),
+                    "Expected name length error message, got: {}",
+                    reason
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_list_description_too_long() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            auth: TwitterAuth::new(
+                "test_consumer_key",
+                "test_consumer_secret",
+                "test_access_token",
+                "test_access_token_secret",
+            ),
+            name: "Test List".to_string(),
+            description: "This is a very long description that exceeds 100 characters. This is a very long description that exceeds 100 characters.".to_string(), // Description > 100 chars
+            private: false,
+        };
+
+        let output = tool.invoke(input).await;
+
+        match output {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(
+                    reason.contains("List description must not exceed 100 characters"),
+                    "Expected description length error message, got: {}",
+                    reason
+                );
+            }
+        }
     }
 }
