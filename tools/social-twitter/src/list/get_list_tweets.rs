@@ -247,3 +247,295 @@ impl NexusTool for GetListTweets {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, ::mockito::Server, serde_json::json};
+
+    impl GetListTweets {
+        fn with_api_base(api_base: &str) -> Self {
+            Self {
+                api_base: api_base.to_string(),
+            }
+        }
+    }
+
+    async fn create_server_and_tool() -> (mockito::ServerGuard, GetListTweets) {
+        let server = Server::new_async().await;
+        let tool = GetListTweets::with_api_base(&(server.url() + "/lists"));
+        (server, tool)
+    }
+
+    fn create_test_input() -> Input {
+        Input {
+            bearer_token: "test_bearer_token".to_string(),
+            list_id: "test_list_id".to_string(),
+            max_results: Some(10),
+            pagination_token: None,
+            tweet_fields: Some(vec![TweetField::Text, TweetField::AuthorId]),
+            expansions: Some(vec![Expansion::OwnerId]),
+            user_fields: Some(vec![UserField::Username, UserField::Name]),
+            media_fields: None,
+            poll_fields: None,
+            place_fields: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_list_tweets_successful() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response
+        let mock = server
+            .mock("GET", "/lists/test_list_id/tweets")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "data": [
+                        {
+                            "author_id": "12345",
+                            "id": "111222333444",
+                            "text": "This is a test tweet in the list"
+                        },
+                        {
+                            "author_id": "67890",
+                            "id": "555666777888",
+                            "text": "Another test tweet in the list"
+                        }
+                    ],
+                    "includes": {
+                        "users": [
+                            {
+                                "id": "12345",
+                                "name": "Test User 1",
+                                "username": "testuser1"
+                            },
+                            {
+                                "id": "67890",
+                                "name": "Test User 2",
+                                "username": "testuser2"
+                            }
+                        ]
+                    },
+                    "meta": {
+                        "result_count": 2,
+                        "next_token": "next_page_token"
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the list tweets request
+        let output = tool.invoke(create_test_input()).await;
+
+        // Verify the response
+        match output {
+            Output::Ok { result } => {
+                assert!(result.data.is_some());
+                let data = result.data.unwrap();
+                assert_eq!(data.len(), 2);
+                assert_eq!(data[0].id, "111222333444");
+                assert_eq!(data[0].text, "This is a test tweet in the list");
+                assert_eq!(data[1].id, "555666777888");
+
+                // Check that includes contains the right users
+                let includes = result.includes.unwrap();
+                let users = includes.users.unwrap();
+                assert_eq!(users.len(), 2);
+                assert_eq!(users[0].username, "testuser1");
+                assert_eq!(users[1].username, "testuser2");
+
+                // Check meta data
+                let meta = result.meta.unwrap();
+                assert_eq!(meta.result_count.unwrap(), 2);
+                assert_eq!(meta.next_token.unwrap(), "next_page_token");
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_list_tweets_not_found() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response for not found
+        let mock = server
+            .mock("GET", "/lists/test_list_id/tweets")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "errors": [
+                        {
+                            "message": "List not found",
+                            "code": 34
+                        }
+                    ]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the list tweets request
+        let output = tool.invoke(create_test_input()).await;
+
+        // Verify the response
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Twitter API returned error status: 404"), 
+                       "Expected error message to contain 'Twitter API returned error status: 404', got: {}", reason);
+            }
+            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_unauthorized_error() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/lists/test_list_id/tweets")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(401)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "errors": [{
+                        "message": "Unauthorized",
+                        "code": 32
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Twitter API returned error status: 401"), 
+                       "Expected error message to contain 'Twitter API returned error status: 401', got: {}", reason);
+            }
+            Output::Ok { .. } => panic!("Expected error, got success"),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_exceeded() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/lists/test_list_id/tweets")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(429)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "errors": [{
+                        "message": "Rate limit exceeded",
+                        "code": 88
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Twitter API returned error status: 429"), 
+                       "Expected error message to contain 'Twitter API returned error status: 429', got: {}", reason);
+            }
+            Output::Ok { .. } => panic!("Expected error, got success"),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_empty_response() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/lists/test_list_id/tweets")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "meta": {
+                        "result_count": 0
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Ok { result } => {
+                assert!(result.data.is_none() || result.data.unwrap().is_empty());
+                assert!(result.meta.is_some());
+                if let Some(meta) = result.meta {
+                    assert_eq!(meta.result_count.unwrap(), 0);
+                }
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_invalid_json_response() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/lists/test_list_id/tweets")
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("invalid json")
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Failed to parse Twitter API response"), 
+                       "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
+            }
+            Output::Ok { .. } => panic!("Expected error, got success"),
+        }
+
+        mock.assert_async().await;
+    }
+}
