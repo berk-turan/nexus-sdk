@@ -103,6 +103,7 @@ pub(crate) async fn handle(
     // If a nexus.objects file is provided, load the file and update configuration.
     if let Some(objects_path) = nexus_objects_path {
         let content = std::fs::read_to_string(&objects_path).map_err(|e| {
+            
             NexusCliError::Any(anyhow!(
                 "Failed to read objects file {}: {}",
                 objects_path.display(),
@@ -110,6 +111,7 @@ pub(crate) async fn handle(
             ))
         })?;
         let objects: NexusObjects = toml::from_str(&content).map_err(|e| {
+
             NexusCliError::Any(anyhow!(
                 "Failed to parse objects file {}: {}",
                 objects_path.display(),
@@ -117,13 +119,16 @@ pub(crate) async fn handle(
             ))
         })?;
 
-        conf.nexus.workflow_pkg_id = nexus_workflow_pkg_id.or(Some(objects.workflow_pkg_id));
-        conf.nexus.primitives_pkg_id = nexus_primitives_pkg_id.or(Some(objects.primitives_pkg_id));
-        conf.nexus.tool_registry_object_id =
-            nexus_tool_registry_object_id.or(Some(objects.tool_registry_object_id));
-        conf.nexus.default_sap_object_id =
-            nexus_default_sap_object_id.or(Some(objects.default_sap_object_id));
-        conf.nexus.network_id = nexus_network_id.or(Some(objects.network_id));
+        conf.nexus.workflow_pkg_id = nexus_workflow_pkg_id
+            .or(Some(objects.workflow_pkg_id));
+        conf.nexus.primitives_pkg_id = nexus_primitives_pkg_id
+            .or(Some(objects.primitives_pkg_id));
+        conf.nexus.tool_registry_object_id = nexus_tool_registry_object_id
+            .or(Some(objects.tool_registry_object_id));
+        conf.nexus.default_sap_object_id = nexus_default_sap_object_id
+            .or(Some(objects.default_sap_object_id));
+        conf.nexus.network_id = nexus_network_id
+            .or(Some(objects.network_id));
     }
 
     conf.sui.net = sui_net.unwrap_or(conf.sui.net);
