@@ -66,7 +66,7 @@ impl NexusTool for GetList {
     }
 
     fn path() -> &'static str {
-        "/twitter/get-list"
+        "/get-list"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

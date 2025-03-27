@@ -71,7 +71,7 @@ impl NexusTool for CreateList {
     }
 
     fn path() -> &'static str {
-        "/twitter/create-list"
+        "/create-list"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

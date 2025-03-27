@@ -126,7 +126,7 @@ impl NexusTool for MentionedTweets {
     }
 
     fn path() -> &'static str {
-        "/twitter/mentioned-tweets"
+        "/mentioned-tweets"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

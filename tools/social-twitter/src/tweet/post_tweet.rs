@@ -96,7 +96,7 @@ impl NexusTool for PostTweet {
     }
 
     fn path() -> &'static str {
-        "/twitter/post-tweet"
+        "/post-tweet"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

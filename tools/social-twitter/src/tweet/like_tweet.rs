@@ -60,7 +60,7 @@ impl NexusTool for LikeTweet {
     }
 
     fn path() -> &'static str {
-        "/twitter/like-tweet"
+        "/like-tweet"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

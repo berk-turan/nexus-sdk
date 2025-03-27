@@ -66,7 +66,7 @@ impl NexusTool for UpdateList {
     }
 
     fn path() -> &'static str {
-        "/twitter/update-list"
+        "/update-list"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

@@ -69,7 +69,7 @@ impl NexusTool for GetUserByUsername {
     }
 
     fn path() -> &'static str {
-        "/twitter/get-user-by-username"
+        "/get-user-by-username"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

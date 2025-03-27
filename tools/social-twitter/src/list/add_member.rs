@@ -57,7 +57,7 @@ impl NexusTool for AddMember {
     }
 
     fn path() -> &'static str {
-        "/twitter/add-member"
+        "/add-member"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

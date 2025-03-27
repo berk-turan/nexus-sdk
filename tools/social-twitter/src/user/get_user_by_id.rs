@@ -74,7 +74,7 @@ impl NexusTool for GetUserById {
     }
 
     fn path() -> &'static str {
-        "/twitter/get-user-by-id"
+        "/get-user-by-id"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

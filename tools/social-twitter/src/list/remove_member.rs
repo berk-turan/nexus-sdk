@@ -57,7 +57,7 @@ impl NexusTool for RemoveMember {
     }
 
     fn path() -> &'static str {
-        "/twitter/remove-member"
+        "/remove-member"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

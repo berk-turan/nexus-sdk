@@ -79,7 +79,7 @@ impl NexusTool for GetListMembers {
     }
 
     fn path() -> &'static str {
-        "/twitter/get-list-members"
+        "/get-list-members"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {

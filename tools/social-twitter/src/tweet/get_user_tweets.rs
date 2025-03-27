@@ -131,7 +131,7 @@ impl NexusTool for GetUserTweets {
     }
 
     fn path() -> &'static str {
-        "/twitter/get-user-tweets"
+        "/get-user-tweets"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {
