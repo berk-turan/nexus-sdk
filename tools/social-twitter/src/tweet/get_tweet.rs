@@ -3,14 +3,15 @@
 //! Standard Nexus Tool that retrieves a single tweet from the Twitter API.
 
 use {
-    crate::tweet::{models::SingleTweetResponse, TWITTER_API_BASE},
-    reqwest::Client,
-    ::{
-        nexus_sdk::{fqn, ToolFqn},
-        nexus_toolkit::*,
-        schemars::JsonSchema,
-        serde::{Deserialize, Serialize},
+    crate::tweet::{
+        models::{GetTweetApiResponse, Includes, Meta, Tweet},
+        TWITTER_API_BASE,
     },
+    nexus_sdk::{fqn, ToolFqn},
+    nexus_toolkit::*,
+    reqwest::Client,
+    schemars::JsonSchema,
+    serde::{Deserialize, Serialize},
 };
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -27,7 +28,12 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The successful tweet response data
-        result: SingleTweetResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<Tweet>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Meta>,
     },
     Err {
         /// Error message if the tweet failed
@@ -85,34 +91,27 @@ impl NexusTool for GetTweet {
                 // Try to parse response as JSON
                 match response.text().await {
                     Ok(text) => {
-                        // First check if response contains error
-                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(errors) = error.get("errors") {
-                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
-                                {
-                                    let message = first_error
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-                                    let code = first_error
-                                        .get("code")
-                                        .and_then(|c| c.as_u64())
-                                        .unwrap_or(0);
-                                    return Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (code: {})",
-                                            message, code
-                                        ),
-                                    };
+                        // If no error, try to parse as successful response
+                        match serde_json::from_str::<GetTweetApiResponse>(&text) {
+                            Ok(tweets_response) => {
+                                // Check if there are any errors in the response
+                                if let Some(errors) = tweets_response.errors {
+                                    if let Some(first_error) = errors.first() {
+                                        return Output::Err {
+                                            reason: format!(
+                                                "Twitter API error: {} (error type: {})",
+                                                first_error.title, first_error.error_type
+                                            ),
+                                        };
+                                    }
+                                }
+
+                                Output::Ok {
+                                    data: tweets_response.data,
+                                    includes: tweets_response.includes,
+                                    meta: tweets_response.meta,
                                 }
                             }
-                        }
-
-                        // If no error, try to parse as successful response
-                        match serde_json::from_str::<SingleTweetResponse>(&text) {
-                            Ok(tweets_response) => Output::Ok {
-                                result: tweets_response,
-                            },
                             Err(e) => Output::Err {
                                 reason: format!("Failed to parse Twitter API response: {}", e),
                             },
@@ -185,8 +184,12 @@ mod tests {
 
         // Verify the response
         match output {
-            Output::Ok { result } => {
-                if let Some(tweet) = result.data {
+            Output::Ok {
+                data,
+                includes: _,
+                meta: _,
+            } => {
+                if let Some(tweet) = data {
                     assert_eq!(tweet.id, "1346889436626259968");
                     assert_eq!(tweet.text, "Learn how to use the user Tweet timeline and user mention timeline endpoints in the X API v2 to explore Tweet\\u2026 https:\\/\\/t.co\\/56a0vZUx7i");
                 } else {
@@ -202,20 +205,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tweet_not_found() {
-        // Create server and tool
         let (mut server, tool) = create_server_and_tool().await;
 
-        // Set up mock response for not found
         let mock = server
             .mock("GET", "/tweets/test_tweet_id")
-            .with_status(404)
+            .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
                     "errors": [
                         {
-                            "message": "Not Found",
-                            "code": 34
+                            "title": "Tweet Not Found",
+                            "type": "Not found",
+                            "detail": "Tweet not found",
+                            "status": 34
                         }
                     ]
                 })
@@ -224,18 +227,113 @@ mod tests {
             .create_async()
             .await;
 
-        // Test the tweet request
         let output = tool.invoke(create_test_input()).await;
 
-        // Verify the response
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Not Found"));
+                assert!(reason.contains("Tweet Not Found"));
+                assert!(reason.contains("Not found"));
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok {
+                data,
+                includes,
+                meta,
+            } => {
+                panic!(
+                    "Expected error, got success: data={:?}, includes={:?}, meta={:?}",
+                    data, includes, meta
+                );
+            }
         }
 
-        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_tweet_unauthorized() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/tweets/test_tweet_id")
+            .with_status(401)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "errors": [
+                        {
+                            "detail": "Unauthorized",
+                            "status": 401
+                        }
+                    ]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Unauthorized"));
+                assert!(reason.contains("401"));
+            }
+            Output::Ok {
+                data,
+                includes,
+                meta,
+            } => {
+                panic!(
+                    "Expected error, got success: data={:?}, includes={:?}, meta={:?}",
+                    data, includes, meta
+                );
+            }
+        }
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_tweet_rate_limit() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        let mock = server
+            .mock("GET", "/tweets/test_tweet_id")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "errors": [
+                        {
+                            "detail": "Rate limit exceeded",
+                            "status": 429
+                        }
+                    ]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let output = tool.invoke(create_test_input()).await;
+
+        match output {
+            Output::Err { reason } => {
+                assert!(reason.contains("Rate limit exceeded"));
+                assert!(reason.contains("429"));
+            }
+            Output::Ok {
+                data,
+                includes,
+                meta,
+            } => {
+                panic!(
+                    "Expected error, got success: data={:?}, includes={:?}, meta={:?}",
+                    data, includes, meta
+                );
+            }
+        }
+
         mock.assert_async().await;
     }
 }

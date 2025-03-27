@@ -18,14 +18,26 @@ The ID of the tweet to retrieve.
 
 The tweet was retrieved successfully.
 
-- **`ok.result`: [`SingleTweetResponse`]** - The tweet data containing all fields from the Twitter API response.
+- **`ok.data`: [`Option<Tweet>`]** - The tweet data containing:
+
+  - `id`: The tweet's unique identifier
+  - `text`: The tweet's content
+  - `author_id`: The ID of the tweet's author
+  - `created_at`: The timestamp when the tweet was created
+  - `username`: The username of the tweet's author
+  - And other optional fields like attachments, entities, metrics, etc.
+
+- **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response (users, media, polls, etc.)
+
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response
 
 **`err`**
 
 The tweet was not retrieved due to an error.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
+  - Twitter API error with title and error type
+  - Twitter API error with detail and status
   - Failed to parse Twitter API response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API

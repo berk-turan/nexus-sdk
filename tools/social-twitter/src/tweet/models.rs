@@ -17,7 +17,7 @@ pub struct TweetsResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct SingleTweetResponse {
+pub struct GetTweetApiResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Tweet>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -289,8 +289,10 @@ pub struct ApiError {
     pub title: String,
     #[serde(rename = "type")]
     pub error_type: String,
-    pub detail: String,
-    pub status: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
