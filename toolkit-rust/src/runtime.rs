@@ -91,7 +91,7 @@ macro_rules! bootstrap {
         $crate::warp::serve(routes).run($addr).await
     }};
         // Default address.
-      ([$($tool:ty),+ $(,)?]) => {{
+    ([$($tool:ty),+ $(,)?]) => {{
         let addr = bootstrap!(@get_addr);
         bootstrap!(addr, [$($tool,)*])
     }};

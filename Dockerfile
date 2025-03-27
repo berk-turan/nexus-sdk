@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY cli cli
 COPY tools tools
-COPY types types
+COPY sdk sdk
 COPY toolkit-rust toolkit-rust
 
 COPY Cargo.lock Cargo.lock

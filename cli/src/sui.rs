@@ -451,23 +451,13 @@ pub fn resolve_wallet_path(
         Ok(path)
     } else if let Ok(mnemonic) = std::env::var("SUI_SECRET_MNEMONIC") {
         let key_scheme = sui::SignatureScheme::ED25519;
-        retrieve_wallet_with_mnemonic(
-            conf.net, &mnemonic, key_scheme, None, // derivation_path
-            None, // alias
-        )
-        .map_err(NexusCliError::Any)
+        retrieve_wallet_with_mnemonic(conf.net, &mnemonic).map_err(NexusCliError::Any)
     } else {
         Ok(conf.wallet_path.clone())
     }
 }
 
-fn retrieve_wallet_with_mnemonic(
-    net: SuiNet,
-    mnemonic: &str,
-    key_scheme: sui::SignatureScheme,
-    derivation_path: Option<DerivationPath>,
-    alias: Option<String>,
-) -> Result<PathBuf, anyhow::Error> {
+fn retrieve_wallet_with_mnemonic(net: SuiNet, mnemonic: &str) -> Result<PathBuf, anyhow::Error> {
     // Determine configuration paths.
     let config_dir = sui_config_dir()?;
     let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
@@ -497,7 +487,7 @@ fn retrieve_wallet_with_mnemonic(
     // Import the mnemonic into the keystore.
     let mut keystore = FileBasedKeystore::new(&keystore_path)?;
     let imported_address =
-        keystore.import_from_mnemonic(mnemonic, key_scheme, derivation_path, alias)?;
+        keystore.import_from_mnemonic(mnemonic, sui::SignatureScheme::ED25519, None, None)?;
 
     // Read the existing client configuration.
     let mut client_config: SuiClientConfig = PersistedConfig::read(&wallet_conf_path)?;
@@ -613,14 +603,8 @@ mod tests {
         let _ = std::fs::remove_file(&keystore_path);
 
         // Call the function under test.
-        let _ = retrieve_wallet_with_mnemonic(
-            SuiNet::Localnet,
-            mnemonic,
-            sui::SignatureScheme::ED25519,
-            None,
-            None,
-        )
-        .expect("retrieve_wallet_with_mnemonic failed");
+        let _ = retrieve_wallet_with_mnemonic(SuiNet::Localnet, mnemonic)
+            .expect("retrieve_wallet_with_mnemonic failed");
 
         let client_config: SuiClientConfig =
             PersistedConfig::read(&wallet_conf_path).expect("Failed to read client config");
@@ -685,14 +669,8 @@ mod tests {
         // Call retrieve_wallet_with_mnemonic with the new mnemonic.
         // This should import the new mnemonic into the preexisting keystore so that its derived
         // address becomes the first (active) address.
-        let _ = retrieve_wallet_with_mnemonic(
-            SuiNet::Localnet,
-            new_mnemonic,
-            sui::SignatureScheme::ED25519,
-            None,
-            None,
-        )
-        .expect("retrieve_wallet_with_mnemonic failed");
+        let _ = retrieve_wallet_with_mnemonic(SuiNet::Localnet, new_mnemonic)
+            .expect("retrieve_wallet_with_mnemonic failed");
 
         // Read the updated client configuration.
         let updated_config: SuiClientConfig =
