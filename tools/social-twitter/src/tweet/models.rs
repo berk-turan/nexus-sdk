@@ -621,9 +621,11 @@ pub struct ReplyInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
 pub enum ReplySettings {
+    #[serde(rename = "following")]
     Following,
+    #[serde(rename = "mentionedUsers")]
     MentionedUsers,
+    #[serde(rename = "subscribers")]
     Subscribers,
 }
