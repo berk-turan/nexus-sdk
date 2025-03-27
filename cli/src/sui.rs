@@ -5,10 +5,8 @@ use {
         sui_config_dir,
         FileBasedKeystore,
         PersistedConfig,
-        SignatureScheme::ED25519,
         SuiClientConfig,
         SuiEnv,
-        WalletContext,
         SUI_CLIENT_CONFIG,
         SUI_KEYSTORE_FILENAME,
     },
@@ -354,7 +352,7 @@ pub(crate) async fn fetch_object_by_id(
     Ok((object.object_id, version, object.digest).into())
 }
 
-/// Wrapping some conf parsing functioality used around the CLI.
+/// Wrapping some conf parsing functionality used around the CLI.
 // TODO: <https://github.com/Talus-Network/nexus-sdk/issues/20>
 pub(crate) fn get_nexus_objects(conf: &CliConf) -> AnyResult<NexusObjects, NexusCliError> {
     let objects_handle = loading!("Loading Nexus object IDs configuration...");
@@ -440,14 +438,34 @@ pub(crate) async fn fetch_gas_coin(
     }
 }
 
-#[allow(dead_code)]
-pub fn retrieve_wallet_with_mnemonic(
-    config: SuiConf,
+pub fn resolve_wallet_path(
+    cli_wallet_path: Option<PathBuf>,
+    conf: &SuiConf,
+) -> Result<PathBuf, NexusCliError> {
+    if let Some(path) = cli_wallet_path {
+        Ok(path)
+    } else if let Ok(mnemonic) = std::env::var("SUI_SECRET_MNEMONIC") {
+        let key_scheme = sui::SignatureScheme::ED25519;
+        retrieve_wallet_with_mnemonic(
+            conf.net.clone(),
+            &mnemonic,
+            key_scheme,
+            None, // derivation_path
+            None, // alias
+        )
+        .map_err(|e| NexusCliError::Any(e))
+    } else {
+        Ok(conf.wallet_path.clone())
+    }
+}
+
+fn retrieve_wallet_with_mnemonic(
+    net: SuiNet,
     mnemonic: &str,
     key_scheme: sui::SignatureScheme,
     derivation_path: Option<DerivationPath>,
     alias: Option<String>,
-) -> Result<sui::WalletContext, anyhow::Error> {
+) -> Result<PathBuf, anyhow::Error> {
     // Determine configuration paths.
     let config_dir = sui_config_dir()?;
     let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
@@ -463,7 +481,7 @@ pub fn retrieve_wallet_with_mnemonic(
     if !wallet_conf_path.exists() {
         let keystore = FileBasedKeystore::new(&keystore_path)?;
         let mut client_config = SuiClientConfig::new(keystore.into());
-        if let Some(env) = get_sui_env(config.net) {
+        if let Some(env) = get_sui_env(net) {
             client_config.add_env(env);
         }
         if client_config.active_env.is_none() {
@@ -476,35 +494,16 @@ pub fn retrieve_wallet_with_mnemonic(
 
     // Import the mnemonic into the keystore.
     let mut keystore = FileBasedKeystore::new(&keystore_path)?;
-    keystore.import_from_mnemonic(mnemonic, key_scheme, derivation_path, alias)?;
+    let imported_address =
+        keystore.import_from_mnemonic(mnemonic, key_scheme, derivation_path, alias)?;
 
     // Read the existing client configuration.
     let mut client_config: SuiClientConfig = PersistedConfig::read(&wallet_conf_path)?;
 
-    // Set the default active address.
-    let default_active_address = if let Some(address) = keystore.addresses().first() {
-        *address
-    } else {
-        keystore
-            .generate_and_add_new_key(ED25519, None, None, None)?
-            .0
-    };
-
-    // Optionally ensure there is more than one address.
-    if keystore.addresses().len() < 2 {
-        keystore.generate_and_add_new_key(ED25519, None, None, None)?;
-    }
-
-    client_config.active_address = Some(default_active_address);
+    client_config.active_address = Some(imported_address);
     client_config.save(&wallet_conf_path)?;
 
-    // Create and return the wallet context.
-    let wallet = WalletContext::new(
-        &wallet_conf_path,
-        Some(std::time::Duration::from_secs(60)),
-        None,
-    )?;
-    Ok(wallet)
+    Ok(wallet_conf_path)
 }
 
 fn get_sui_env(net: SuiNet) -> Option<SuiEnv> {
@@ -523,5 +522,192 @@ fn get_sui_env(net: SuiNet) -> Option<SuiEnv> {
             SuiNet::Mainnet => todo!("Mainnet not yet supported"),
         };
         Some(client)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        nexus_sdk::sui::Address,
+        rstest::rstest,
+        serial_test::serial,
+        tempfile::tempdir,
+    };
+
+    #[rstest(
+        cli_wallet_path,
+        mnemonic_env,
+        expected,
+        case(
+            Some(PathBuf::from("/tmp/sui/config/client.toml")),
+            None,
+            PathBuf::from("/tmp/sui/config/client.toml")
+        ),
+        case(None, None, PathBuf::from("/tmp/sui/config/client.toml")),
+        case(
+            None,
+            Some("include zoo tiger rural ball demand senior asthma tunnel hero ritual domain"),
+            PathBuf::from("/tmp/sui/config/client.yaml")
+        )
+    )]
+    #[serial]
+    fn test_resolve_wallet_path(
+        cli_wallet_path: Option<PathBuf>,
+        mnemonic_env: Option<&str>,
+        expected: PathBuf,
+    ) {
+        let sui_default_config = "/tmp/sui/config";
+        // Set the default sui config folder to /tmp
+        std::env::set_var("SUI_CONFIG_DIR", &sui_default_config);
+
+        // Set or remove the mnemonic environment variable as needed.
+        if let Some(mnemonic) = mnemonic_env {
+            std::env::set_var("SUI_SECRET_MNEMONIC", mnemonic);
+        } else {
+            std::env::remove_var("SUI_SECRET_MNEMONIC");
+        }
+
+        // Prepare the SuiConf instance.
+        let conf = SuiConf {
+            net: SuiNet::Localnet,
+            wallet_path: PathBuf::from(format!("{}/client.toml", &sui_default_config)),
+        };
+
+        // Call the function under test.
+        let resolved = resolve_wallet_path(cli_wallet_path, &conf).unwrap();
+        assert_eq!(resolved, expected);
+
+        // Clean up the env variable.
+        std::env::remove_var("SUI_SECRET_MNEMONIC");
+        let _ = std::fs::remove_dir_all(&sui_default_config);
+    }
+
+    #[rstest(
+        mnemonic,
+        expected_address_str,
+        case(
+            "include zoo tiger rural ball demand senior asthma tunnel hero ritual domain",
+            "0x479c168e5ac1319a78b09eb922a26472fbad9fc9ac904b17453eb71f4d7eb831"
+        ),
+        case(
+            "just place income emotion clutch column pledge same pool twist finish proof",
+            "0xe58c2145af0546e7be946b214e908d7e08e99e907950b428dcfe1dc9d8d8c449"
+        )
+    )]
+    #[serial]
+    fn test_active_address_set_by_mnemonic(mnemonic: &str, expected_address_str: &str) {
+        // Set up a clean temporary config directory.
+        let temp_dir = tempdir().unwrap();
+        let sui_default_config = temp_dir.path().to_str().unwrap();
+        // Set the default sui config folder to /tmp
+        std::env::set_var("SUI_CONFIG_DIR", &sui_default_config);
+        let config_dir = sui_config_dir().expect("Failed to get config dir");
+        let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
+        let keystore_path = config_dir.join(SUI_KEYSTORE_FILENAME);
+
+        // Clean up any existing files.
+        let _ = std::fs::remove_file(&wallet_conf_path);
+        let _ = std::fs::remove_file(&keystore_path);
+
+        // Call the function under test.
+        let _ = retrieve_wallet_with_mnemonic(
+            SuiNet::Localnet,
+            mnemonic,
+            sui::SignatureScheme::ED25519,
+            None,
+            None,
+        )
+        .expect("retrieve_wallet_with_mnemonic failed");
+
+        let client_config: SuiClientConfig =
+            PersistedConfig::read(&wallet_conf_path).expect("Failed to read client config");
+        let expected_address: Address = expected_address_str.parse().expect("Invalid address");
+        assert_eq!(client_config.active_address.unwrap(), expected_address);
+
+        let _ = std::fs::remove_dir_all(&config_dir);
+    }
+
+    #[rstest(
+        preexisting_mnemonic,
+        new_mnemonic,
+        expected_active_address_str,
+        case(
+            "include zoo tiger rural ball demand senior asthma tunnel hero ritual domain",
+            "just place income emotion clutch column pledge same pool twist finish proof",
+            "0xe58c2145af0546e7be946b214e908d7e08e99e907950b428dcfe1dc9d8d8c449"
+        )
+    )]
+    #[serial]
+    fn test_active_address_with_preexisting_keystore(
+        preexisting_mnemonic: &str,
+        new_mnemonic: &str,
+        expected_active_address_str: &str,
+    ) {
+        // Create a temporary config directory.
+        let temp_dir = tempdir().unwrap();
+        let config_dir = temp_dir.path().to_path_buf();
+        std::env::set_var("SUI_CONFIG_DIR", config_dir.to_str().unwrap());
+
+        let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
+        let keystore_path = config_dir.join(SUI_KEYSTORE_FILENAME);
+
+        // Create a preexisting keystore file with an active address derived from preexisting_mnemonic.
+        {
+            // FileBasedKeystore is assumed to be your real implementation.
+            let mut preexisting_keystore =
+                FileBasedKeystore::new(&keystore_path).expect("Failed to create keystore");
+            preexisting_keystore
+                .import_from_mnemonic(
+                    preexisting_mnemonic,
+                    sui::SignatureScheme::ED25519,
+                    None,
+                    None,
+                )
+                .expect("Failed to import preexisting mnemonic");
+            preexisting_keystore
+                .save()
+                .expect("Failed to save keystore");
+        }
+
+        // Create a default client configuration if it doesn't exist.
+        if !wallet_conf_path.exists() {
+            let keystore =
+                FileBasedKeystore::new(&keystore_path).expect("Failed to create keystore");
+            let client_config = SuiClientConfig::new(keystore.into());
+            client_config
+                .save(&wallet_conf_path)
+                .expect("Failed to save client config");
+        }
+
+        // Call retrieve_wallet_with_mnemonic with the new mnemonic.
+        // This should import the new mnemonic into the preexisting keystore so that its derived
+        // address becomes the first (active) address.
+        let _ = retrieve_wallet_with_mnemonic(
+            SuiNet::Localnet,
+            new_mnemonic,
+            sui::SignatureScheme::ED25519,
+            None,
+            None,
+        )
+        .expect("retrieve_wallet_with_mnemonic failed");
+
+        // Read the updated client configuration.
+        let updated_config: SuiClientConfig =
+            PersistedConfig::read(&wallet_conf_path).expect("Failed to read client config");
+
+        // Convert the expected address string into a SuiAddress.
+        let expected_active_address: Address = expected_active_address_str
+            .parse()
+            .expect("Invalid SuiAddress string");
+
+        // The active address in the config should match the one derived from the new mnemonic.
+        assert_eq!(
+            updated_config.active_address.unwrap(),
+            expected_active_address
+        );
+
+        // Clean up temporary files.
+        let _ = std::fs::remove_dir_all(&config_dir);
     }
 }

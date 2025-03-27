@@ -1,5 +1,4 @@
-use crate::{command_title, loading, prelude::*};
-
+use crate::{command_title, loading, prelude::*, sui::resolve_wallet_path};
 #[derive(Args, Clone, Debug)]
 pub(crate) struct ConfCommand {
     #[arg(
@@ -135,7 +134,7 @@ pub(crate) async fn handle(
     }
 
     conf.sui.net = sui_net.unwrap_or(conf.sui.net);
-    conf.sui.wallet_path = sui_wallet_path.unwrap_or(conf.sui.wallet_path);
+    conf.sui.wallet_path = resolve_wallet_path(sui_wallet_path, &conf.sui)?;
     conf.nexus.workflow_pkg_id = nexus_workflow_pkg_id.or(conf.nexus.workflow_pkg_id);
     conf.nexus.primitives_pkg_id = nexus_primitives_pkg_id.or(conf.nexus.primitives_pkg_id);
     conf.nexus.tool_registry_object_id =
