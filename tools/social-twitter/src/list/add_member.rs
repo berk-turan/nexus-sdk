@@ -18,9 +18,9 @@ pub(crate) struct Input {
     /// Twitter API credentials
     #[serde(flatten)]
     auth: TwitterAuth,
-    /// List ID to remove member from
+    /// List ID to add member to
     list_id: String,
-    /// User ID to remove from list
+    /// User ID to add to list
     user_id: String,
 }
 
@@ -28,12 +28,12 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful tweet response data
-        #[schemars(description = "Successfully removed member from list data")]
+        /// The successful list member response data
+        #[schemars(description = "Successfully added member to list data")]
         result: ListMemberResponse,
     },
     Err {
-        /// Error message if the tweet failed
+        /// Error message if the list member addition failed
         reason: String,
     },
 }
