@@ -83,9 +83,56 @@ impl NexusTool for GetTweet {
             Ok(response) => {
                 // Check if response is successful
                 if !response.status().is_success() {
-                    return Output::Err {
-                        reason: format!("Twitter API returned error status: {}", response.status()),
-                    };
+                    let status = response.status();
+                    // Try to parse error response
+                    match response.text().await {
+                        Ok(text) => {
+                            if let Ok(error_response) =
+                                serde_json::from_str::<serde_json::Value>(&text)
+                            {
+                                if let Some(errors) =
+                                    error_response.get("errors").and_then(|e| e.as_array())
+                                {
+                                    if let Some(first_error) = errors.first() {
+                                        let mut error_msg = format!(
+                                            "Twitter API error: {} (error type: {})",
+                                            error_response
+                                                .get("title")
+                                                .and_then(|t| t.as_str())
+                                                .unwrap_or("Unknown Error"),
+                                            error_response
+                                                .get("type")
+                                                .and_then(|t| t.as_str())
+                                                .unwrap_or("unknown")
+                                        );
+
+                                        if let Some(detail) =
+                                            error_response.get("detail").and_then(|d| d.as_str())
+                                        {
+                                            error_msg.push_str(&format!(" - {}", detail));
+                                        }
+
+                                        if let Some(message) =
+                                            first_error.get("message").and_then(|m| m.as_str())
+                                        {
+                                            error_msg.push_str(&format!(" - {}", message));
+                                        }
+
+                                        return Output::Err { reason: error_msg };
+                                    }
+                                }
+                            }
+                            // If we couldn't parse the error response, return the status code
+                            return Output::Err {
+                                reason: format!("Twitter API returned error status: {}", status),
+                            };
+                        }
+                        Err(_) => {
+                            return Output::Err {
+                                reason: format!("Twitter API returned error status: {}", status),
+                            };
+                        }
+                    }
                 }
 
                 // Try to parse response as JSON

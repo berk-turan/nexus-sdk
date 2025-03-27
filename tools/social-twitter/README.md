@@ -36,8 +36,8 @@ The tweet was retrieved successfully.
 The tweet was not retrieved due to an error.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error with title and error type (e.g., "Twitter API error: Not Found Error (error type: https://api.twitter.com/2/problems/resource-not-found)")
-  - Twitter API error with optional detail (e.g., "Twitter API error: Not Found Error (error type: https://api.twitter.com/2/problems/resource-not-found) - Could not find tweet with id: [test_tweet_id]")
+  - Twitter API error with title and error type (e.g., "Twitter API error: Invalid Request (error type: https://api.twitter.com/2/problems/invalid-request)")
+  - Twitter API error with optional detail and message (e.g., "Twitter API error: Invalid Request (error type: https://api.twitter.com/2/problems/invalid-request) - One or more parameters to your request was invalid. - The `id` query parameter value [2222222222222222222222222222] is not valid")
   - Failed to parse Twitter API response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
