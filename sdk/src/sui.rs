@@ -28,6 +28,7 @@ pub use {
     },
     sui_sdk::{
         error::Error,
+        json::SuiJsonValue,
         rpc_types::{
             Coin,
             EventFilter,
