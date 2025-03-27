@@ -15,11 +15,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.ref }}
           fetch-tags: false
-      # - name: Increase swapfile
-      #   uses: ./.github/actions/increase-swapfile
-      #   with:
-      #     swap_size: "6G"
-      # This is just temporary until the changes are propagated to main.
+
       - name: Increase swapfile
         run: |
           sudo swapon --show

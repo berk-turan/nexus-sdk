@@ -45,4 +45,4 @@ portpicker = "0.1.1"
 tempfile = "3.19.1"
 # === Nexus deps ===
 nexus-toolkit = { path = "toolkit-rust" }
-nexus-sdk = { path = "sdk", features = ["types"] }
+nexus-sdk = { path = "sdk" }

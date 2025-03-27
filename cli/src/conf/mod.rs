@@ -48,7 +48,7 @@ pub(crate) struct ConfCommand {
     #[arg(
         long = "nexus.objects",
         help = "Path to a TOML file containing Nexus objects",
-        value_name = "FILE",
+        value_name = "PATH",
         value_parser = ValueParser::from(expand_tilde)
     )]
     nexus_objects_path: Option<PathBuf>,
