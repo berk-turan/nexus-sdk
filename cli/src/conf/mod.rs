@@ -116,21 +116,17 @@ pub(crate) async fn handle(
                 e
             ))
         })?;
+
         conf.nexus.workflow_pkg_id = nexus_workflow_pkg_id
-            .or(Some(objects.workflow_pkg_id))
-            .or(conf.nexus.workflow_pkg_id);
+            .or(Some(objects.workflow_pkg_id));
         conf.nexus.primitives_pkg_id = nexus_primitives_pkg_id
-            .or(Some(objects.primitives_pkg_id))
-            .or(conf.nexus.primitives_pkg_id);
+            .or(Some(objects.primitives_pkg_id));
         conf.nexus.tool_registry_object_id = nexus_tool_registry_object_id
-            .or(Some(objects.tool_registry_object_id))
-            .or(conf.nexus.tool_registry_object_id);
+            .or(Some(objects.tool_registry_object_id));
         conf.nexus.default_sap_object_id = nexus_default_sap_object_id
-            .or(Some(objects.default_sap_object_id))
-            .or(conf.nexus.default_sap_object_id);
+            .or(Some(objects.default_sap_object_id));
         conf.nexus.network_id = nexus_network_id
-            .or(Some(objects.network_id))
-            .or(conf.nexus.network_id);
+            .or(Some(objects.network_id));
     }
 
     conf.sui.net = sui_net.unwrap_or(conf.sui.net);
