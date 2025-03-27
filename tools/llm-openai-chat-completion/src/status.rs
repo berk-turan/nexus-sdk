@@ -14,7 +14,9 @@ use {
 
 const DEFAULT_HEALTHCHECK_URL: &str = "https://status.openai.com/api/v2/status.json";
 /// The expected status indicator for a healthy API.
-const HEALTH_OK: &str = "none";
+const STATUS_INDICATOR_NONE: &str = "none";
+/// The expected status indicator for an almost healthy API (minor hiccups).
+const STATUS_INDICATOR_MINOR: &str = "minor";
 
 /// Represents the overall response from the OpenAI status API.
 #[allow(dead_code)]
@@ -46,7 +48,7 @@ struct PageInfo {
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct StatusInfo {
-    /// The status indicator (e.g., "none", "minor", "major", ...).
+    /// The status indicator (e.g., "none", "minor", "major", "critical", ...).
     indicator: String,
     /// A description of the current status.
     description: String,
@@ -76,7 +78,7 @@ pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     };
 
     let response: ApiResponse = wrapped.0;
-    if response.status.indicator != HEALTH_OK && response.status.indicator != "minor" {
+    if ! matches!(response.status.indicator, STATUS_INDICATOR_NONE | STATUS_INDICATOR_MINOR) {
         return Ok(StatusCode::SERVICE_UNAVAILABLE);
     }
 
