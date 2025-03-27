@@ -51,12 +51,6 @@ impl TwitterAuth {
         post(url, &(), &token, HmacSha1::new())
     }
 
-    /// Generate an OAuth authorization header for a POST request
-    pub fn generate_auth_header_for_post(&self, url: &str) -> String {
-        let token = self.to_token();
-        post(url, &(), &token, HmacSha1::new())
-    }
-
     /// Generate an OAuth authorization header for a PUT request
     pub fn generate_auth_header_for_put(&self, url: &str) -> String {
         let token = self.to_token();

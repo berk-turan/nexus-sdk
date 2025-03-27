@@ -67,7 +67,7 @@ impl NexusTool for AddMember {
     async fn invoke(&self, request: Self::Input) -> Self::Output {
         // Add authentication header
         let url = format!("{}/{}/members", self.api_base, request.list_id);
-        let auth_header = request.auth.generate_auth_header_for_post(&url);
+        let auth_header = request.auth.generate_auth_header(&url);
 
         // Initialize HTTP client
         let client = Client::new();
