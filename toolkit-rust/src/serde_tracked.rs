@@ -1,11 +1,8 @@
-use {
-    serde::{
-        de::{DeserializeOwned, Deserializer},
-        Deserialize,
-        Serialize,
-        Serializer,
-    },
-    serde_path_to_error,
+use serde::{
+    de::{DeserializeOwned, Deserializer},
+    Deserialize,
+    Serialize,
+    Serializer,
 };
 
 /// A generic wrapper type that transparently serializes and deserializes the inner type `T`.
