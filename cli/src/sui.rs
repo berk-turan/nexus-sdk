@@ -1,6 +1,5 @@
 use {
     crate::{loading, prelude::*},
-    bip32::DerivationPath,
     nexus_sdk::sui::{
         sui_config_dir,
         FileBasedKeystore,
@@ -450,7 +449,6 @@ pub fn resolve_wallet_path(
     if let Some(path) = cli_wallet_path {
         Ok(path)
     } else if let Ok(mnemonic) = std::env::var("SUI_SECRET_MNEMONIC") {
-        let key_scheme = sui::SignatureScheme::ED25519;
         retrieve_wallet_with_mnemonic(conf.net, &mnemonic).map_err(NexusCliError::Any)
     } else {
         Ok(conf.wallet_path.clone())

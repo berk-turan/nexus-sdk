@@ -6,8 +6,7 @@
 use {
     chrono::{DateTime, FixedOffset},
     log::{debug, error},
-    nexus_sdk::types::WithSerdeErrorPath,
-    nexus_toolkit::{AnyResult, StatusCode},
+    nexus_toolkit::{AnyResult, StatusCode, WithSerdeErrorPath},
     reqwest::Client,
     serde::Deserialize,
 };
@@ -78,7 +77,10 @@ pub(crate) async fn check_api_health() -> AnyResult<StatusCode> {
     };
 
     let response: ApiResponse = wrapped.0;
-    if ! matches!(response.status.indicator, STATUS_INDICATOR_NONE | STATUS_INDICATOR_MINOR) {
+    if !matches!(
+        response.status.indicator.as_str(),
+        STATUS_INDICATOR_NONE | STATUS_INDICATOR_MINOR
+    ) {
         return Ok(StatusCode::SERVICE_UNAVAILABLE);
     }
 

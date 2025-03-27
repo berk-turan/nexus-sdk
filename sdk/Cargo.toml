@@ -63,7 +63,6 @@ full = [
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
-serde_path_to_error = "0.1.17"
 
 # === Optional deps ===
 [dependencies.lazy-regex]

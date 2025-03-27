@@ -43,6 +43,7 @@ rstest = "0.25.0"
 serial_test = "3.2.0"
 portpicker = "0.1.1"
 tempfile = "3.19.1"
+serde_path_to_error = "0.1.17"
 # === Nexus deps ===
 nexus-toolkit = { path = "toolkit-rust" }
 nexus-sdk = { path = "sdk" }

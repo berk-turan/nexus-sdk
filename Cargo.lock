@@ -4628,7 +4628,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "serde_path_to_error",
  "shared-crypto",
  "sui-config",
  "sui-keys",
@@ -4651,6 +4650,7 @@ dependencies = [
  "schemars 1.0.0-alpha.17",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "tokio",
  "warp",
 ]

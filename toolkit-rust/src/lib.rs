@@ -9,6 +9,7 @@
 mod nexus_tool;
 mod runtime;
 mod secret;
+mod serde_tracked;
 
 pub use {
     anyhow::Result as AnyResult,
@@ -17,5 +18,6 @@ pub use {
     nexus_tool::NexusTool,
     runtime::routes_for_,
     secret::{BestEncryptionEver, EncryptionStrategy, Secret},
+    serde_tracked::*,
     warp::{self, http::StatusCode},
 };
