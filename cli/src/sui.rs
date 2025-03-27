@@ -1,13 +1,13 @@
 use {
     crate::{loading, prelude::*},
     nexus_sdk::sui::{
-        sui_config_dir,
+        config_dir,
         FileBasedKeystore,
         PersistedConfig,
         SuiClientConfig,
         SuiEnv,
-        SUI_CLIENT_CONFIG,
-        SUI_KEYSTORE_FILENAME,
+        CLIENT_CONFIG,
+        KEYSTORE_FILENAME,
     },
     reqwest::{header, Client, StatusCode},
 };
@@ -457,9 +457,9 @@ pub fn resolve_wallet_path(
 
 fn retrieve_wallet_with_mnemonic(net: SuiNet, mnemonic: &str) -> Result<PathBuf, anyhow::Error> {
     // Determine configuration paths.
-    let config_dir = sui_config_dir()?;
-    let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
-    let keystore_path = config_dir.join(SUI_KEYSTORE_FILENAME);
+    let config_dir = config_dir()?;
+    let wallet_conf_path = config_dir.join(CLIENT_CONFIG);
+    let keystore_path = config_dir.join(KEYSTORE_FILENAME);
 
     // Ensure the keystore exists.
     if !keystore_path.exists() {
@@ -592,9 +592,9 @@ mod tests {
         let sui_default_config = temp_dir.path().to_str().unwrap();
         // Set the default sui config folder to /tmp
         std::env::set_var("SUI_CONFIG_DIR", &sui_default_config);
-        let config_dir = sui_config_dir().expect("Failed to get config dir");
-        let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
-        let keystore_path = config_dir.join(SUI_KEYSTORE_FILENAME);
+        let config_dir = config_dir().expect("Failed to get config dir");
+        let wallet_conf_path = config_dir.join(CLIENT_CONFIG);
+        let keystore_path = config_dir.join(KEYSTORE_FILENAME);
 
         // Clean up any existing files.
         let _ = std::fs::remove_file(&wallet_conf_path);
@@ -630,11 +630,11 @@ mod tests {
     ) {
         // Create a temporary config directory.
         let temp_dir = tempdir().unwrap();
-        let config_dir = temp_dir.path().to_path_buf();
+        let config_dir: PathBuf = temp_dir.path().to_path_buf();
         std::env::set_var("SUI_CONFIG_DIR", config_dir.to_str().unwrap());
 
-        let wallet_conf_path = config_dir.join(SUI_CLIENT_CONFIG);
-        let keystore_path = config_dir.join(SUI_KEYSTORE_FILENAME);
+        let wallet_conf_path = config_dir.join(CLIENT_CONFIG);
+        let keystore_path = config_dir.join(KEYSTORE_FILENAME);
 
         // Create a preexisting keystore file with an active address derived from preexisting_mnemonic.
         {

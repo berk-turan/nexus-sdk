@@ -4,7 +4,7 @@ pub(crate) use {
     clap::{builder::ValueParser, Args, Parser, Subcommand, ValueEnum},
     colored::Colorize,
     nexus_sdk::{
-        sui::{sui_config_dir as config_dir, traits::*, SUI_CLIENT_CONFIG as CLIENT_CONFIG},
+        sui::{config_dir, traits::*, CLIENT_CONFIG},
         *,
     },
     serde::{Deserialize, Serialize},
