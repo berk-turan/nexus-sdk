@@ -136,14 +136,18 @@ pub(crate) async fn request_tokens_from_faucet(
 ) -> AnyResult<(), NexusCliError> {
     let faucet_handle = loading!("Requesting tokens from faucet...");
 
-    let url = match sui_net {
-        SuiNet::Testnet => "https://faucet.testnet.sui.io/v1/gas",
-        SuiNet::Devnet => "https://faucet.devnet.sui.io/v1/gas",
-        SuiNet::Localnet => "http://127.0.0.1:9123/gas",
-        _ => {
-            faucet_handle.error();
-
-            return Err(NexusCliError::Any(anyhow!("Mainnet faucet not supported")));
+    let url = if let Ok(faucet_url) = std::env::var("SUI_FAUCET_URL") {
+        faucet_url
+    } else {
+        // Fallback to default URLs based on the network.
+        match sui_net {
+            SuiNet::Testnet => "https://faucet.testnet.sui.io/v1/gas".to_string(),
+            SuiNet::Devnet => "https://faucet.devnet.sui.io/v1/gas".to_string(),
+            SuiNet::Localnet => "http://127.0.0.1:9123/gas".to_string(),
+            _ => {
+                faucet_handle.error();
+                return Err(NexusCliError::Any(anyhow!("Mainnet faucet not supported")));
+            }
         }
     };
 
@@ -447,13 +451,10 @@ pub fn resolve_wallet_path(
     } else if let Ok(mnemonic) = std::env::var("SUI_SECRET_MNEMONIC") {
         let key_scheme = sui::SignatureScheme::ED25519;
         retrieve_wallet_with_mnemonic(
-            conf.net.clone(),
-            &mnemonic,
-            key_scheme,
-            None, // derivation_path
+            conf.net, &mnemonic, key_scheme, None, // derivation_path
             None, // alias
         )
-        .map_err(|e| NexusCliError::Any(e))
+        .map_err(NexusCliError::Any)
     } else {
         Ok(conf.wallet_path.clone())
     }

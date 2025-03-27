@@ -8,7 +8,7 @@ import '../just/_helpers.just'
 
 [private]
 _default:
-    @just --list types
+    @just --list sdk
 
 # Check the Nexus Types library
 check: _check-cargo
