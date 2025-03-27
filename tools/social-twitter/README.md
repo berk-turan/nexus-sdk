@@ -120,7 +120,8 @@ The tweets could not be retrieved due to an error.
 
 # `xyz.taluslabs.social.twitter.post-tweet@1`
 
-Standard Nexus Tool that creates a new tweet using the Twitter API.Twitter api [reference](https://docs.x.com/x-api/posts/creation-of-a-post)
+Standard Nexus Tool that posts a content to Twitter.
+Twitter api [reference](https://docs.x.com/x-api/tweets/post-tweet)
 
 ## Input
 
@@ -135,31 +136,99 @@ The following authentication parameters are provided as part of the TwitterAuth 
 
 **Additional Parameters**
 
-**`content`: [`String`]**
+**`text`: [`String`]**
 
-The content to tweet.
+The text content of the tweet.
+
+_opt_ **`card_uri`: [`Option<String>`]** _default_: [`None`]
+
+Card URI for rich media preview. This is mutually exclusive from Quote Tweet ID, Poll, Media, and Direct Message Deep Link.
+
+_opt_ **`community_id`: [`Option<String>`]** _default_: [`None`]
+
+Community ID for community-specific tweets.
+
+_opt_ **`direct_message_deep_link`: [`Option<String>`]** _default_: [`None`]
+
+Direct message deep link. This is mutually exclusive from Quote Tweet ID, Poll, Media, and Card URI.
+
+_opt_ **`for_super_followers_only`: [`Option<bool>`]** _default_: [`None`]
+
+Whether the tweet is for super followers only.
+
+_opt_ **`geo`: [`Option<GeoInfo>`]** _default_: [`None`]
+
+Geo location information containing:
+
+- `place_id`: Place ID for the location
+
+_opt_ **`media`: [`Option<MediaInfo>`]** _default_: [`None`]
+
+Media information containing:
+
+- `media_ids`: List of media IDs to attach (required)
+- `tagged_user_ids`: List of user IDs to tag in the media (optional)
+
+This is mutually exclusive from Quote Tweet ID, Poll, and Card URI.
+
+_opt_ **`nullcast`: [`Option<bool>`]** _default_: [`None`]
+
+Whether the tweet should be nullcast (promoted-only). Nullcasted tweets do not appear in the public timeline and are not served to followers.
+
+_opt_ **`poll`: [`Option<PollInfo>`]** _default_: [`None`]
+
+Poll information containing:
+
+- `duration_minutes`: Duration of the poll in minutes (required, range: 5-10080)
+- `options`: List of poll options (required, 2-4 options)
+- `reply_settings`: Reply settings for the poll (optional)
+
+This is mutually exclusive from Quote Tweet ID, Media, and Card URI.
+
+_opt_ **`quote_tweet_id`: [`Option<String>`]** _default_: [`None`]
+
+ID of the tweet to quote. This is mutually exclusive from Poll, Media, and Card URI.
+
+_opt_ **`reply`: [`Option<ReplyInfo>`]** _default_: [`None`]
+
+Reply information containing:
+
+- `in_reply_to_tweet_id`: ID of the tweet to reply to (required)
+- `exclude_reply_user_ids`: List of user IDs to exclude from replies (optional)
+
+_opt_ **`reply_settings`: [`Option<ReplySettings>`]** _default_: [`None`]
+
+Reply settings for the tweet. Can be one of:
+
+- `Following`: Only followers can reply
+- `MentionedUsers`: Only mentioned users can reply
+- `Subscribers`: Only subscribers can reply
 
 ## Output Variants & Ports
 
 **`ok`**
 
-The tweet was created successfully.
+The tweet was posted successfully.
 
-- **`ok.result`: [`TweetResponse`]** - The created tweet data containing:
+- **`ok.result`: [`TweetResponse`]** - The posted tweet data containing:
   - `id`: The tweet's unique identifier
   - `edit_history_tweet_ids`: List of tweet IDs in the edit history
   - `text`: The actual content of the tweet
 
 **`err`**
 
-The tweet creation failed.
+The tweet posting failed.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - Failed to parse tweet data
+  - Twitter API error status (Code/Message format)
+  - Twitter API error details (Detail/Status/Title format)
+  - Rate limit exceeded (Status: 429)
+  - Unauthorized error
   - Invalid JSON response
   - Failed to read Twitter API response
-  - Failed to send tweet to Twitter API
+  - Failed to send request to Twitter API
+  - Mutually exclusive parameters error (e.g., using both poll and media)
+  - "You are not permitted to create an exclusive Tweet" error (when for_super_followers_only is true)
 
 ---
 

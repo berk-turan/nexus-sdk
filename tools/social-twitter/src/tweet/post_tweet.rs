@@ -3,7 +3,13 @@
 //! Standard Nexus Tool that posts a content to Twitter.
 
 use {
-    crate::{auth::TwitterAuth, tweet::TWITTER_API_BASE},
+    crate::{
+        auth::TwitterAuth,
+        tweet::{
+            models::{GeoInfo, MediaInfo, PollInfo, ReplyInfo, ReplySettings, TweetResponse},
+            TWITTER_API_BASE,
+        },
+    },
     reqwest::Client,
     ::{
         nexus_sdk::{fqn, ToolFqn},
@@ -20,18 +26,41 @@ pub(crate) struct Input {
     /// Twitter API credentials
     #[serde(flatten)]
     auth: TwitterAuth,
-    /// Content to tweet
-    content: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub(crate) struct TweetResponse {
-    /// Tweet's unique identifier
-    id: String,
-    /// List of tweet IDs in the edit history
-    edit_history_tweet_ids: Vec<String>,
-    /// The actual content of the tweet
+    /// Text to tweet
     text: String,
+    /// Card URI for rich media preview
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_uri: Option<String>,
+    /// Community ID for community-specific tweets
+    #[serde(skip_serializing_if = "Option::is_none")]
+    community_id: Option<String>,
+    /// Direct message deep link
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direct_message_deep_link: Option<String>,
+    /// Whether the tweet is for super followers only
+    #[serde(skip_serializing_if = "Option::is_none")]
+    for_super_followers_only: Option<bool>,
+    /// Geo location information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    geo: Option<GeoInfo>,
+    /// Media information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media: Option<MediaInfo>,
+    /// Whether the tweet should be nullcast
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nullcast: Option<bool>,
+    /// Poll information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poll: Option<PollInfo>,
+    /// ID of the tweet to quote
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quote_tweet_id: Option<String>,
+    /// Reply information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply: Option<ReplyInfo>,
+    /// Reply settings for the tweet
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_settings: Option<ReplySettings>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -81,15 +110,64 @@ impl NexusTool for PostTweet {
         // Initialize HTTP client
         let client = Client::new();
 
-        //@todo!("Add support for media");
-        let request_body = format!(r#"{{"text": "{}"}}"#, request.content);
+        // Create request body with all available fields
+        let mut request_body = serde_json::json!({
+            "text": request.text,
+        });
+
+        // Add optional fields if they are present
+        if let Some(card_uri) = request.card_uri {
+            request_body["card_uri"] = serde_json::Value::String(card_uri);
+        }
+
+        if let Some(community_id) = request.community_id {
+            request_body["community_id"] = serde_json::Value::String(community_id);
+        }
+
+        if let Some(direct_message_deep_link) = request.direct_message_deep_link {
+            request_body["direct_message_deep_link"] =
+                serde_json::Value::String(direct_message_deep_link);
+        }
+
+        if let Some(for_super_followers_only) = request.for_super_followers_only {
+            request_body["for_super_followers_only"] =
+                serde_json::Value::Bool(for_super_followers_only);
+        }
+
+        if let Some(geo) = request.geo {
+            request_body["geo"] = serde_json::to_value(geo).unwrap();
+        }
+
+        if let Some(media) = request.media {
+            request_body["media"] = serde_json::to_value(media).unwrap();
+        }
+
+        if let Some(nullcast) = request.nullcast {
+            request_body["nullcast"] = serde_json::Value::Bool(nullcast);
+        }
+
+        if let Some(poll) = request.poll {
+            request_body["poll"] = serde_json::to_value(poll).unwrap();
+        }
+
+        if let Some(quote_tweet_id) = request.quote_tweet_id {
+            request_body["quote_tweet_id"] = serde_json::Value::String(quote_tweet_id);
+        }
+
+        if let Some(reply) = request.reply {
+            request_body["reply"] = serde_json::to_value(reply).unwrap();
+        }
+
+        if let Some(reply_settings) = request.reply_settings {
+            request_body["reply_settings"] = serde_json::to_value(reply_settings).unwrap();
+        }
 
         // Attempt to send tweet and handle response
         let response = client
             .post(&self.api_base)
             .header("Authorization", auth_header)
             .header("Content-Type", "application/json")
-            .body(request_body)
+            .body(request_body.to_string())
             .send()
             .await;
 
@@ -194,7 +272,18 @@ mod tests {
                 "test_access_token",
                 "test_access_token_secret",
             ),
-            content: "Hello, Twitter!".to_string(),
+            text: "Hello, Twitter!".to_string(),
+            card_uri: None,
+            community_id: None,
+            direct_message_deep_link: None,
+            for_super_followers_only: None,
+            geo: None,
+            media: None,
+            nullcast: None,
+            poll: None,
+            quote_tweet_id: None,
+            reply: None,
+            reply_settings: None,
         }
     }
 
@@ -379,6 +468,53 @@ mod tests {
                 assert!(
                     reason.contains("Twitter API error:")
                         && reason.contains("duplicate content")
+                        && reason.contains("Status: 403"),
+                    "Error should include the formatted error details. Got: {}",
+                    reason
+                );
+            }
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_super_followers_only_error() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Create test input with for_super_followers_only set to true
+        let mut input = create_test_input();
+        input.for_super_followers_only = Some(true);
+
+        // Set up mock for super followers only error response (403 Forbidden)
+        let mock = server
+            .mock("POST", "/tweets")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "detail": "You are not permitted to create an exclusive Tweet.",
+                    "status": 403,
+                    "title": "Forbidden",
+                    "type": "about:blank"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the tweet request
+        let result = tool.invoke(input).await;
+
+        // Verify the error response
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(
+                    reason.contains("Twitter API error:")
+                        && reason.contains("not permitted to create an exclusive Tweet")
                         && reason.contains("Status: 403"),
                     "Error should include the formatted error details. Got: {}",
                     reason

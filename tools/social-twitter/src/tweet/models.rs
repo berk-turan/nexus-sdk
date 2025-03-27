@@ -571,3 +571,57 @@ pub enum ExcludeField {
     Replies,
     Retweets,
 }
+
+// This models are only for the post_tweet tool
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct TweetResponse {
+    /// Tweet's unique identifier
+    pub id: String,
+    /// List of tweet IDs in the edit history
+    pub edit_history_tweet_ids: Vec<String>,
+    /// The actual content of the tweet
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GeoInfo {
+    /// Place ID for the location
+    pub place_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct MediaInfo {
+    /// List of media IDs to attach
+    pub media_ids: Vec<String>,
+    /// List of user IDs to tag in the media
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tagged_user_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PollInfo {
+    /// Duration of the poll in minutes (5-10080)
+    pub duration_minutes: i32,
+    /// List of poll options (2-4 options)
+    pub options: Vec<String>,
+    /// Reply settings for the poll
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_settings: Option<ReplySettings>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ReplyInfo {
+    /// ID of the tweet to reply to
+    pub in_reply_to_tweet_id: String,
+    /// List of user IDs to exclude from replies
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_reply_user_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplySettings {
+    Following,
+    MentionedUsers,
+    Subscribers,
+}
