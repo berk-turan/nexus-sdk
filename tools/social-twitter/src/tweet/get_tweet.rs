@@ -97,12 +97,16 @@ impl NexusTool for GetTweet {
                                 // Check if there are any errors in the response
                                 if let Some(errors) = tweets_response.errors {
                                     if let Some(first_error) = errors.first() {
-                                        return Output::Err {
-                                            reason: format!(
-                                                "Twitter API error: {} (error type: {})",
-                                                first_error.title, first_error.error_type
-                                            ),
-                                        };
+                                        let mut error_msg = format!(
+                                            "Twitter API error: {} (error type: {})",
+                                            first_error.title, first_error.error_type
+                                        );
+
+                                        if let Some(detail) = &first_error.detail {
+                                            error_msg.push_str(&format!(" - {}", detail));
+                                        }
+
+                                        return Output::Err { reason: error_msg };
                                     }
                                 }
 
@@ -215,10 +219,10 @@ mod tests {
                 json!({
                     "errors": [
                         {
-                            "title": "Tweet Not Found",
-                            "type": "Not found",
-                            "detail": "Tweet not found",
-                            "status": 34
+                            "value": "test_tweet_id",
+                            "detail": "Could not find tweet with id: [test_tweet_id].",
+                            "title": "Not Found Error",
+                            "type": "https://api.twitter.com/2/problems/resource-not-found"
                         }
                     ]
                 })
@@ -231,8 +235,9 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Tweet Not Found"));
-                assert!(reason.contains("Not found"));
+                assert!(reason.contains("Not Found Error"));
+                assert!(reason.contains("https://api.twitter.com/2/problems/resource-not-found"));
+                assert!(reason.contains("Could not find tweet with id: [test_tweet_id]."));
             }
             Output::Ok {
                 data,
