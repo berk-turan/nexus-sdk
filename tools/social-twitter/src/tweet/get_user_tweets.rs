@@ -3,18 +3,24 @@
 //! Standard Nexus Tool that retrieves tweets from a user's Twitter account.
 
 use {
-    crate::tweet::{
-        models::{
-            ExcludeField,
-            ExpansionField,
-            MediaField,
-            PlaceField,
-            PollField,
-            TweetField,
-            TweetsResponse,
-            UserField,
+    crate::{
+        error::{parse_twitter_response, TwitterResult},
+        tweet::{
+            models::{
+                ExcludeField,
+                ExpansionField,
+                Includes,
+                MediaField,
+                Meta,
+                PlaceField,
+                PollField,
+                Tweet,
+                TweetField,
+                TweetsResponse,
+                UserField,
+            },
+            TWITTER_API_BASE,
         },
-        TWITTER_API_BASE,
     },
     reqwest::Client,
     ::{
@@ -104,10 +110,15 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The successful tweet response data
-        result: TweetsResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<Vec<Tweet>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Meta>,
     },
     Err {
-        /// Error message if the tweet failed
+        /// Error message if the get user tweets failed
         reason: String,
     },
 }
@@ -139,8 +150,23 @@ impl NexusTool for GetUserTweets {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        let client = Client::new();
+        match self.fetch_user_tweets(&request).await {
+            Ok(response) => Output::Ok {
+                data: response.data,
+                includes: response.includes,
+                meta: response.meta,
+            },
+            Err(e) => Output::Err {
+                reason: e.to_string(),
+            },
+        }
+    }
+}
 
+impl GetUserTweets {
+    /// Fetch tweets from a user's Twitter account
+    async fn fetch_user_tweets(&self, request: &Input) -> TwitterResult<TweetsResponse> {
+        let client = Client::new();
         let url = format!("{}/{}/tweets", self.api_base, request.user_id);
         let mut req_builder = client
             .get(&url)
@@ -249,59 +275,9 @@ impl NexusTool for GetUserTweets {
             req_builder = req_builder.query(&[("place.fields", fields.join(","))]);
         }
 
-        match req_builder.send().await {
-            Ok(response) => {
-                let status = response.status();
-
-                match response.text().await {
-                    Ok(text) => {
-                        // First check if response contains error
-                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(errors) = error.get("errors") {
-                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
-                                {
-                                    let message = first_error
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-                                    let code = first_error
-                                        .get("code")
-                                        .and_then(|c| c.as_u64())
-                                        .unwrap_or(0);
-                                    return Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (code: {})",
-                                            message, code
-                                        ),
-                                    };
-                                }
-                            }
-                        }
-
-                        // If no explicit error was found but status is not success
-                        if !status.is_success() {
-                            return Output::Err {
-                                reason: format!("Twitter API returned error status: {}", status),
-                            };
-                        }
-
-                        // If no error and status is success, try to parse as successful response
-                        match serde_json::from_str::<TweetsResponse>(&text) {
-                            Ok(response) => Output::Ok { result: response },
-                            Err(e) => Output::Err {
-                                reason: format!("Failed to parse Twitter API response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
-                }
-            }
-            Err(e) => Output::Err {
-                reason: format!("Failed to send request: {}", e),
-            },
-        }
+        // Send the request and parse the response
+        let response = req_builder.send().await?;
+        parse_twitter_response::<TweetsResponse>(response).await
     }
 }
 
@@ -344,7 +320,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mentioned_tweets_successful() {
+    async fn test_get_user_tweets_successful() {
         let (mut server, tool) = create_server_and_tool().await;
 
         // Match any query parameters
@@ -387,11 +363,15 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_some());
-                let data = result.data.unwrap();
-                assert_eq!(data.len(), 1);
-                assert_eq!(data[0].id, "1346889436626259968");
+            Output::Ok {
+                data,
+                includes: _,
+                meta: _,
+            } => {
+                assert!(data.is_some());
+                let tweet_data = data.unwrap();
+                assert_eq!(tweet_data.len(), 1);
+                assert_eq!(tweet_data[0].id, "1346889436626259968");
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
@@ -425,7 +405,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API error: Unauthorized (code: 32)"), "Expected error message to contain 'Twitter API error: Unauthorized (code: 32)', got: {}", reason);
+                assert!(
+                    reason.contains("Unauthorized"),
+                    "Expected error message to contain 'Unauthorized', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -459,7 +443,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API error: Rate limit exceeded (code: 88)"), "Expected error message to contain 'Twitter API error: Rate limit exceeded (code: 88)', got: {}", reason);
+                assert!(
+                    reason.contains("Rate limit exceeded"),
+                    "Expected error message to contain 'Rate limit exceeded', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -485,8 +473,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Failed to parse Twitter API response"), 
-                    "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
+                assert!(
+                    reason.contains("Response parsing error"),
+                    "Expected error message to contain 'Response parsing error', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -518,11 +509,15 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_none() || result.data.unwrap().is_empty());
-                assert!(result.meta.is_some());
-                if let Some(meta) = result.meta {
-                    assert_eq!(meta.result_count, Some(0));
+            Output::Ok {
+                data,
+                includes: _,
+                meta,
+            } => {
+                assert!(data.is_none() || data.unwrap().is_empty());
+                assert!(meta.is_some());
+                if let Some(meta_data) = meta {
+                    assert_eq!(meta_data.result_count, Some(0));
                 }
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),

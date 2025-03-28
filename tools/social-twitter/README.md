@@ -116,17 +116,20 @@ A list of Place fields to display.
 
 The tweets were retrieved successfully.
 
-- **`ok.result`: [`TweetsResponse`]** - The tweet data containing all tweets from the user's timeline and additional metadata.
+- **`ok.data`: [`Option<Vec<Tweet>>`]** - The collection of tweets from the user's timeline.
+- **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response (users, media, polls, etc.)
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response (result_count, newest_id, oldest_id, next_token, etc.)
 
 **`err`**
 
 The tweets could not be retrieved due to an error.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
+  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - Other error types handled by the centralized error handling mechanism
 
 ---
 
@@ -294,7 +297,7 @@ The like operation failed.
 
 ---
 
-# `xyz.taluslabs.social.twitter.mentioned-tweets@1`
+# `xyz.taluslabs.social.twitter.get-mentioned-tweets@1`
 
 Standard Nexus Tool that retrieves tweets mentioning a specific user.
 Twitter api [reference](https://docs.x.com/x-api/posts/user-mention-timeline-by-user-id)
@@ -305,7 +308,7 @@ Twitter api [reference](https://docs.x.com/x-api/posts/user-mention-timeline-by-
 
 The bearer token for the user's Twitter account.
 
-**`id`: [`String`]**
+**`user_id`: [`String`]**
 
 The ID of the User to lookup for mentions.
 
@@ -363,17 +366,20 @@ A list of Place fields to display.
 
 The mentioned tweets were retrieved successfully.
 
-- **`ok.result`: [`TweetsResponse`]** - The response containing tweets mentioning the specified user.
+- **`ok.data`: [`Option<Vec<Tweet>>`]** - The collection of tweets mentioning the specified user.
+- **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response (users, media, polls, etc.)
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response (result_count, newest_id, oldest_id, next_token, etc.)
 
 **`err`**
 
 The tweet mentions retrieval failed.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
+  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - Other error types handled by the centralized error handling mechanism
 
 ---
 
@@ -454,476 +460,4 @@ A list of Tweet fields to display.
 
 ## Output Variants & Ports
 
-**`ok`**
-
-The user was retrieved successfully.
-
-- **`ok.result`: [`UserResponse`]** - The user data containing all fields from the Twitter API response.
-
-**`err`**
-
-The user was not retrieved due to an error.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - User not found
-  - Invalid token
-  - Rate limit exceeded
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.create-list@1`
-
-Standard Nexus Tool that creates a list on Twitter.
-Twitter api [reference](https://docs.x.com/x-api/lists/create-list)
-
-## Input
-
-**Authentication Parameters**
-
-The following authentication parameters are provided as part of the TwitterAuth structure:
-
-- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
-- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
-- **`access_token`: [`String`]** - Access Token for user's Twitter account
-- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
-
-**Additional Parameters**
-
-**`name`: [`String`]**
-
-The name of the list to create. Must be between 1 and 25 characters long.
-
-**`description`: [`String`]**
-
-The description of the list to create. Must not exceed 100 characters.
-
-_opt_ **`private`: [`bool`]** _default_: [`false`]
-
-The privacy setting of the list to create:
-
-- `true`: The list is private and can only be viewed by the user who created it
-- `false`: The list is public and can be viewed by anyone (default)
-
-## Output Variants & Ports
-
-**`ok`**
-
-The list was created successfully.
-
-- **`ok.result`: [`ListResponse`]** - The created list data containing:
-  - `id`: The list's unique identifier
-  - `name`: The name of the list
-
-**`err`**
-
-The list creation failed.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - "List name must be between 1 and 25 characters"
-  - "List description must not exceed 100 characters"
-  - Twitter API error status (Code/Message format)
-  - Twitter API error details (Detail/Status/Title format)
-  - Rate limit exceeded (Status: 429)
-  - Unauthorized error
-  - Invalid JSON response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.get-list@1`
-
-Standard Nexus Tool that retrieves a list from the Twitter API. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-lookup/api-reference/get-lists-id)
-
-## Input
-
-**`bearer_token`: [`String`]**
-
-The bearer token for the user's Twitter account.
-
-**`list_id`: [`String`]**
-
-The ID of the list to retrieve.
-
-_opt_ **`list_fields`: [`Option<Vec<ListField>>`]** _default_: [`None`]
-
-A list of List fields to display.
-
-_opt_ **`expansions`: [`Option<Vec<Expansion>>`]** _default_: [`None`]
-
-A list of fields to expand.
-
-_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
-
-A list of User fields to display.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The list was retrieved successfully.
-
-- **`ok.result`: [`ListResponse`]** - The list data containing all fields from the Twitter API response.
-
-**`err`**
-
-The list was not retrieved due to an error.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - List not found
-  - Unauthorized error
-  - Rate limit exceeded
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.get-list-tweets@1`
-
-Standard Nexus Tool that retrieves tweets from a Twitter list. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-tweets/api-reference/get-lists-id-tweets)
-
-## Input
-
-**`bearer_token`: [`String`]**
-
-The bearer token for the user's Twitter account.
-
-**`list_id`: [`String`]**
-
-The ID of the list to retrieve tweets from.
-
-_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
-
-The maximum number of results to retrieve.
-
-_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
-
-Used to get the next 'page' of results.
-
-_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
-
-A list of Tweet fields to display.
-
-_opt_ **`expansions`: [`Option<Vec<Expansion>>`]** _default_: [`None`]
-
-A list of fields to expand.
-
-_opt_ **`media_fields`: [`Option<Vec<MediaField>>`]** _default_: [`None`]
-
-A list of Media fields to display.
-
-_opt_ **`poll_fields`: [`Option<Vec<PollField>>`]** _default_: [`None`]
-
-A list of Poll fields to display.
-
-_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
-
-A list of User fields to display.
-
-_opt_ **`place_fields`: [`Option<Vec<PlaceField>>`]** _default_: [`None`]
-
-A list of Place fields to display.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The list tweets were retrieved successfully.
-
-- **`ok.result`: [`ListTweetsResponse`]** - The response containing tweets from the list.
-
-**`err`**
-
-The list tweets retrieval failed.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - List not found
-  - Unauthorized error
-  - Rate limit exceeded
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.get-list-members@1`
-
-Standard Nexus Tool that retrieves members of a Twitter list. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-members/api-reference/get-lists-id-members)
-
-## Input
-
-**`bearer_token`: [`String`]**
-
-The bearer token for the user's Twitter account.
-
-**`list_id`: [`String`]**
-
-The ID of the list to retrieve members from.
-
-_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
-
-The maximum number of results to retrieve.
-
-_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
-
-Used to get the next 'page' of results.
-
-_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
-
-A list of User fields to display.
-
-_opt_ **`expansions`: [`Option<Vec<Expansion>>`]** _default_: [`None`]
-
-A list of fields to expand.
-
-_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
-
-A list of Tweet fields to display.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The list members were retrieved successfully.
-
-- **`ok.result`: [`UsersResponse`]** - The response containing user data for the list members.
-
-**`err`**
-
-The list members retrieval failed.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - List not found
-  - Unauthorized error
-  - Rate limit exceeded
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.update-list@1`
-
-Standard Nexus Tool that updates a list metadata on Twitter.
-Twitter api [reference](https://docs.x.com/x-api/lists/update-list)
-
-## Input
-
-**Authentication Parameters**
-
-The following authentication parameters are provided as part of the TwitterAuth structure:
-
-- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
-- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
-- **`access_token`: [`String`]** - Access Token for user's Twitter account
-- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
-
-**Additional Parameters**
-
-**`id`: [`String`]**
-
-The ID of the list to update.
-
-_opt_ **`name`: [`Option<String>`]** _default_: [`None`]
-
-The name of the list to update. Must be between 1 and 25 characters long.
-
-_opt_ **`description`: [`Option<String>`]** _default_: [`None`]
-
-The description of the list to update. Must not exceed 100 characters.
-
-_opt_ **`private`: [`Option<bool>`]** _default_: [`None`]
-
-The privacy setting of the list to update:
-
-- `true`: The list is private and can only be viewed by the user who created it
-- `false`: The list is public and can be viewed by anyone
-
-Note: At least one of `name`, `description`, or `private` must be provided.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The list was updated successfully.
-
-- **`ok.updated`: [`bool`]** - Confirmation that the list was updated (true).
-
-**`err`**
-
-The list update failed.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - "At least one of name, description, or private must be provided"
-  - "List name must be between 1 and 25 characters"
-  - "List description must not exceed 100 characters"
-  - Twitter API error status (Code/Message format)
-  - Twitter API error details (Detail/Status/Title format)
-  - Unauthorized error
-  - List not found
-  - Invalid JSON response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.add-member@1`
-
-Standard Nexus Tool that adds a member to a list on Twitter.
-Twitter api [reference](https://docs.x.com/x-api/lists/add-a-list-member)
-
-## Input
-
-**Authentication Parameters**
-
-The following authentication parameters are provided as part of the TwitterAuth structure:
-
-- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
-- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
-- **`access_token`: [`String`]** - Access Token for user's Twitter account
-- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
-
-**Additional Parameters**
-
-**`list_id`: [`String`]**
-
-The ID of the list to add a member to.
-
-**`user_id`: [`String`]**
-
-The ID of the user to add to the list.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The member was successfully added to the list.
-
-- **`ok.result`: [`ListMemberResponse`]** - The response data containing member addition confirmation.
-
-**`err`**
-
-The member addition failed.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status (Code/Message format)
-  - Twitter API error details (Detail/Status/Title format)
-  - Unauthorized error
-  - List not found
-  - User not found
-  - Rate limit exceeded
-  - Invalid JSON response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
----
-
-# `xyz.taluslabs.social.twitter.remove-member@1`
-
-Standard Nexus Tool that removes a member from a list on Twitter.
-Twitter api [reference](https://docs.x.com/x-api/lists/remove-a-list-member)
-
-## Input
-
-**Authentication Parameters**
-
-The following authentication parameters are provided as part of the TwitterAuth structure:
-
-- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
-- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
-- **`access_token`: [`String`]** - Access Token for user's Twitter account
-- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
-
-**Additional Parameters**
-
-**`list_id`: [`String`]**
-
-The ID of the list to remove a member from.
-
-**`user_id`: [`String`]**
-
-The ID of the user to remove from the list.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The member was successfully removed from the list.
-
-- **`ok.result`: [`ListMemberResponse`]** - The response data containing member removal confirmation.
-
-**`err`**
-
-The member removal failed.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status (Code/Message format)
-  - Twitter API error details (Detail/Status/Title format)
-  - Unauthorized error
-  - List not found
-  - User not found
-  - Rate limit exceeded
-  - Invalid JSON response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
-
-## Error Handling
-
-The codebase now includes a centralized error handling mechanism located in `src/error.rs`. This module provides standardized error types and functions for handling Twitter API responses without any external dependencies. Here's how to use it in your Twitter API operations:
-
-### Key Components
-
-1. **TwitterError** - A comprehensive error enum that covers all possible error cases:
-
-   - `Network` - Network-related errors
-   - `ParseError` - JSON parsing errors
-   - `ApiError` - Twitter API-specific errors
-   - `StatusError` - HTTP status code errors
-   - `Other` - Any other unexpected errors
-
-2. **TwitterResult<T>** - A type alias for `Result<T, TwitterError>` to simplify return types
-
-3. **parse_twitter_response<T>** - A helper function that handles all the error parsing logic
-
-### Usage Example
-
-Here's how to use the error handling module in your Twitter API operations:
-
-```rust
-use crate::error::{parse_twitter_response, TwitterResult};
-
-// Inside your module implementation
-async fn fetch_data(&self, client: &Client, url: &str, bearer_token: &str) -> TwitterResult<YourResponseType> {
-    let response = client
-        .get(url)
-        .header("Authorization", format!("Bearer {}", bearer_token))
-        .send()
-        .await?;
-
-    parse_twitter_response::<YourResponseType>(response).await
-}
-
-// In your invoke function
-async fn invoke(&self, request: Self::Input) -> Self::Output {
-    match self.fetch_data(&client, &url, &request.bearer_token).await {
-        Ok(response) => {
-            // Handle successful response
-            Output::Ok { ... }
-        },
-        Err(e) => {
-            // Convert error to Output::Err
-            Output::Err { reason: e.to_string() }
-        }
-    }
-}
-```
-
-By using this centralized error handling mechanism, you ensure consistent error handling across all Twitter API operations and reduce code duplication.
+\*\*`ok`

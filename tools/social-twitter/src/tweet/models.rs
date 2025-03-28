@@ -17,7 +17,7 @@ pub struct TweetsResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct GetTweetApiResponse {
+pub struct GetTweetResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Tweet>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -17,7 +17,7 @@ async fn main() {
         tweet::post_tweet::PostTweet,
         tweet::get_tweet::GetTweet,
         tweet::like_tweet::LikeTweet,
-        tweet::mentioned_tweets::MentionedTweets,
+        tweet::get_mentioned_tweets::GetMentionedTweets,
         tweet::get_user_tweets::GetUserTweets,
         list::create_list::CreateList,
         list::get_list::GetList,

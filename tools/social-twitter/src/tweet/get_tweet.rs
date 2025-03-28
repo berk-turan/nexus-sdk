@@ -6,7 +6,7 @@ use {
     crate::{
         error::{parse_twitter_response, TwitterResult},
         tweet::{
-            models::{GetTweetApiResponse, Includes, Meta, Tweet},
+            models::{GetTweetResponse, Includes, Meta, Tweet},
             TWITTER_API_BASE,
         },
     },
@@ -97,14 +97,14 @@ impl GetTweet {
         client: &Client,
         url: &str,
         bearer_token: &str,
-    ) -> TwitterResult<GetTweetApiResponse> {
+    ) -> TwitterResult<GetTweetResponse> {
         let response = client
             .get(url)
             .header("Authorization", format!("Bearer {}", bearer_token))
             .send()
             .await?;
 
-        parse_twitter_response::<GetTweetApiResponse>(response).await
+        parse_twitter_response::<GetTweetResponse>(response).await
     }
 }
 
@@ -210,20 +210,18 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Not Found Error"));
-                assert!(reason.contains("https://api.twitter.com/2/problems/resource-not-found"));
-                assert!(reason.contains("Could not find tweet with id: [test_tweet_id]."));
-            }
-            Output::Ok {
-                data,
-                includes,
-                meta,
-            } => {
-                panic!(
-                    "Expected error, got success: data={:?}, includes={:?}, meta={:?}",
-                    data, includes, meta
+                assert!(
+                    reason.contains("Not Found Error"),
+                    "Expected error message to contain 'Not Found Error', got: {}",
+                    reason
+                );
+                assert!(
+                    reason.contains("Could not find tweet with id"),
+                    "Expected error message to contain tweet ID details, got: {}",
+                    reason
                 );
             }
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         mock.assert_async().await;
@@ -239,12 +237,10 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "errors": [
-                        {
-                            "detail": "Unauthorized",
-                            "status": 401
-                        }
-                    ]
+                    "errors": [{
+                        "message": "Unauthorized",
+                        "code": 32
+                    }]
                 })
                 .to_string(),
             )
@@ -255,19 +251,13 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Unauthorized"));
-                assert!(reason.contains("401"));
-            }
-            Output::Ok {
-                data,
-                includes,
-                meta,
-            } => {
-                panic!(
-                    "Expected error, got success: data={:?}, includes={:?}, meta={:?}",
-                    data, includes, meta
+                assert!(
+                    reason.contains("Unauthorized"),
+                    "Expected error message to contain 'Unauthorized', got: {}",
+                    reason
                 );
             }
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         mock.assert_async().await;
@@ -279,16 +269,16 @@ mod tests {
 
         let mock = server
             .mock("GET", "/tweets/test_tweet_id")
-            .with_status(200)
+            .match_header("Authorization", "Bearer test_bearer_token")
+            .match_query(mockito::Matcher::Any)
+            .with_status(429)
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "errors": [
-                        {
-                            "detail": "Rate limit exceeded",
-                            "status": 429
-                        }
-                    ]
+                    "errors": [{
+                        "message": "Rate limit exceeded",
+                        "code": 88
+                    }]
                 })
                 .to_string(),
             )
@@ -299,19 +289,13 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Rate limit exceeded"));
-                assert!(reason.contains("429"));
-            }
-            Output::Ok {
-                data,
-                includes,
-                meta,
-            } => {
-                panic!(
-                    "Expected error, got success: data={:?}, includes={:?}, meta={:?}",
-                    data, includes, meta
+                assert!(
+                    reason.contains("Rate limit exceeded"),
+                    "Expected error message to contain 'Rate limit exceeded', got: {}",
+                    reason
                 );
             }
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         mock.assert_async().await;

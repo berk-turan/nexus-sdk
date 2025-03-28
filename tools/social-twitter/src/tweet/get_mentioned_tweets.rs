@@ -1,19 +1,25 @@
-//! # `xyz.taluslabs.social.twitter.mentioned-tweets@1`
+//! # `xyz.taluslabs.social.twitter.get-mentioned-tweets@1`
 //!
 //! Standard Nexus Tool that retrieves tweets mentioning a specific user.
 
 use {
-    crate::tweet::{
-        models::{
-            ExpansionField,
-            MediaField,
-            PlaceField,
-            PollField,
-            TweetField,
-            TweetsResponse,
-            UserField,
+    crate::{
+        error::{parse_twitter_response, TwitterResult},
+        tweet::{
+            models::{
+                ExpansionField,
+                Includes,
+                MediaField,
+                Meta,
+                PlaceField,
+                PollField,
+                Tweet,
+                TweetField,
+                TweetsResponse,
+                UserField,
+            },
+            TWITTER_API_BASE,
         },
-        TWITTER_API_BASE,
     },
     reqwest::Client,
     ::{
@@ -32,7 +38,7 @@ pub(crate) struct Input {
 
     /// The ID of the User to lookup
     /// Example: "2244994945"
-    id: String,
+    user_id: String,
 
     /// The minimum Post ID to be included in the result set
     /// Takes precedence over start_time if both are specified
@@ -99,7 +105,12 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The successful tweet response data
-        result: TweetsResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<Vec<Tweet>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Meta>,
     },
     Err {
         /// Error message if the tweet failed
@@ -107,11 +118,11 @@ pub(crate) enum Output {
     },
 }
 
-pub(crate) struct MentionedTweets {
+pub(crate) struct GetMentionedTweets {
     api_base: String,
 }
 
-impl NexusTool for MentionedTweets {
+impl NexusTool for GetMentionedTweets {
     type Input = Input;
     type Output = Output;
 
@@ -122,11 +133,11 @@ impl NexusTool for MentionedTweets {
     }
 
     fn fqn() -> ToolFqn {
-        fqn!("xyz.taluslabs.social.twitter.mentioned-tweets@1")
+        fqn!("xyz.taluslabs.social.twitter.get-mentioned-tweets@1")
     }
 
     fn path() -> &'static str {
-        "/mentioned-tweets"
+        "/get-mentioned-tweets"
     }
 
     async fn health(&self) -> AnyResult<StatusCode> {
@@ -134,10 +145,26 @@ impl NexusTool for MentionedTweets {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
+        match self.fetch_mentioned_tweets(&request).await {
+            Ok(response) => Output::Ok {
+                data: response.data,
+                includes: response.includes,
+                meta: response.meta,
+            },
+            Err(e) => Output::Err {
+                reason: e.to_string(),
+            },
+        }
+    }
+}
+
+impl GetMentionedTweets {
+    /// Fetch tweets mentioning a specific user
+    async fn fetch_mentioned_tweets(&self, request: &Input) -> TwitterResult<TweetsResponse> {
         let client = Client::new();
 
         // Construct URL with user ID
-        let url = format!("{}/{}/mentions", self.api_base, request.id);
+        let url = format!("{}/{}/mentions", self.api_base, request.user_id);
         let mut req_builder = client
             .get(&url)
             .header("Authorization", format!("Bearer {}", request.bearer_token));
@@ -234,59 +261,9 @@ impl NexusTool for MentionedTweets {
             req_builder = req_builder.query(&[("place.fields", fields.join(","))]);
         }
 
-        match req_builder.send().await {
-            Ok(response) => {
-                let status = response.status();
-
-                match response.text().await {
-                    Ok(text) => {
-                        // First check if response contains error
-                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(errors) = error.get("errors") {
-                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
-                                {
-                                    let message = first_error
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-                                    let code = first_error
-                                        .get("code")
-                                        .and_then(|c| c.as_u64())
-                                        .unwrap_or(0);
-                                    return Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (code: {})",
-                                            message, code
-                                        ),
-                                    };
-                                }
-                            }
-                        }
-
-                        // If no explicit error was found but status is not success
-                        if !status.is_success() {
-                            return Output::Err {
-                                reason: format!("Twitter API returned error status: {}", status),
-                            };
-                        }
-
-                        // If no error and status is success, try to parse as successful response
-                        match serde_json::from_str::<TweetsResponse>(&text) {
-                            Ok(response) => Output::Ok { result: response },
-                            Err(e) => Output::Err {
-                                reason: format!("Failed to parse Twitter API response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
-                }
-            }
-            Err(e) => Output::Err {
-                reason: format!("Failed to send request: {}", e),
-            },
-        }
+        // Send the request and parse the response
+        let response = req_builder.send().await?;
+        parse_twitter_response::<TweetsResponse>(response).await
     }
 }
 
@@ -294,7 +271,7 @@ impl NexusTool for MentionedTweets {
 mod tests {
     use {super::*, ::mockito::Server, serde_json::json};
 
-    impl MentionedTweets {
+    impl GetMentionedTweets {
         fn with_api_base(api_base: &str) -> Self {
             Self {
                 api_base: api_base.to_string() + "/users",
@@ -302,16 +279,16 @@ mod tests {
         }
     }
 
-    async fn create_server_and_tool() -> (mockito::ServerGuard, MentionedTweets) {
+    async fn create_server_and_tool() -> (mockito::ServerGuard, GetMentionedTweets) {
         let server = Server::new_async().await;
-        let tool = MentionedTweets::with_api_base(&server.url());
+        let tool = GetMentionedTweets::with_api_base(&server.url());
         (server, tool)
     }
 
     fn create_test_input() -> Input {
         Input {
             bearer_token: "test_bearer_token".to_string(),
-            id: "2244994945".to_string(),
+            user_id: "2244994945".to_string(),
             since_id: None,
             until_id: None,
             max_results: Some(10),
@@ -371,11 +348,15 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_some());
-                let data = result.data.unwrap();
-                assert_eq!(data.len(), 1);
-                assert_eq!(data[0].id, "1346889436626259968");
+            Output::Ok {
+                data,
+                includes: _,
+                meta: _,
+            } => {
+                assert!(data.is_some());
+                let tweet_data = data.unwrap();
+                assert_eq!(tweet_data.len(), 1);
+                assert_eq!(tweet_data[0].id, "1346889436626259968");
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
@@ -409,7 +390,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API error: Unauthorized (code: 32)"), "Expected error message to contain 'Twitter API error: Unauthorized (code: 32)', got: {}", reason);
+                assert!(
+                    reason.contains("Unauthorized"),
+                    "Expected error message to contain 'Unauthorized', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -443,7 +428,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API error: Rate limit exceeded (code: 88)"), "Expected error message to contain 'Twitter API error: Rate limit exceeded (code: 88)', got: {}", reason);
+                assert!(
+                    reason.contains("Rate limit exceeded"),
+                    "Expected error message to contain 'Rate limit exceeded', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -469,8 +458,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Failed to parse Twitter API response"), 
-                    "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
+                assert!(
+                    reason.contains("Response parsing error"),
+                    "Expected error message to contain 'Response parsing error', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -502,11 +494,15 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_none() || result.data.unwrap().is_empty());
-                assert!(result.meta.is_some());
-                if let Some(meta) = result.meta {
-                    assert_eq!(meta.result_count, Some(0));
+            Output::Ok {
+                data,
+                includes: _,
+                meta,
+            } => {
+                assert!(data.is_none() || data.unwrap().is_empty());
+                assert!(meta.is_some());
+                if let Some(meta_data) = meta {
+                    assert_eq!(meta_data.result_count, Some(0));
                 }
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
