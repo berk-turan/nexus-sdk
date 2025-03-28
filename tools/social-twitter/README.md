@@ -443,20 +443,46 @@ A comma separated list of Tweet fields to display.
 
 The user was retrieved successfully.
 
-- **`ok.data`: [`Option<UserData>`]** - The user data containing all fields from the Twitter API response.
+- **`ok.id`: [`String`]** - The user's unique identifier
+- **`ok.name`: [`String`]** - The user's display name
+- **`ok.username`: [`String`]** - The user's @username
+- **`ok.protected`: [`Option<bool>`]** - Whether the user's account is protected
+- **`ok.affiliation`: [`Option<Affiliation>`]** - The user's affiliation information
+- **`ok.connection_status`: [`Option<Vec<ConnectionStatus>>`]** - The user's connection status
+- **`ok.created_at`: [`Option<String>`]** - When the user's account was created
+- **`ok.description`: [`Option<String>`]** - The user's profile description/bio
+- **`ok.entities`: [`Option<Entities>`]** - Entities found in the user's description (hashtags, mentions, URLs)
+- **`ok.location`: [`Option<String>`]** - The user's location
+- **`ok.most_recent_tweet_id`: [`Option<String>`]** - ID of the user's most recent tweet
+- **`ok.pinned_tweet_id`: [`Option<String>`]** - ID of the user's pinned tweet
+- **`ok.profile_banner_url`: [`Option<String>`]** - URL of the user's profile banner image
+- **`ok.profile_image_url`: [`Option<String>`]** - URL of the user's profile image
+- **`ok.public_metrics`: [`Option<PublicMetrics>`]** - Public metrics about the user:
+  - `followers_count`: Number of followers
+  - `following_count`: Number of accounts the user is following
+  - `tweet_count`: Number of tweets the user has posted
+  - `listed_count`: Number of lists the user appears on
+- **`ok.receives_your_dm`: [`Option<bool>`]** - Whether the user accepts direct messages
+- **`ok.subscription_type`: [`Option<SubscriptionType>`]** - The user's subscription type
+- **`ok.url`: [`Option<String>`]** - The user's website URL
+- **`ok.verified`: [`Option<bool>`]** - Whether the user is verified
+- **`ok.verified_type`: [`Option<VerifiedType>`]** - The user's verification type
+- **`ok.withheld`: [`Option<Withheld>`]** - Withholding information for the user
 
 **`err`**
 
 The user was not retrieved due to an error.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - User not found
-  - Invalid token
-  - Rate limit exceeded
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
+  - Twitter API error with title and error type (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Twitter API error with optional detail and message (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found) - User not found")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - User not found error (e.g., "Twitter API error: User not found (code: 50)")
+  - Invalid token error (e.g., "Twitter API error: Invalid token (code: 89)")
+  - Rate limit exceeded error (e.g., "Twitter API error: Rate limit exceeded (code: 88)")
+  - No user data found in the response
 
 ---
 
@@ -492,20 +518,52 @@ A list of Tweet fields to display.
 
 The user was retrieved successfully.
 
-- **`ok.data`: [`Option<UserData>`]** - The user data containing all fields from the Twitter API response.
+- **`ok.id`: [`String`]** - The user's unique identifier
+- **`ok.name`: [`String`]** - The user's display name
+- **`ok.username`: [`String`]** - The user's @username
+- **`ok.protected`: [`Option<bool>`]** - Whether the user's account is protected
+- **`ok.affiliation`: [`Option<Affiliation>`]** - The user's affiliation information
+- **`ok.connection_status`: [`Option<Vec<ConnectionStatus>>`]** - The user's connection status
+- **`ok.created_at`: [`Option<String>`]** - When the user's account was created
+- **`ok.description`: [`Option<String>`]** - The user's profile description/bio
+- **`ok.entities`: [`Option<Entities>`]** - Entities found in the user's description (hashtags, mentions, URLs)
+- **`ok.location`: [`Option<String>`]** - The user's location
+- **`ok.most_recent_tweet_id`: [`Option<String>`]** - ID of the user's most recent tweet
+- **`ok.pinned_tweet_id`: [`Option<String>`]** - ID of the user's pinned tweet
+- **`ok.profile_banner_url`: [`Option<String>`]** - URL of the user's profile banner image
+- **`ok.profile_image_url`: [`Option<String>`]** - URL of the user's profile image
+- **`ok.public_metrics`: [`Option<PublicMetrics>`]** - Public metrics about the user:
+  - `followers_count`: Number of followers
+  - `following_count`: Number of accounts the user is following
+  - `tweet_count`: Number of tweets the user has posted
+  - `listed_count`: Number of lists the user appears on
+- **`ok.receives_your_dm`: [`Option<bool>`]** - Whether the user accepts direct messages
+- **`ok.subscription_type`: [`Option<SubscriptionType>`]** - The user's subscription type
+- **`ok.url`: [`Option<String>`]** - The user's website URL
+- **`ok.verified`: [`Option<bool>`]** - Whether the user is verified
+- **`ok.verified_type`: [`Option<VerifiedType>`]** - The user's verification type
+- **`ok.withheld`: [`Option<Withheld>`]** - Withholding information for the user
+- **`ok.includes`: [`Option<Includes>`]** - Additional entities related to the user:
+  - `users`: Other users referenced by this user
+  - `tweets`: Tweets referenced by this user (e.g., pinned tweet)
+  - `media`: Media items referenced by this user
+  - `places`: Geographic places referenced by this user
+  - `polls`: Polls referenced by this user
 
 **`err`**
 
 The user was not retrieved due to an error.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error status
-  - User not found
-  - Invalid token
-  - Rate limit exceeded
-  - Failed to parse Twitter API response
-  - Failed to read Twitter API response
-  - Failed to send request to Twitter API
+  - Twitter API error with title and error type (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Twitter API error with optional detail and message (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found) - User not found")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - User not found error (e.g., "Twitter API error: User not found (code: 50)")
+  - Invalid token error (e.g., "Twitter API error: Invalid token (code: 89)")
+  - Rate limit exceeded error (e.g., "Twitter API error: Rate limit exceeded (code: 88)")
+  - No user data found in the response
 
 ---
 

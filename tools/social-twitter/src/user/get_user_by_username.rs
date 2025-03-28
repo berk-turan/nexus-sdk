@@ -4,11 +4,22 @@
 
 use {
     crate::{
+        error::{parse_twitter_response, TwitterResult},
+        list::models::Includes,
         tweet::{
             models::{ExpansionField, TweetField, UserField},
             TWITTER_API_BASE,
         },
-        user::models::{UserData, UserResponse},
+        user::models::{
+            Affiliation,
+            ConnectionStatus,
+            Entities,
+            PublicMetrics,
+            SubscriptionType,
+            UserResponse,
+            VerifiedType,
+            Withheld,
+        },
     },
     reqwest::Client,
     ::{
@@ -41,9 +52,69 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful user response data
+        /// The user's unique identifier
+        id: String,
+        /// The user's display name
+        name: String,
+        /// The user's @username
+        username: String,
+        /// Whether the user's account is protected
         #[serde(skip_serializing_if = "Option::is_none")]
-        data: Option<UserData>,
+        protected: Option<bool>,
+        /// The user's affiliation information
+        #[serde(skip_serializing_if = "Option::is_none")]
+        affiliation: Option<Affiliation>,
+        /// The user's connection status
+        #[serde(skip_serializing_if = "Option::is_none")]
+        connection_status: Option<Vec<ConnectionStatus>>,
+        /// When the user's account was created
+        #[serde(skip_serializing_if = "Option::is_none")]
+        created_at: Option<String>,
+        /// The user's profile description/bio
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        /// Entities found in the user's description (hashtags, mentions, URLs)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entities: Option<Entities>,
+        /// The user's location
+        #[serde(skip_serializing_if = "Option::is_none")]
+        location: Option<String>,
+        /// ID of the user's most recent tweet
+        #[serde(skip_serializing_if = "Option::is_none")]
+        most_recent_tweet_id: Option<String>,
+        /// ID of the user's pinned tweet
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pinned_tweet_id: Option<String>,
+        /// URL of the user's profile banner image
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile_banner_url: Option<String>,
+        /// URL of the user's profile image
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile_image_url: Option<String>,
+        /// Public metrics about the user (followers, following, tweet count)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        public_metrics: Option<PublicMetrics>,
+        /// Whether the user accepts direct messages
+        #[serde(skip_serializing_if = "Option::is_none")]
+        receives_your_dm: Option<bool>,
+        /// The user's subscription type
+        #[serde(skip_serializing_if = "Option::is_none")]
+        subscription_type: Option<SubscriptionType>,
+        /// The user's website URL
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        /// Whether the user is verified
+        #[serde(skip_serializing_if = "Option::is_none")]
+        verified: Option<bool>,
+        /// The user's verification type
+        #[serde(skip_serializing_if = "Option::is_none")]
+        verified_type: Option<VerifiedType>,
+        /// Withholding information for the user
+        #[serde(skip_serializing_if = "Option::is_none")]
+        withheld: Option<Withheld>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
     },
     Err {
         /// Error message if the request failed
@@ -82,11 +153,10 @@ impl NexusTool for GetUserByUsername {
 
         // Format the URL with the username
         let url = format!("{}/{}", self.api_base, request.username);
-        let mut req_builder = client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", request.bearer_token));
 
-        // Add optional query parameters if provided
+        // Build query string
+        let mut query_parts = Vec::new();
+
         if let Some(user_fields) = &request.user_fields {
             let fields: Vec<String> = user_fields
                 .iter()
@@ -97,7 +167,7 @@ impl NexusTool for GetUserByUsername {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("user.fields", fields.join(","))]);
+            query_parts.push(format!("user.fields={}", fields.join(",")));
         }
 
         if let Some(expansions_fields) = &request.expansions_fields {
@@ -110,7 +180,7 @@ impl NexusTool for GetUserByUsername {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("expansions", fields.join(","))]);
+            query_parts.push(format!("expansions={}", fields.join(",")));
         }
 
         if let Some(tweet_fields) = &request.tweet_fields {
@@ -123,65 +193,75 @@ impl NexusTool for GetUserByUsername {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("tweet.fields", fields.join(","))]);
+            query_parts.push(format!("tweet.fields={}", fields.join(",")));
         }
 
-        // Make the request with authentication
-        match req_builder.send().await {
+        // Append query params to URL if any
+        let full_url = if !query_parts.is_empty() {
+            format!("{}?{}", url, query_parts.join("&"))
+        } else {
+            url
+        };
+
+        // Make the request using centralized error handling
+        match self
+            .fetch_user(&client, &full_url, &request.bearer_token)
+            .await
+        {
             Ok(response) => {
-                let status = response.status();
-                // Try to parse response as JSON
-                match response.text().await {
-                    Ok(text) => {
-                        // First check if response contains error
-                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(errors) = error.get("errors") {
-                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
-                                {
-                                    let message = first_error
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-                                    let code = first_error
-                                        .get("code")
-                                        .and_then(|c| c.as_u64())
-                                        .unwrap_or(0);
-                                    return Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (code: {})",
-                                            message, code
-                                        ),
-                                    };
-                                }
-                            }
-                        }
-
-                        // If no explicit error was found but status is not success
-                        if !status.is_success() {
-                            return Output::Err {
-                                reason: format!("Twitter API returned error status: {}", status),
-                            };
-                        }
-
-                        // If no error, try to parse as successful response
-                        match serde_json::from_str::<UserResponse>(&text) {
-                            Ok(user_response) => Output::Ok {
-                                data: user_response.data,
-                            },
-                            Err(e) => Output::Err {
-                                reason: format!("Failed to parse Twitter API response: {}", e),
-                            },
-                        }
+                if let Some(user) = response.data {
+                    Output::Ok {
+                        id: user.id,
+                        name: user.name,
+                        username: user.username,
+                        protected: user.protected,
+                        affiliation: user.affiliation,
+                        connection_status: user.connection_status,
+                        created_at: user.created_at,
+                        description: user.description,
+                        entities: user.entities,
+                        location: user.location,
+                        most_recent_tweet_id: user.most_recent_tweet_id,
+                        pinned_tweet_id: user.pinned_tweet_id,
+                        profile_banner_url: user.profile_banner_url,
+                        profile_image_url: user.profile_image_url,
+                        public_metrics: user.public_metrics,
+                        receives_your_dm: user.receives_your_dm,
+                        subscription_type: user.subscription_type,
+                        url: user.url,
+                        verified: user.verified,
+                        verified_type: user.verified_type,
+                        withheld: user.withheld,
+                        includes: response.includes,
                     }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
+                } else {
+                    Output::Err {
+                        reason: "No user data found in the response".to_string(),
+                    }
                 }
             }
             Err(e) => Output::Err {
-                reason: format!("Failed to send request to Twitter API: {}", e),
+                reason: e.to_string(),
             },
         }
+    }
+}
+
+impl GetUserByUsername {
+    /// Fetch user from Twitter API
+    async fn fetch_user(
+        &self,
+        client: &Client,
+        url: &str,
+        bearer_token: &str,
+    ) -> TwitterResult<UserResponse> {
+        let response = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", bearer_token))
+            .send()
+            .await?;
+
+        parse_twitter_response::<UserResponse>(response).await
     }
 }
 
@@ -263,13 +343,19 @@ mod tests {
 
         // Verify the response based on the models.rs structure
         match output {
-            Output::Ok { data } => {
-                let user = data.unwrap();
-                assert_eq!(user.id, "2244994945");
-                assert_eq!(user.name, "X Dev");
-                assert_eq!(user.username, "TwitterDev");
-                assert_eq!(user.protected, Some(false));
-                assert_eq!(user.created_at, Some("2013-12-14T04:35:55Z".to_string()));
+            Output::Ok {
+                id,
+                name,
+                username,
+                protected,
+                created_at,
+                ..
+            } => {
+                assert_eq!(id, "2244994945");
+                assert_eq!(name, "X Dev");
+                assert_eq!(username, "TwitterDev");
+                assert_eq!(protected, Some(false));
+                assert_eq!(created_at, Some("2013-12-14T04:35:55Z".to_string()));
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
@@ -315,7 +401,7 @@ mod tests {
                     reason
                 );
             }
-            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         // Verify that the mock was called
@@ -412,10 +498,17 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { data } => {
-                let user = data.unwrap();
-                assert_eq!(user.id, "2244994945");
-                assert_eq!(user.protected, None); // Optional field missing
+            Output::Ok {
+                id,
+                name,
+                username,
+                protected,
+                ..
+            } => {
+                assert_eq!(id, "2244994945");
+                assert_eq!(name, "X Dev");
+                assert_eq!(username, "TwitterDev");
+                assert_eq!(protected, None); // Optional field missing
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
