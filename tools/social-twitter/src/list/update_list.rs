@@ -210,13 +210,8 @@ impl NexusTool for UpdateList {
                     Some(data) => data,
                 };
 
-                // Parse the list data
-                match serde_json::from_value::<bool>(data.clone()) {
-                    Ok(updated) => Output::Ok { updated },
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to parse list data: {}", e),
-                    },
-                }
+                // For successful updates, Twitter API returns a data object with the updated list
+                Output::Ok { updated: true }
             }
         }
     }
