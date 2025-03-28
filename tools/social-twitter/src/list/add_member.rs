@@ -10,7 +10,6 @@ use {
     reqwest::Client,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
-    serde_json,
 };
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -28,9 +27,8 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful list member response data
-        #[schemars(description = "Successfully added member to list data")]
-        result: ListMemberResponse,
+        /// Whether the user is a member of the list
+        is_member: bool,
     },
     Err {
         /// Error message if the list member addition failed
@@ -148,7 +146,9 @@ impl NexusTool for AddMember {
 
                 // Parse the list data
                 match serde_json::from_value::<ListMemberResponse>(json) {
-                    Ok(list_data) => Output::Ok { result: list_data },
+                    Ok(list_data) => Output::Ok {
+                        is_member: list_data.data.unwrap().is_member,
+                    },
                     Err(e) => Output::Err {
                         reason: format!("Failed to parse list data: {}", e),
                     },
@@ -216,7 +216,7 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => assert!(result.data.unwrap().is_member),
+            Output::Ok { is_member } => assert!(is_member),
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
 
@@ -289,10 +289,10 @@ mod tests {
             .with_status(404)
             .with_body(
                 json!({
-                    "errors": [{
-                        "message": "Not Found",
-                        "code": 34
-                    }]
+                    "title": "Not Found",
+                    "type": "about:blank",
+                    "detail": "The specified list was not found",
+                    "status": 404
                 })
                 .to_string(),
             )
@@ -324,7 +324,13 @@ mod tests {
 
         match output {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => assert!(reason.contains("Invalid JSON response")),
+            Output::Err { reason } => {
+                assert!(
+                    reason.contains("Invalid JSON response"),
+                    "Expected error about invalid JSON, got: {}",
+                    reason
+                );
+            }
         }
 
         mock.assert_async().await;

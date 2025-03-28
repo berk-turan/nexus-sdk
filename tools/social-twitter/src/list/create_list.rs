@@ -9,7 +9,6 @@ use {
     reqwest::Client,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
-    serde_json,
 };
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -43,8 +42,9 @@ pub(crate) struct ListResponse {
 pub(crate) enum Output {
     Ok {
         /// The successful tweet response data
-        #[schemars(description = "Successfully created list data")]
-        result: ListResponse,
+        id: String,
+        /// The name of the list
+        name: String,
     },
     Err {
         /// Error message if the tweet failed
@@ -194,7 +194,10 @@ impl NexusTool for CreateList {
 
                 // Parse the list data
                 match serde_json::from_value::<ListResponse>(data.clone()) {
-                    Ok(list_data) => Output::Ok { result: list_data },
+                    Ok(list_data) => Output::Ok {
+                        id: list_data.id,
+                        name: list_data.name,
+                    },
                     Err(e) => Output::Err {
                         reason: format!("Failed to parse list data: {}", e),
                     },
@@ -259,9 +262,9 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert_eq!(result.id, "1234567890");
-                assert_eq!(result.name, "Test List");
+            Output::Ok { id, name } => {
+                assert_eq!(id, "1234567890");
+                assert_eq!(name, "Test List");
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }

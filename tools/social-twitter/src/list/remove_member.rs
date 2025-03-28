@@ -28,9 +28,8 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful tweet response data
-        #[schemars(description = "Successfully removed member from list data")]
-        result: ListMemberResponse,
+        /// Whether the user is a member of the list
+        is_member: bool,
     },
     Err {
         /// Error message if the tweet failed
@@ -143,7 +142,9 @@ impl NexusTool for RemoveMember {
 
                 // Parse the list data
                 match serde_json::from_value::<ListMemberResponse>(json) {
-                    Ok(list_data) => Output::Ok { result: list_data },
+                    Ok(list_data) => Output::Ok {
+                        is_member: list_data.data.unwrap().is_member,
+                    },
                     Err(e) => Output::Err {
                         reason: format!("Failed to parse list data: {}", e),
                     },
@@ -210,7 +211,7 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => assert!(!result.data.unwrap().is_member),
+            Output::Ok { is_member } => assert!(!is_member),
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
 

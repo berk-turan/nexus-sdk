@@ -275,9 +275,7 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { updated } => {
-                assert_eq!(updated, true);
-            }
+            Output::Ok { updated } => assert!(updated),
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
 
@@ -319,9 +317,7 @@ mod tests {
         let output = tool.invoke(partial_input).await;
 
         match output {
-            Output::Ok { updated } => {
-                assert_eq!(updated, true);
-            }
+            Output::Ok { updated } => assert!(updated),
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
 
