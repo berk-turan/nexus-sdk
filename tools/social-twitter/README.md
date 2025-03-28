@@ -37,7 +37,7 @@ The tweet was not retrieved due to an error.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
   - Twitter API error with title and error type (e.g., "Twitter API error: Invalid Request (error type: https://api.twitter.com/2/problems/invalid-request)")
-  - Twitter API error with optional detail and message (e.g., "Twitter API error: Invalid Request (error type: https://api.twitter.com/2/problems/invalid-request) - One or more parameters to your request was invalid. - The `id` query parameter value [2222222222222222222222222222] is not valid")
+  - Twitter API error with optional detail and message (e.g., "Twitter API error: Invalid Request (error type: https://api.twitter.com/2/problems/invalid-request) - One or more parameters to your request was invalid.
   - Failed to parse Twitter API response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
@@ -460,4 +460,436 @@ A list of Tweet fields to display.
 
 ## Output Variants & Ports
 
-\*\*`ok`
+**`ok`**
+
+The user was retrieved successfully.
+
+- **`ok.result`: [`UserResponse`]** - The user data containing all fields from the Twitter API response.
+
+**`err`**
+
+The user was not retrieved due to an error.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error status
+  - User not found
+  - Invalid token
+  - Rate limit exceeded
+  - Failed to parse Twitter API response
+  - Failed to read Twitter API response
+  - Failed to send request to Twitter API
+
+---
+
+# `xyz.taluslabs.social.twitter.create-list@1`
+
+Standard Nexus Tool that creates a new list on Twitter.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/manage-lists/api-reference/post-lists)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`name`: [`String`]**
+
+The name of the list.
+
+_opt_ **`description`: [`Option<String>`]** _default_: [`None`]
+
+Description of the list.
+
+_opt_ **`private`: [`Option<bool>`]** _default_: [`None`]
+
+Determines if the list is private (true) or public (false).
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list was created successfully.
+
+- **`ok.result`** - The created list data containing:
+  - `id`: The list's unique identifier
+  - `name`: The name of the list
+  - And other details like description, member count, follower count, etc.
+
+**`err`**
+
+The list creation failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# `xyz.taluslabs.social.twitter.get-list@1`
+
+Standard Nexus Tool that retrieves a list from Twitter by ID.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-lookup/api-reference/get-lists-id)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`list_id`: [`String`]**
+
+The ID of the list to retrieve.
+
+_opt_ **`list_fields`: [`Option<Vec<ListField>>`]** _default_: [`None`]
+
+A list of List fields to display.
+
+_opt_ **`expansions`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list was retrieved successfully.
+
+- **`ok.data`** - The list data.
+- **`ok.includes`** - Additional data included in the response.
+
+**`err`**
+
+The list retrieval failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error
+  - Network error
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# `xyz.taluslabs.social.twitter.get-list-tweets@1`
+
+Standard Nexus Tool that retrieves tweets from a Twitter list.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-tweets/api-reference/get-lists-id-tweets)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`list_id`: [`String`]**
+
+The ID of the list to retrieve tweets from.
+
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
+
+The maximum number of results to retrieve (range: 5-100).
+
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
+
+Used to get the next 'page' of results.
+
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
+
+A list of Tweet fields to display.
+
+_opt_ **`expansions`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`media_fields`: [`Option<Vec<MediaField>>`]** _default_: [`None`]
+
+A list of Media fields to display.
+
+_opt_ **`poll_fields`: [`Option<Vec<PollField>>`]** _default_: [`None`]
+
+A list of Poll fields to display.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+_opt_ **`place_fields`: [`Option<Vec<PlaceField>>`]** _default_: [`None`]
+
+A list of Place fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list tweets were retrieved successfully.
+
+- **`ok.data`** - The collection of tweets from the list.
+- **`ok.includes`** - Additional data included in the response.
+- **`ok.meta`** - Metadata about the response.
+
+**`err`**
+
+The list tweets retrieval failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error
+  - Network error
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# `xyz.taluslabs.social.twitter.get-list-members@1`
+
+Standard Nexus Tool that retrieves members of a Twitter list.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-members/api-reference/get-lists-id-members)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`list_id`: [`String`]**
+
+The ID of the list to retrieve members from.
+
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
+
+The maximum number of results to retrieve (range: 1-100).
+
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
+
+Used to get the next 'page' of results.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+_opt_ **`expansions`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
+
+A list of Tweet fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list members were retrieved successfully.
+
+- **`ok.data`** - The collection of users who are members of the list.
+- **`ok.includes`** - Additional data included in the response.
+- **`ok.meta`** - Metadata about the response.
+
+**`err`**
+
+The list members retrieval failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error
+  - Network error
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# `xyz.taluslabs.social.twitter.update-list@1`
+
+Standard Nexus Tool that updates an existing Twitter list.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/manage-lists/api-reference/put-lists-id)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`list_id`: [`String`]**
+
+The ID of the list to update.
+
+_opt_ **`name`: [`Option<String>`]** _default_: [`None`]
+
+The new name for the list.
+
+_opt_ **`description`: [`Option<String>`]** _default_: [`None`]
+
+The new description for the list.
+
+_opt_ **`private`: [`Option<bool>`]** _default_: [`None`]
+
+Whether the list should be private (true) or public (false).
+
+## Output Variants & Ports
+
+**`ok`**
+
+The list was updated successfully.
+
+- **`ok.list_id`** - The ID of the updated list.
+- **`ok.updated`** - Confirmation that the list was updated (true).
+
+**`err`**
+
+The list update failed.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error
+  - Network error
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# `xyz.taluslabs.social.twitter.add-member@1`
+
+Standard Nexus Tool that adds a user to a Twitter list.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-members/api-reference/post-lists-id-members)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`list_id`: [`String`]**
+
+The ID of the list to which a member will be added.
+
+**`user_id`: [`String`]**
+
+The ID of the user to add to the list.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The user was successfully added to the list.
+
+- **`ok.list_id`** - The ID of the list.
+- **`ok.user_id`** - The ID of the user who was added to the list.
+- **`ok.added`** - Confirmation that the user was added to the list (true).
+
+**`err`**
+
+The user could not be added to the list.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error
+  - Network error
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# `xyz.taluslabs.social.twitter.remove-member@1`
+
+Standard Nexus Tool that removes a user from a Twitter list.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/lists/list-members/api-reference/delete-lists-id-members-user_id)
+
+## Input
+
+**Authentication Parameters**
+
+The following authentication parameters are provided as part of the TwitterAuth structure:
+
+- **`consumer_key`: [`String`]** - Twitter API application's Consumer Key
+- **`consumer_secret_key`: [`String`]** - Twitter API application's Consumer Secret Key
+- **`access_token`: [`String`]** - Access Token for user's Twitter account
+- **`access_token_secret`: [`String`]** - Access Token Secret for user's Twitter account
+
+**Additional Parameters**
+
+**`list_id`: [`String`]**
+
+The ID of the list from which a member will be removed.
+
+**`user_id`: [`String`]**
+
+The ID of the user to remove from the list.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The user was successfully removed from the list.
+
+- **`ok.list_id`** - The ID of the list.
+- **`ok.user_id`** - The ID of the user who was removed from the list.
+- **`ok.removed`** - Confirmation that the user was removed from the list (true).
+
+**`err`**
+
+The user could not be removed from the list.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error
+  - Network error
+  - Response parsing error
+  - Status code error
+  - Other error types handled by the centralized error handling mechanism
+
+---
+
+# Error Handling
+
+The Twitter SDK includes a centralized error handling system that provides consistent error responses across all modules. This system includes:
+
+## Error Types
+
+- **Network Errors**: Errors that occur during network communication with the Twitter API.
+- **Parse Errors**: Errors that occur when parsing the Twitter API response JSON.
+- **API Errors**: Errors returned by the Twitter API with specific titles, types, and details.
+- **Status Errors**: HTTP status errors from the Twitter API.
+- **Other Errors**: Any other errors that don't fit into the above categories.
+
+## Error Structure
+
+Each error includes a descriptive message that follows a consistent format:
+
+- Network errors: `"Network error: [error details]"`
+- Parse errors: `"Response parsing error: [error details]"`
+- API errors: `"Twitter API error: [title] (type: [error_type]) - [detail]"`
+- Status errors: `"Twitter API status error: [status code]"`
+- Other errors: `"Unknown error: [message]"`
+
+## Error Handling in Modules
+
+All modules use the `TwitterResult<T>` type for handling errors, which is a type alias for `Result<T, TwitterError>`. This ensures consistent error propagation and formatting throughout the SDK.
+
+The error handling system makes it easier to debug issues with Twitter API calls and provides clear, actionable error messages to end users.
