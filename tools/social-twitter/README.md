@@ -415,7 +415,7 @@ A comma separated list of Tweet fields to display.
 
 The user was retrieved successfully.
 
-- **`ok.result`: [`UserResponse`]** - The user data containing all fields from the Twitter API response.
+- **`ok.data`: [`Option<UserData>`]** - The user data containing all fields from the Twitter API response.
 
 **`err`**
 
@@ -464,7 +464,7 @@ A list of Tweet fields to display.
 
 The user was retrieved successfully.
 
-- **`ok.result`: [`UserResponse`]** - The user data containing all fields from the Twitter API response.
+- **`ok.data`: [`Option<UserData>`]** - The user data containing all fields from the Twitter API response.
 
 **`err`**
 
@@ -568,8 +568,7 @@ A list of User fields to display.
 
 The list was retrieved successfully.
 
-- **`ok.data`** - The list data.
-- **`ok.includes`** - Additional data included in the response.
+- **`ok.data`: [`Option<ListData>`]** - The list data.
 
 **`err`**
 
@@ -637,9 +636,9 @@ A list of Place fields to display.
 
 The list tweets were retrieved successfully.
 
-- **`ok.data`** - The collection of tweets from the list.
-- **`ok.includes`** - Additional data included in the response.
-- **`ok.meta`** - Metadata about the response.
+- **`ok.data`: [`Option<Vec<Tweet>>`]** - The collection of tweets from the list.
+- **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response.
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response.
 
 **`err`**
 
@@ -695,9 +694,9 @@ A list of Tweet fields to display.
 
 The list members were retrieved successfully.
 
-- **`ok.data`** - The collection of users who are members of the list.
-- **`ok.includes`** - Additional data included in the response.
-- **`ok.meta`** - Metadata about the response.
+- **`ok.data`: [`Option<Vec<UserData>>`]** - The collection of users who are members of the list.
+- **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response.
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response.
 
 **`err`**
 
