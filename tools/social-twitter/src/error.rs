@@ -72,6 +72,12 @@ impl TwitterError {
 /// Result type for Twitter operations
 pub type TwitterResult<T> = Result<T, TwitterError>;
 
+#[derive(Debug, Serialize, Deserialize)]
+struct TwitterDefaultError {
+    code: i32,
+    message: String,
+}
+
 /// Helper function to parse Twitter API response
 pub async fn parse_twitter_response<T>(response: Response) -> TwitterResult<T>
 where
@@ -84,6 +90,18 @@ where
         // Try to parse error response
         match response.text().await {
             Ok(text) => {
+                // Try to parse as default Twitter error format
+                if let Ok(default_error) = serde_json::from_str::<TwitterDefaultError>(&text) {
+                    return Err(TwitterError::ApiError(
+                        "Twitter API Error".to_string(),
+                        "default".to_string(),
+                        format!(
+                            " - {} (Code: {})",
+                            default_error.message, default_error.code
+                        ),
+                    ));
+                }
+
                 if let Ok(error_response) = serde_json::from_str::<Value>(&text) {
                     if let Some(errors) = error_response.get("errors").and_then(|e| e.as_array()) {
                         if let Some(first_error) = errors.first() {
