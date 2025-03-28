@@ -4,8 +4,8 @@ use {
         config_dir,
         FileBasedKeystore,
         PersistedConfig,
-        SuiClientConfig,
-        SuiEnv,
+        ClientConfig,
+        Env,
         CLIENT_CONFIG,
         KEYSTORE_FILENAME,
     },
@@ -470,7 +470,7 @@ fn retrieve_wallet_with_mnemonic(net: SuiNet, mnemonic: &str) -> Result<PathBuf,
     // If the wallet config file does not exist, create it.
     if !wallet_conf_path.exists() {
         let keystore = FileBasedKeystore::new(&keystore_path)?;
-        let mut client_config = SuiClientConfig::new(keystore.into());
+        let mut client_config = ClientConfig::new(keystore.into());
         if let Some(env) = get_sui_env(net) {
             client_config.add_env(env);
         }
@@ -488,7 +488,7 @@ fn retrieve_wallet_with_mnemonic(net: SuiNet, mnemonic: &str) -> Result<PathBuf,
         keystore.import_from_mnemonic(mnemonic, sui::SignatureScheme::ED25519, None, None)?;
 
     // Read the existing client configuration.
-    let mut client_config: SuiClientConfig = PersistedConfig::read(&wallet_conf_path)?;
+    let mut client_config: ClientConfig = PersistedConfig::read(&wallet_conf_path)?;
 
     client_config.active_address = Some(imported_address);
     client_config.save(&wallet_conf_path)?;
@@ -496,9 +496,9 @@ fn retrieve_wallet_with_mnemonic(net: SuiNet, mnemonic: &str) -> Result<PathBuf,
     Ok(wallet_conf_path)
 }
 
-fn get_sui_env(net: SuiNet) -> Option<SuiEnv> {
+fn get_sui_env(net: SuiNet) -> Option<Env> {
     if let Ok(sui_rpc_url) = std::env::var("SUI_RPC_URL") {
-        Some(SuiEnv {
+        Some(Env {
             alias: "localnet".to_string(),
             rpc: sui_rpc_url,
             ws: None,
@@ -506,9 +506,9 @@ fn get_sui_env(net: SuiNet) -> Option<SuiEnv> {
         })
     } else {
         let client = match net {
-            SuiNet::Localnet => SuiEnv::localnet(),
-            SuiNet::Devnet => SuiEnv::devnet(),
-            SuiNet::Testnet => SuiEnv::testnet(),
+            SuiNet::Localnet => Env::localnet(),
+            SuiNet::Devnet => Env::devnet(),
+            SuiNet::Testnet => Env::testnet(),
             SuiNet::Mainnet => todo!("Mainnet not yet supported"),
         };
         Some(client)
@@ -604,7 +604,7 @@ mod tests {
         let _ = retrieve_wallet_with_mnemonic(SuiNet::Localnet, mnemonic)
             .expect("retrieve_wallet_with_mnemonic failed");
 
-        let client_config: SuiClientConfig =
+        let client_config: ClientConfig =
             PersistedConfig::read(&wallet_conf_path).expect("Failed to read client config");
         let expected_address: Address = expected_address_str.parse().expect("Invalid address");
         assert_eq!(client_config.active_address.unwrap(), expected_address);
@@ -658,7 +658,7 @@ mod tests {
         if !wallet_conf_path.exists() {
             let keystore =
                 FileBasedKeystore::new(&keystore_path).expect("Failed to create keystore");
-            let client_config = SuiClientConfig::new(keystore.into());
+            let client_config = ClientConfig::new(keystore.into());
             client_config
                 .save(&wallet_conf_path)
                 .expect("Failed to save client config");
@@ -671,7 +671,7 @@ mod tests {
             .expect("retrieve_wallet_with_mnemonic failed");
 
         // Read the updated client configuration.
-        let updated_config: SuiClientConfig =
+        let updated_config: ClientConfig =
             PersistedConfig::read(&wallet_conf_path).expect("Failed to read client config");
 
         // Convert the expected address string into a SuiAddress.

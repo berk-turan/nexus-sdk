@@ -4,7 +4,7 @@ pub(crate) use {
     clap::{builder::ValueParser, Args, Parser, Subcommand, ValueEnum},
     colored::Colorize,
     nexus_sdk::{
-        sui::{config_dir, traits::*, CLIENT_CONFIG},
+        sui::traits::*,
         *,
     },
     serde::{Deserialize, Serialize},
@@ -143,8 +143,8 @@ pub(crate) fn parse_json_string(json: &str) -> AnyResult<serde_json::Value> {
 // == Used by serde ==
 
 fn default_sui_wallet_path() -> PathBuf {
-    let config_dir = config_dir().expect("Unable to determine SUI config directory");
-    config_dir.join(CLIENT_CONFIG)
+    let config_dir = sui::config_dir().expect("Unable to determine SUI config directory");
+    config_dir.join(sui::CLIENT_CONFIG)
 }
 
 #[cfg(test)]
