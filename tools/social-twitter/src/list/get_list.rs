@@ -1,10 +1,11 @@
-//! # `xyz.taluslabs.social.twitter.get-list@1`
+//! # xyz.taluslabs.social.twitter.get-list@1
 //!
 //! Standard Nexus Tool that retrieves a list on Twitter.
 
 use {
     crate::{
-        list::models::{Expansion, ListData, ListField, ListResponse, UserField},
+        error::{parse_twitter_response, TwitterResult},
+        list::models::{Expansion, Includes, ListField, ListResponse, Meta, UserField},
         tweet::TWITTER_API_BASE,
     },
     nexus_sdk::{fqn, ToolFqn},
@@ -38,12 +39,37 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful tweet response data
+        /// The list's unique identifier
+        id: String,
+        /// The list's name
+        name: String,
+        /// The timestamp when the list was created
         #[serde(skip_serializing_if = "Option::is_none")]
-        data: Option<ListData>,
+        created_at: Option<String>,
+        /// The list's description
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        /// Number of followers this list has
+        #[serde(skip_serializing_if = "Option::is_none")]
+        follower_count: Option<i32>,
+        /// Number of members in this list
+        #[serde(skip_serializing_if = "Option::is_none")]
+        member_count: Option<i32>,
+        /// The ID of the list's owner
+        #[serde(skip_serializing_if = "Option::is_none")]
+        owner_id: Option<String>,
+        /// Whether the list is private or public
+        #[serde(skip_serializing_if = "Option::is_none")]
+        private: Option<bool>,
+        /// Additional entities related to the list
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
+        /// Metadata about the list request
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Meta>,
     },
     Err {
-        /// Error message if the tweet failed
+        /// Error message if the list retrieval failed
         reason: String,
     },
 }
@@ -76,11 +102,47 @@ impl NexusTool for GetList {
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
         let client = Client::new();
-
         // Add authentication header
         let url = format!("{}/{}", self.api_base, request.list_id);
+
+        match self.fetch_list(&client, &url, &request).await {
+            Ok(list_response) => {
+                if let Some(list) = list_response.data {
+                    Output::Ok {
+                        id: list.id,
+                        name: list.name,
+                        created_at: list.created_at,
+                        description: list.description,
+                        follower_count: list.follower_count,
+                        member_count: list.member_count,
+                        owner_id: list.owner_id,
+                        private: list.private,
+                        includes: None, // ListResponse doesn't contain includes in current model
+                        meta: None,     // ListResponse doesn't contain meta in current model
+                    }
+                } else {
+                    Output::Err {
+                        reason: "No list data found in the response".to_string(),
+                    }
+                }
+            }
+            Err(e) => Output::Err {
+                reason: e.to_string(),
+            },
+        }
+    }
+}
+
+impl GetList {
+    /// Fetch list from Twitter API
+    async fn fetch_list(
+        &self,
+        client: &Client,
+        url: &str,
+        request: &Input,
+    ) -> TwitterResult<ListResponse> {
         let mut req_builder = client
-            .get(&url)
+            .get(url)
             .header("Authorization", format!("Bearer {}", request.bearer_token));
 
         // Add optional query parameters if they exist
@@ -122,60 +184,8 @@ impl NexusTool for GetList {
         }
 
         // Make the request
-        match req_builder.send().await {
-            Ok(response) => {
-                // Check if response is successful
-                if !response.status().is_success() {
-                    return Output::Err {
-                        reason: format!("Twitter API returned error status: {}", response.status()),
-                    };
-                }
-
-                // Try to parse response as JSON
-                match response.text().await {
-                    Ok(text) => {
-                        // First check if response contains error
-                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(errors) = error.get("errors") {
-                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
-                                {
-                                    let message = first_error
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-                                    let code = first_error
-                                        .get("code")
-                                        .and_then(|c| c.as_u64())
-                                        .unwrap_or(0);
-                                    return Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (code: {})",
-                                            message, code
-                                        ),
-                                    };
-                                }
-                            }
-                        }
-
-                        // If no error, try to parse as successful response
-                        match serde_json::from_str::<ListResponse>(&text) {
-                            Ok(list_response) => Output::Ok {
-                                data: list_response.data,
-                            },
-                            Err(e) => Output::Err {
-                                reason: format!("Failed to parse Twitter API response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
-                }
-            }
-            Err(e) => Output::Err {
-                reason: format!("Failed to send request to Twitter API: {}", e),
-            },
-        }
+        let response = req_builder.send().await?;
+        parse_twitter_response::<ListResponse>(response).await
     }
 }
 
@@ -196,7 +206,6 @@ mod tests {
         let tool = GetList::with_api_base(&(server.url() + "/lists"));
         (server, tool)
     }
-
     fn create_test_input() -> Input {
         Input {
             bearer_token: "test_bearer_token".to_string(),
@@ -252,13 +261,19 @@ mod tests {
 
         // Verify the response
         match output {
-            Output::Ok { data } => {
-                let data = data.unwrap();
-                assert_eq!(data.id, "test_list_id");
-                assert_eq!(data.name, "Test List");
-                assert_eq!(data.description.unwrap(), "A test list for unit testing");
-                assert_eq!(data.follower_count.unwrap(), 42);
-                assert_eq!(data.owner_id.unwrap(), "12345678");
+            Output::Ok {
+                id,
+                name,
+                description,
+                follower_count,
+                owner_id,
+                ..
+            } => {
+                assert_eq!(id, "test_list_id");
+                assert_eq!(name, "Test List");
+                assert_eq!(description.unwrap(), "A test list for unit testing");
+                assert_eq!(follower_count.unwrap(), 42);
+                assert_eq!(owner_id.unwrap(), "12345678");
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
@@ -299,16 +314,18 @@ mod tests {
         // Verify the response
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status: 404"), 
-                       "Expected error message to contain 'Twitter API returned error status: 404', got: {}", reason);
+                assert!(
+                    reason.contains("List not found"),
+                    "Expected error message to contain 'List not found', got: {}",
+                    reason
+                );
             }
-            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         // Verify that the mock was called
         mock.assert_async().await;
     }
-
     #[tokio::test]
     async fn test_unauthorized_error() {
         let (mut server, tool) = create_server_and_tool().await;
@@ -335,8 +352,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status: 401"), 
-                       "Expected error message to contain 'Twitter API returned error status: 401', got: {}", reason);
+                assert!(
+                    reason.contains("Unauthorized"),
+                    "Expected error message to contain 'Unauthorized', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -376,10 +396,13 @@ mod tests {
         // Verify the response
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status: 429"), 
-                       "Expected error message to contain 'Twitter API returned error status: 429', got: {}", reason);
+                assert!(
+                    reason.contains("Rate limit exceeded"),
+                    "Expected error message to contain 'Rate limit exceeded', got: {}",
+                    reason
+                );
             }
-            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         // Verify that the mock was called
@@ -408,10 +431,13 @@ mod tests {
         // Verify the response
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Failed to parse Twitter API response"), 
-                       "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
+                assert!(
+                    reason.contains("Response parsing error") || reason.contains("Failed to parse"),
+                    "Expected error message to contain parsing error information, got: {}",
+                    reason
+                );
             }
-            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         // Verify that the mock was called
