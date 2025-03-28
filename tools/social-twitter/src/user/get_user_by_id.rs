@@ -8,7 +8,7 @@ use {
             models::{ExpansionField, TweetField, UserField},
             TWITTER_API_BASE,
         },
-        user::models::UserResponse,
+        user::models::{UserData, UserResponse},
     },
     reqwest::Client,
     ::{
@@ -47,7 +47,8 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The successful user response data
-        result: UserResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<UserData>,
     },
     Err {
         /// Error message if the tweet failed
@@ -165,7 +166,9 @@ impl NexusTool for GetUserById {
                         }
 
                         match serde_json::from_str::<UserResponse>(&text) {
-                            Ok(response) => Output::Ok { result: response },
+                            Ok(response) => Output::Ok {
+                                data: response.data,
+                            },
                             Err(e) => Output::Err {
                                 reason: format!("Failed to parse Twitter API response: {}", e),
                             },
@@ -237,8 +240,8 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert_eq!(result.data.unwrap().id, "2244994945");
+            Output::Ok { data } => {
+                assert_eq!(data.unwrap().id, "2244994945");
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
@@ -371,8 +374,8 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                let user = result.data.unwrap();
+            Output::Ok { data } => {
+                let user = data.unwrap();
                 assert_eq!(user.id, "2244994945");
                 assert_eq!(user.protected, None); // Optional field missing
             }

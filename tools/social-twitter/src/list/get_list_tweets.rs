@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        list::models::{Expansion, ListTweetsResponse},
+        list::models::{Expansion, Includes, ListTweet, ListTweetsResponse, Meta},
         tweet::{
             models::{MediaField, PlaceField, PollField, TweetField, UserField},
             TWITTER_API_BASE,
@@ -63,7 +63,13 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The list of tweets
-        result: ListTweetsResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<Vec<ListTweet>>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Meta>,
     },
     Err {
         /// Error message if the list tweets failed
@@ -229,7 +235,9 @@ impl NexusTool for GetListTweets {
                         // If no error, try to parse as successful response
                         match serde_json::from_str::<ListTweetsResponse>(&text) {
                             Ok(list_response) => Output::Ok {
-                                result: list_response,
+                                data: list_response.data,
+                                meta: list_response.meta,
+                                includes: list_response.includes,
                             },
                             Err(e) => Output::Err {
                                 reason: format!("Failed to parse Twitter API response: {}", e),
@@ -336,23 +344,27 @@ mod tests {
 
         // Verify the response
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_some());
-                let data = result.data.unwrap();
+            Output::Ok {
+                data,
+                meta,
+                includes,
+            } => {
+                assert!(data.is_some());
+                let data = data.unwrap();
                 assert_eq!(data.len(), 2);
                 assert_eq!(data[0].id, "111222333444");
                 assert_eq!(data[0].text, "This is a test tweet in the list");
                 assert_eq!(data[1].id, "555666777888");
 
                 // Check that includes contains the right users
-                let includes = result.includes.unwrap();
+                let includes = includes.unwrap();
                 let users = includes.users.unwrap();
                 assert_eq!(users.len(), 2);
                 assert_eq!(users[0].username, "testuser1");
                 assert_eq!(users[1].username, "testuser2");
 
                 // Check meta data
-                let meta = result.meta.unwrap();
+                let meta = meta.unwrap();
                 assert_eq!(meta.result_count.unwrap(), 2);
                 assert_eq!(meta.next_token.unwrap(), "next_page_token");
             }
@@ -398,7 +410,11 @@ mod tests {
                 assert!(reason.contains("Twitter API returned error status: 404"), 
                        "Expected error message to contain 'Twitter API returned error status: 404', got: {}", reason);
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok {
+                data,
+                meta: _,
+                includes: _,
+            } => panic!("Expected error, got success: {:?}", data),
         }
 
         // Verify that the mock was called
@@ -499,10 +515,14 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_none() || result.data.unwrap().is_empty());
-                assert!(result.meta.is_some());
-                if let Some(meta) = result.meta {
+            Output::Ok {
+                data,
+                meta,
+                includes: _,
+            } => {
+                assert!(data.is_none() || data.unwrap().is_empty());
+                assert!(meta.is_some());
+                if let Some(meta) = meta {
                     assert_eq!(meta.result_count.unwrap(), 0);
                 }
             }

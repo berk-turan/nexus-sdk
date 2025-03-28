@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        list::models::{Expansion, ListField, ListResponse, UserField},
+        list::models::{Expansion, ListData, ListField, ListResponse, UserField},
         tweet::TWITTER_API_BASE,
     },
     nexus_sdk::{fqn, ToolFqn},
@@ -39,7 +39,8 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The successful tweet response data
-        result: ListResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<ListData>,
     },
     Err {
         /// Error message if the tweet failed
@@ -159,7 +160,7 @@ impl NexusTool for GetList {
                         // If no error, try to parse as successful response
                         match serde_json::from_str::<ListResponse>(&text) {
                             Ok(list_response) => Output::Ok {
-                                result: list_response,
+                                data: list_response.data,
                             },
                             Err(e) => Output::Err {
                                 reason: format!("Failed to parse Twitter API response: {}", e),
@@ -251,8 +252,8 @@ mod tests {
 
         // Verify the response
         match output {
-            Output::Ok { result } => {
-                let data = result.data.unwrap();
+            Output::Ok { data } => {
+                let data = data.unwrap();
                 assert_eq!(data.id, "test_list_id");
                 assert_eq!(data.name, "Test List");
                 assert_eq!(data.description.unwrap(), "A test list for unit testing");
@@ -301,7 +302,7 @@ mod tests {
                 assert!(reason.contains("Twitter API returned error status: 404"), 
                        "Expected error message to contain 'Twitter API returned error status: 404', got: {}", reason);
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
         }
 
         // Verify that the mock was called
@@ -378,7 +379,7 @@ mod tests {
                 assert!(reason.contains("Twitter API returned error status: 429"), 
                        "Expected error message to contain 'Twitter API returned error status: 429', got: {}", reason);
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
         }
 
         // Verify that the mock was called
@@ -410,7 +411,7 @@ mod tests {
                 assert!(reason.contains("Failed to parse Twitter API response"), 
                        "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
         }
 
         // Verify that the mock was called

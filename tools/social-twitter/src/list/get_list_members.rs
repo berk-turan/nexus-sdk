@@ -4,12 +4,12 @@
 
 use {
     crate::{
-        list::models::Expansion,
+        list::models::{Expansion, Meta},
         tweet::{
             models::{TweetField, UserField},
             TWITTER_API_BASE,
         },
-        user::models::UsersResponse,
+        user::models::{UserData, UsersResponse},
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
@@ -52,7 +52,10 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The list of tweets
-        result: UsersResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<Vec<UserData>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        meta: Option<Meta>,
     },
     Err {
         /// Error message if the list tweets failed
@@ -179,7 +182,8 @@ impl NexusTool for GetListMembers {
                         // If no error, try to parse as successful response
                         match serde_json::from_str::<UsersResponse>(&text) {
                             Ok(users_response) => Output::Ok {
-                                result: users_response,
+                                data: users_response.data,
+                                meta: users_response.meta,
                             },
                             Err(e) => Output::Err {
                                 reason: format!("Failed to parse Twitter API response: {}", e),
@@ -275,9 +279,9 @@ mod tests {
 
         // Verify the response
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_some());
-                let data = result.data.unwrap();
+            Output::Ok { data, meta } => {
+                assert!(data.is_some());
+                let data = data.unwrap();
                 assert_eq!(data.len(), 2);
                 assert_eq!(data[0].id, "12345");
                 assert_eq!(data[0].username, "testuser1");
@@ -286,7 +290,7 @@ mod tests {
                 assert_eq!(data[1].username, "testuser2");
 
                 // Check meta data
-                let meta = result.meta.unwrap();
+                let meta = meta.unwrap();
                 assert_eq!(meta.result_count.unwrap(), 2);
                 assert_eq!(meta.next_token.unwrap(), "next_page_token");
             }
@@ -332,7 +336,7 @@ mod tests {
                 assert!(reason.contains("Twitter API returned error status: 404"), 
                        "Expected error message to contain 'Twitter API returned error status: 404', got: {}", reason);
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok { data, meta: _ } => panic!("Expected error, got success: {:?}", data),
         }
 
         // Verify that the mock was called
@@ -433,10 +437,10 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                assert!(result.data.is_none() || result.data.unwrap().is_empty());
-                assert!(result.meta.is_some());
-                if let Some(meta) = result.meta {
+            Output::Ok { data, meta } => {
+                assert!(data.is_none() || data.unwrap().is_empty());
+                assert!(meta.is_some());
+                if let Some(meta) = meta {
                     assert_eq!(meta.result_count.unwrap(), 0);
                 }
             }

@@ -8,7 +8,7 @@ use {
             models::{ExpansionField, TweetField, UserField},
             TWITTER_API_BASE,
         },
-        user::models::UserResponse,
+        user::models::{UserData, UserResponse},
     },
     reqwest::Client,
     ::{
@@ -42,7 +42,8 @@ pub(crate) struct Input {
 pub(crate) enum Output {
     Ok {
         /// The successful user response data
-        result: UserResponse,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<UserData>,
     },
     Err {
         /// Error message if the request failed
@@ -165,7 +166,7 @@ impl NexusTool for GetUserByUsername {
                         // If no error, try to parse as successful response
                         match serde_json::from_str::<UserResponse>(&text) {
                             Ok(user_response) => Output::Ok {
-                                result: user_response,
+                                data: user_response.data,
                             },
                             Err(e) => Output::Err {
                                 reason: format!("Failed to parse Twitter API response: {}", e),
@@ -262,8 +263,8 @@ mod tests {
 
         // Verify the response based on the models.rs structure
         match output {
-            Output::Ok { result } => {
-                let user = result.data.unwrap();
+            Output::Ok { data } => {
+                let user = data.unwrap();
                 assert_eq!(user.id, "2244994945");
                 assert_eq!(user.name, "X Dev");
                 assert_eq!(user.username, "TwitterDev");
@@ -314,7 +315,7 @@ mod tests {
                     reason
                 );
             }
-            Output::Ok { result } => panic!("Expected error, got success: {:?}", result),
+            Output::Ok { data } => panic!("Expected error, got success: {:?}", data),
         }
 
         // Verify that the mock was called
@@ -411,8 +412,8 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok { result } => {
-                let user = result.data.unwrap();
+            Output::Ok { data } => {
+                let user = data.unwrap();
                 assert_eq!(user.id, "2244994945");
                 assert_eq!(user.protected, None); // Optional field missing
             }
