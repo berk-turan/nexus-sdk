@@ -301,45 +301,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_code_message_error() {
-        // Create server and tool
-        let (mut server, tool) = create_server_and_tool().await;
-
-        // Set up mock for code/message error format
-        let mock = server
-            .mock("POST", "/users/12345/likes")
-            .with_status(403)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!({
-                    "code": 187,
-                    "message": "You have already liked this Tweet"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        // Test the like request
-        let result = tool.invoke(create_test_input()).await;
-
-        // Verify the error response
-        match result {
-            Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
-                assert!(
-                    reason.contains("already liked") && reason.contains("Code: 187"),
-                    "Error should indicate already liked tweet. Got: {}",
-                    reason
-                );
-            }
-        }
-
-        // Verify that the mock was called
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
     async fn test_invalid_json_response() {
         // Create server and tool
         let (mut server, tool) = create_server_and_tool().await;

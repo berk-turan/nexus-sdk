@@ -67,9 +67,11 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful tweet response data
-        #[schemars(description = "Successfully posted tweet data")]
-        result: TweetResponse,
+        id: String,
+        /// List of tweet IDs in the edit history
+        edit_history_tweet_ids: Vec<String>,
+        /// The actual content of the tweet
+        text: String,
     },
     Err {
         /// Error message if the tweet failed
@@ -236,7 +238,11 @@ impl NexusTool for PostTweet {
                     Err(e) => Output::Err {
                         reason: format!("Failed to parse tweet data: {}", e),
                     },
-                    Ok(tweet_data) => Output::Ok { result: tweet_data },
+                    Ok(tweet_data) => Output::Ok {
+                        id: tweet_data.id,
+                        edit_history_tweet_ids: tweet_data.edit_history_tweet_ids,
+                        text: tweet_data.text,
+                    },
                 }
             }
         }
@@ -315,10 +321,14 @@ mod tests {
 
         // Verify the response
         match result {
-            Output::Ok { result } => {
-                assert_eq!(result.id, "1234567890");
-                assert_eq!(result.text, "Hello, Twitter!");
-                assert_eq!(result.edit_history_tweet_ids, vec!["1234567890"]);
+            Output::Ok {
+                id,
+                edit_history_tweet_ids,
+                text,
+            } => {
+                assert_eq!(id, "1234567890");
+                assert_eq!(text, "Hello, Twitter!");
+                assert_eq!(edit_history_tweet_ids, vec!["1234567890"]);
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
