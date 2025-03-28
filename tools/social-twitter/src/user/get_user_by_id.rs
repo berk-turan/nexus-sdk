@@ -150,65 +150,7 @@ impl NexusTool for GetUserById {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        let client = Client::new();
-
-        // Construct URL with user ID
-        let url = format!("{}/{}", self.api_base, request.user_id);
-
-        // Build query string
-        let mut query_parts = Vec::new();
-
-        if let Some(user_fields) = &request.user_fields {
-            let fields: Vec<String> = user_fields
-                .iter()
-                .map(|f| {
-                    serde_json::to_string(f)
-                        .unwrap()
-                        .replace("\"", "")
-                        .to_lowercase()
-                })
-                .collect();
-            query_parts.push(format!("user.fields={}", fields.join(",")));
-        }
-
-        if let Some(expansions_fields) = &request.expansions_fields {
-            let fields: Vec<String> = expansions_fields
-                .iter()
-                .map(|f| {
-                    serde_json::to_string(f)
-                        .unwrap()
-                        .replace("\"", "")
-                        .to_lowercase()
-                })
-                .collect();
-            query_parts.push(format!("expansions={}", fields.join(",")));
-        }
-
-        if let Some(tweet_fields) = &request.tweet_fields {
-            let fields: Vec<String> = tweet_fields
-                .iter()
-                .map(|f| {
-                    serde_json::to_string(f)
-                        .unwrap()
-                        .replace("\"", "")
-                        .to_lowercase()
-                })
-                .collect();
-            query_parts.push(format!("tweet.fields={}", fields.join(",")));
-        }
-
-        // Append query params to URL if any
-        let full_url = if !query_parts.is_empty() {
-            format!("{}?{}", url, query_parts.join("&"))
-        } else {
-            url
-        };
-
-        // Make the request
-        match self
-            .fetch_user(&client, &full_url, &request.bearer_token)
-            .await
-        {
+        match self.fetch_user(&request).await {
             Ok(response) => {
                 if let Some(user) = response.data {
                     Output::Ok {
@@ -249,18 +191,59 @@ impl NexusTool for GetUserById {
 
 impl GetUserById {
     /// Fetch user from Twitter API
-    async fn fetch_user(
-        &self,
-        client: &Client,
-        url: &str,
-        bearer_token: &str,
-    ) -> TwitterResult<UserResponse> {
-        let response = client
-            .get(url)
-            .header("Authorization", format!("Bearer {}", bearer_token))
-            .send()
-            .await?;
+    async fn fetch_user(&self, request: &Input) -> TwitterResult<UserResponse> {
+        let client = Client::new();
 
+        // Construct URL with user ID
+        let url = format!("{}/{}", self.api_base, request.user_id);
+
+        // Build request with query parameters
+        let mut req_builder = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", request.bearer_token));
+
+        // Add optional query parameters
+        if let Some(user_fields) = &request.user_fields {
+            let fields: Vec<String> = user_fields
+                .iter()
+                .map(|f| {
+                    serde_json::to_string(f)
+                        .unwrap()
+                        .replace("\"", "")
+                        .to_lowercase()
+                })
+                .collect();
+            req_builder = req_builder.query(&[("user.fields", fields.join(","))]);
+        }
+
+        if let Some(expansions_fields) = &request.expansions_fields {
+            let fields: Vec<String> = expansions_fields
+                .iter()
+                .map(|f| {
+                    serde_json::to_string(f)
+                        .unwrap()
+                        .replace("\"", "")
+                        .to_lowercase()
+                })
+                .collect();
+            req_builder = req_builder.query(&[("expansions", fields.join(","))]);
+        }
+
+        if let Some(tweet_fields) = &request.tweet_fields {
+            let fields: Vec<String> = tweet_fields
+                .iter()
+                .map(|f| {
+                    serde_json::to_string(f)
+                        .unwrap()
+                        .replace("\"", "")
+                        .to_lowercase()
+                })
+                .collect();
+            req_builder = req_builder.query(&[("tweet.fields", fields.join(","))]);
+        }
+
+        // Send the request and parse the response
+        let response = req_builder.send().await?;
         parse_twitter_response::<UserResponse>(response).await
     }
 }
