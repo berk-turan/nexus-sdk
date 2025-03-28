@@ -4,6 +4,7 @@
 
 use {
     crate::{
+        error::{parse_twitter_response, TwitterResult},
         list::models::{Expansion, Includes, ListTweet, ListTweetsResponse, Meta},
         tweet::{
             models::{MediaField, PlaceField, PollField, TweetField, UserField},
@@ -104,6 +105,22 @@ impl NexusTool for GetListTweets {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
+        match self.fetch_list_tweets(&request).await {
+            Ok(list_response) => Output::Ok {
+                data: list_response.data,
+                meta: list_response.meta,
+                includes: list_response.includes,
+            },
+            Err(e) => Output::Err {
+                reason: e.to_string(),
+            },
+        }
+    }
+}
+
+impl GetListTweets {
+    /// Fetch tweets from a list using the Twitter API
+    async fn fetch_list_tweets(&self, request: &Input) -> TwitterResult<ListTweetsResponse> {
         let client = Client::new();
 
         let url = format!("{}/{}/tweets", self.api_base, request.list_id);
@@ -115,7 +132,7 @@ impl NexusTool for GetListTweets {
             req_builder = req_builder.query(&[("max_results", max_results.to_string())]);
         }
 
-        if let Some(pagination_token) = request.pagination_token {
+        if let Some(pagination_token) = &request.pagination_token {
             req_builder = req_builder.query(&[("pagination_token", pagination_token)]);
         }
 
@@ -197,62 +214,8 @@ impl NexusTool for GetListTweets {
             req_builder = req_builder.query(&[("place.fields", fields.join(","))]);
         }
 
-        match req_builder.send().await {
-            Ok(response) => {
-                // Check if response is successful
-                if !response.status().is_success() {
-                    return Output::Err {
-                        reason: format!("Twitter API returned error status: {}", response.status()),
-                    };
-                }
-
-                // Try to parse response as JSON
-                match response.text().await {
-                    Ok(text) => {
-                        // First check if response contains error
-                        if let Ok(error) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(errors) = error.get("errors") {
-                                if let Some(first_error) = errors.as_array().and_then(|e| e.first())
-                                {
-                                    let message = first_error
-                                        .get("message")
-                                        .and_then(|m| m.as_str())
-                                        .unwrap_or("Unknown error");
-                                    let code = first_error
-                                        .get("code")
-                                        .and_then(|c| c.as_u64())
-                                        .unwrap_or(0);
-                                    return Output::Err {
-                                        reason: format!(
-                                            "Twitter API error: {} (code: {})",
-                                            message, code
-                                        ),
-                                    };
-                                }
-                            }
-                        }
-
-                        // If no error, try to parse as successful response
-                        match serde_json::from_str::<ListTweetsResponse>(&text) {
-                            Ok(list_response) => Output::Ok {
-                                data: list_response.data,
-                                meta: list_response.meta,
-                                includes: list_response.includes,
-                            },
-                            Err(e) => Output::Err {
-                                reason: format!("Failed to parse Twitter API response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
-                }
-            }
-            Err(e) => Output::Err {
-                reason: format!("Failed to send request to Twitter API: {}", e),
-            },
-        }
+        let response = req_builder.send().await?;
+        parse_twitter_response::<ListTweetsResponse>(response).await
     }
 }
 
@@ -392,7 +355,9 @@ mod tests {
                     "errors": [
                         {
                             "message": "List not found",
-                            "code": 34
+                            "code": 34,
+                            "title": "Not Found",
+                            "type": "about:blank"
                         }
                     ]
                 })
@@ -407,8 +372,11 @@ mod tests {
         // Verify the response
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status: 404"), 
-                       "Expected error message to contain 'Twitter API returned error status: 404', got: {}", reason);
+                assert!(
+                    reason.contains("List not found"),
+                    "Expected error message to contain 'List not found', got: {}",
+                    reason
+                );
             }
             Output::Ok {
                 data,
@@ -435,7 +403,9 @@ mod tests {
                 json!({
                     "errors": [{
                         "message": "Unauthorized",
-                        "code": 32
+                        "code": 32,
+                        "title": "Unauthorized",
+                        "type": "https://api.twitter.com/2/problems/not-authorized"
                     }]
                 })
                 .to_string(),
@@ -447,8 +417,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status: 401"), 
-                       "Expected error message to contain 'Twitter API returned error status: 401', got: {}", reason);
+                assert!(
+                    reason.contains("Unauthorized"),
+                    "Expected error message to contain 'Unauthorized', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -470,7 +443,9 @@ mod tests {
                 json!({
                     "errors": [{
                         "message": "Rate limit exceeded",
-                        "code": 88
+                        "code": 88,
+                        "title": "Rate Limit Exceeded",
+                        "type": "https://api.twitter.com/2/problems/rate-limit-exceeded"
                     }]
                 })
                 .to_string(),
@@ -482,8 +457,12 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Twitter API returned error status: 429"), 
-                       "Expected error message to contain 'Twitter API returned error status: 429', got: {}", reason);
+                assert!(
+                    reason.contains("Rate limit exceeded")
+                        || reason.contains("Rate Limit Exceeded"),
+                    "Expected error message to contain rate limit information, got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -550,8 +529,11 @@ mod tests {
 
         match output {
             Output::Err { reason } => {
-                assert!(reason.contains("Failed to parse Twitter API response"), 
-                       "Expected error message to contain 'Failed to parse Twitter API response', got: {}", reason);
+                assert!(
+                    reason.contains("Response parsing error"),
+                    "Expected error message to contain 'Response parsing error', got: {}",
+                    reason
+                );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
