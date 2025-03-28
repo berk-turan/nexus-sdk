@@ -2,4 +2,4 @@
 
 Testing the workflow. Will open PR in gitbook-docs
 
-Last test E2E
+Last test E2E.
