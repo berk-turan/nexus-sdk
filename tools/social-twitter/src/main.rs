@@ -5,6 +5,7 @@
 
 use nexus_toolkit::bootstrap;
 mod auth;
+mod error;
 mod list;
 mod tweet;
 mod user;

@@ -3,9 +3,12 @@
 //! Standard Nexus Tool that retrieves a single tweet from the Twitter API.
 
 use {
-    crate::tweet::{
-        models::{GetTweetApiResponse, Includes, Meta, Tweet},
-        TWITTER_API_BASE,
+    crate::{
+        error::{parse_twitter_response, TwitterResult},
+        tweet::{
+            models::{GetTweetApiResponse, Includes, Meta, Tweet},
+            TWITTER_API_BASE,
+        },
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
@@ -74,109 +77,34 @@ impl NexusTool for GetTweet {
         let url = format!("{}/{}", self.api_base, request.tweet_id);
 
         // Make the request
-        match client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", request.bearer_token))
-            .send()
-            .await
-        {
-            Ok(response) => {
-                // Check if response is successful
-                if !response.status().is_success() {
-                    let status = response.status();
-                    // Try to parse error response
-                    match response.text().await {
-                        Ok(text) => {
-                            if let Ok(error_response) =
-                                serde_json::from_str::<serde_json::Value>(&text)
-                            {
-                                if let Some(errors) =
-                                    error_response.get("errors").and_then(|e| e.as_array())
-                                {
-                                    if let Some(first_error) = errors.first() {
-                                        let mut error_msg = format!(
-                                            "Twitter API error: {} (error type: {})",
-                                            error_response
-                                                .get("title")
-                                                .and_then(|t| t.as_str())
-                                                .unwrap_or("Unknown Error"),
-                                            error_response
-                                                .get("type")
-                                                .and_then(|t| t.as_str())
-                                                .unwrap_or("unknown")
-                                        );
-
-                                        if let Some(detail) =
-                                            error_response.get("detail").and_then(|d| d.as_str())
-                                        {
-                                            error_msg.push_str(&format!(" - {}", detail));
-                                        }
-
-                                        if let Some(message) =
-                                            first_error.get("message").and_then(|m| m.as_str())
-                                        {
-                                            error_msg.push_str(&format!(" - {}", message));
-                                        }
-
-                                        return Output::Err { reason: error_msg };
-                                    }
-                                }
-                            }
-                            // If we couldn't parse the error response, return the status code
-                            return Output::Err {
-                                reason: format!("Twitter API returned error status: {}", status),
-                            };
-                        }
-                        Err(_) => {
-                            return Output::Err {
-                                reason: format!("Twitter API returned error status: {}", status),
-                            };
-                        }
-                    }
-                }
-
-                // Try to parse response as JSON
-                match response.text().await {
-                    Ok(text) => {
-                        // If no error, try to parse as successful response
-                        match serde_json::from_str::<GetTweetApiResponse>(&text) {
-                            Ok(tweets_response) => {
-                                // Check if there are any errors in the response
-                                if let Some(errors) = tweets_response.errors {
-                                    if let Some(first_error) = errors.first() {
-                                        let mut error_msg = format!(
-                                            "Twitter API error: {} (error type: {})",
-                                            first_error.title, first_error.error_type
-                                        );
-
-                                        if let Some(detail) = &first_error.detail {
-                                            error_msg.push_str(&format!(" - {}", detail));
-                                        }
-
-                                        return Output::Err { reason: error_msg };
-                                    }
-                                }
-
-                                Output::Ok {
-                                    data: tweets_response.data,
-                                    includes: tweets_response.includes,
-                                    meta: tweets_response.meta,
-                                }
-                            }
-                            Err(e) => Output::Err {
-                                reason: format!("Failed to parse Twitter API response: {}", e),
-                            },
-                        }
-                    }
-                    Err(e) => Output::Err {
-                        reason: format!("Failed to read Twitter API response: {}", e),
-                    },
-                }
-            }
+        match self.fetch_tweet(&client, &url, &request.bearer_token).await {
+            Ok(response) => Output::Ok {
+                data: response.data,
+                includes: response.includes,
+                meta: response.meta,
+            },
             Err(e) => Output::Err {
-                reason: format!("Failed to send request to Twitter API: {}", e),
+                reason: e.to_string(),
             },
         }
+    }
+}
+
+impl GetTweet {
+    /// Fetch tweet from Twitter API
+    async fn fetch_tweet(
+        &self,
+        client: &Client,
+        url: &str,
+        bearer_token: &str,
+    ) -> TwitterResult<GetTweetApiResponse> {
+        let response = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", bearer_token))
+            .send()
+            .await?;
+
+        parse_twitter_response::<GetTweetApiResponse>(response).await
     }
 }
 

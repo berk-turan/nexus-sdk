@@ -874,3 +874,56 @@ The member removal failed.
   - Invalid JSON response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
+
+## Error Handling
+
+The codebase now includes a centralized error handling mechanism located in `src/error.rs`. This module provides standardized error types and functions for handling Twitter API responses without any external dependencies. Here's how to use it in your Twitter API operations:
+
+### Key Components
+
+1. **TwitterError** - A comprehensive error enum that covers all possible error cases:
+
+   - `Network` - Network-related errors
+   - `ParseError` - JSON parsing errors
+   - `ApiError` - Twitter API-specific errors
+   - `StatusError` - HTTP status code errors
+   - `Other` - Any other unexpected errors
+
+2. **TwitterResult<T>** - A type alias for `Result<T, TwitterError>` to simplify return types
+
+3. **parse_twitter_response<T>** - A helper function that handles all the error parsing logic
+
+### Usage Example
+
+Here's how to use the error handling module in your Twitter API operations:
+
+```rust
+use crate::error::{parse_twitter_response, TwitterResult};
+
+// Inside your module implementation
+async fn fetch_data(&self, client: &Client, url: &str, bearer_token: &str) -> TwitterResult<YourResponseType> {
+    let response = client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", bearer_token))
+        .send()
+        .await?;
+
+    parse_twitter_response::<YourResponseType>(response).await
+}
+
+// In your invoke function
+async fn invoke(&self, request: Self::Input) -> Self::Output {
+    match self.fetch_data(&client, &url, &request.bearer_token).await {
+        Ok(response) => {
+            // Handle successful response
+            Output::Ok { ... }
+        },
+        Err(e) => {
+            // Convert error to Output::Err
+            Output::Err { reason: e.to_string() }
+        }
+    }
+}
+```
+
+By using this centralized error handling mechanism, you ensure consistent error handling across all Twitter API operations and reduce code duplication.
