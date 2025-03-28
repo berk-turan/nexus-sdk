@@ -254,10 +254,9 @@ Reply settings for the tweet. Can be one of:
 
 The tweet was posted successfully.
 
-- **`ok.result`: [`TweetResponse`]** - The posted tweet data containing:
-  - `id`: The tweet's unique identifier
-  - `edit_history_tweet_ids`: List of tweet IDs in the edit history
-  - `text`: The actual content of the tweet
+- **`ok.id`: [`String`]** - The tweet's unique identifier
+- **`ok.edit_history_tweet_ids`: [`Vec<String>`]** - List of tweet IDs in the edit history
+- **`ok.text`: [`String`]** - The actual content of the tweet
 
 **`err`**
 
@@ -656,17 +655,27 @@ A list of User fields to display.
 
 The list was retrieved successfully.
 
-- **`ok.data`: [`Option<ListData>`]** - The list data.
+- **`ok.id`: [`String`]** - The list's unique identifier
+- **`ok.name`: [`String`]** - The list's name
+- **`ok.created_at`: [`Option<String>`]** - The timestamp when the list was created
+- **`ok.description`: [`Option<String>`]** - The list's description
+- **`ok.follower_count`: [`Option<i32>`]** - Number of followers this list has
+- **`ok.member_count`: [`Option<i32>`]** - Number of members in this list
+- **`ok.owner_id`: [`Option<String>`]** - The ID of the list's owner
+- **`ok.private`: [`Option<bool>`]** - Whether the list is private or public
+- **`ok.includes`: [`Option<Includes>`]** - Additional entities related to the list
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the list request
 
 **`err`**
 
 The list retrieval failed.
 
 - **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error
-  - Network error
-  - Response parsing error
-  - Status code error
+  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - No list data found in the response
   - Other error types handled by the centralized error handling mechanism
 
 ---
@@ -839,7 +848,6 @@ Whether the list should be private (true) or public (false).
 
 The list was updated successfully.
 
-- **`ok.list_id`** - The ID of the updated list.
 - **`ok.updated`** - Confirmation that the list was updated (true).
 
 **`err`**
@@ -887,9 +895,7 @@ The ID of the user to add to the list.
 
 The user was successfully added to the list.
 
-- **`ok.list_id`** - The ID of the list.
-- **`ok.user_id`** - The ID of the user who was added to the list.
-- **`ok.added`** - Confirmation that the user was added to the list (true).
+- **`ok.is_member`** - Confirmation that the user is a member of the list (true).
 
 **`err`**
 
@@ -936,9 +942,7 @@ The ID of the user to remove from the list.
 
 The user was successfully removed from the list.
 
-- **`ok.list_id`** - The ID of the list.
-- **`ok.user_id`** - The ID of the user who was removed from the list.
-- **`ok.removed`** - Confirmation that the user was removed from the list (true).
+- **`ok.is_member`** - Confirmation that the user is not a member of the list (false).
 
 **`err`**
 
