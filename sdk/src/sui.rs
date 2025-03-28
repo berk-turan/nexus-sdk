@@ -36,6 +36,8 @@ pub use {
             ObjectChange,
             SuiEvent as Event,
             SuiExecutionStatus as ExecutionStatus,
+            SuiMoveStruct as MoveStruct,
+            SuiMoveValue as MoveValue,
             SuiObjectData as ObjectData,
             SuiObjectDataFilter as ObjectDataFilter,
             SuiObjectDataOptions as ObjectDataOptions,

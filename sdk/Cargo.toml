@@ -5,7 +5,7 @@ description = "Nexus SDK provides a set of tools to interact with the Nexus Work
 edition.workspace = true
 version.workspace = true
 repository.workspace = true
-license.workspace = true
+license-file.workspace = true
 readme.workspace = true
 authors.workspace = true
 keywords.workspace = true
@@ -42,11 +42,14 @@ events = ["sui_idents", "types"]
 object_crawler = ["sui_types", "serde_json"]
 
 # Test utils feature enables the use of the `test_utils` module. Also adds
-# backoff, sui_move_build and testcontainers-modules as a dependency.
+# tempfile, tokio-retry, sui_move_build, sui_package_management and
+# testcontainers-modules as dependencies.
 test_utils = [
     "types",
+    "tempfile",
     "tokio-retry",
     "sui_move_build",
+    "sui_package_management",
     "testcontainers-modules",
 ]
 
@@ -79,6 +82,10 @@ optional = true
 features = ["json"]
 
 [dependencies.serde_json]
+workspace = true
+optional = true
+
+[dependencies.tempfile]
 workspace = true
 optional = true
 
@@ -121,6 +128,12 @@ optional = true
 git = "https://github.com/MystenLabs/sui"
 tag = "testnet-v1.38.1"
 package = "sui-move-build"
+optional = true
+
+[dependencies.sui_package_management]
+git = "https://github.com/MystenLabs/sui"
+tag = "testnet-v1.38.1"
+package = "sui-package-management"
 optional = true
 
 [dependencies.testcontainers-modules]
