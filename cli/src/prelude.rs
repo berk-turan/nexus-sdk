@@ -3,12 +3,13 @@ pub(crate) use {
     anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult},
     clap::{builder::ValueParser, Args, Parser, Subcommand, ValueEnum},
     colored::Colorize,
-    nexus_sdk::{
-        sui::{config_dir, traits::*, CLIENT_CONFIG},
-        *,
-    },
+    nexus_sdk::{sui::traits::*, *},
     serde::{Deserialize, Serialize},
-    std::path::{Path, PathBuf},
+    serde_json::json,
+    std::{
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicBool, Ordering},
+    },
 };
 
 // Where to find config file.
@@ -121,6 +122,9 @@ pub(crate) struct GasArgs {
     pub(crate) sui_gas_budget: u64,
 }
 
+/// Whether to change the output format to JSON.
+pub(crate) static JSON_MODE: AtomicBool = AtomicBool::new(false);
+
 // == Used by clap ==
 
 /// Expands `~/` to the user's home directory in path arguments.
@@ -143,8 +147,8 @@ pub(crate) fn parse_json_string(json: &str) -> AnyResult<serde_json::Value> {
 // == Used by serde ==
 
 fn default_sui_wallet_path() -> PathBuf {
-    let config_dir = config_dir().expect("Unable to determine SUI config directory");
-    config_dir.join(CLIENT_CONFIG)
+    let config_dir = sui::config_dir().expect("Unable to determine SUI config directory");
+    config_dir.join(sui::CLIENT_CONFIG)
 }
 
 #[cfg(test)]
