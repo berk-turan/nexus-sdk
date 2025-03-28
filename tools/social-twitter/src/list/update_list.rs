@@ -210,8 +210,13 @@ impl NexusTool for UpdateList {
                     Some(data) => data,
                 };
 
+                let updated = match data.get("updated") {
+                    Some(updated) => updated.as_bool().unwrap_or(false),
+                    None => false,
+                };
+
                 // For successful updates, Twitter API returns a data object with the updated list
-                Output::Ok { updated: true }
+                Output::Ok { updated }
             }
         }
     }
@@ -260,7 +265,9 @@ mod tests {
             .with_status(200)
             .with_body(
                 json!({
-                    "data": true
+                    "data": {
+                        "updated": true
+                    }
                 })
                 .to_string(),
             )
@@ -302,7 +309,9 @@ mod tests {
             .with_status(200)
             .with_body(
                 json!({
-                    "data": true
+                    "data": {
+                        "updated": true
+                    }
                 })
                 .to_string(),
             )
