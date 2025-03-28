@@ -18,18 +18,45 @@ The ID of the tweet to retrieve.
 
 The tweet was retrieved successfully.
 
-- **`ok.data`: [`Option<Tweet>`]** - The tweet data containing:
-
-  - `id`: The tweet's unique identifier
-  - `text`: The tweet's content
-  - `author_id`: The ID of the tweet's author
-  - `created_at`: The timestamp when the tweet was created
-  - `username`: The username of the tweet's author
-  - And other optional fields like attachments, entities, metrics, etc.
-
-- **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response (users, media, polls, etc.)
-
-- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response
+- **`ok.id`: [`String`]** - The tweet's unique identifier
+- **`ok.text`: [`String`]** - The tweet's content text
+- **`ok.author_id`: [`Option<String>`]** - The ID of the tweet's author
+- **`ok.created_at`: [`Option<String>`]** - The timestamp when the tweet was created
+- **`ok.username`: [`Option<String>`]** - The username of the tweet's author
+- **`ok.attachments`: [`Option<Attachments>`]** - Media and polls attached to the tweet
+- **`ok.community_id`: [`Option<String>`]** - Community ID if the tweet belongs to a community
+- **`ok.context_annotations`: [`Option<Vec<ContextAnnotation>>`]** - Annotations about the tweet content
+- **`ok.conversation_id`: [`Option<String>`]** - ID of the conversation this tweet belongs to
+- **`ok.edit_controls`: [`Option<EditControls>`]** - Controls for editing the tweet
+- **`ok.edit_history_tweet_ids`: [`Option<Vec<String>>`]** - IDs of tweets in the edit history
+- **`ok.entities`: [`Option<Entities>`]** - Entities in the tweet (hashtags, mentions, URLs)
+- **`ok.geo`: [`Option<Geo>`]** - Geographic information
+- **`ok.in_reply_to_user_id`: [`Option<String>`]** - ID of the user being replied to
+- **`ok.lang`: [`Option<String>`]** - Language of the tweet
+- **`ok.non_public_metrics`: [`Option<NonPublicMetrics>`]** - Private metrics about the tweet
+- **`ok.note_tweet`: [`Option<NoteTweet>`]** - Extended note content
+- **`ok.organic_metrics`: [`Option<OrganicMetrics>`]** - Organic engagement metrics
+- **`ok.possibly_sensitive`: [`Option<bool>`]** - Whether the tweet might contain sensitive content
+- **`ok.promoted_metrics`: [`Option<PromotedMetrics>`]** - Metrics from promoted content
+- **`ok.public_metrics`: [`Option<PublicMetrics>`]** - Public engagement metrics (likes, retweets, etc.)
+- **`ok.referenced_tweets`: [`Option<Vec<ReferencedTweet>>`]** - Tweets referenced by this tweet
+- **`ok.reply_settings`: [`Option<String>`]** - Who can reply to this tweet
+- **`ok.scopes`: [`Option<Scopes>`]** - Visibility scopes
+- **`ok.source`: [`Option<String>`]** - Source of the tweet (client application)
+- **`ok.withheld`: [`Option<Withheld>`]** - Withholding information
+- **`ok.includes`: [`Option<Includes>`]** - Additional entities related to the tweet:
+  - `media`: Images and videos
+  - `places`: Geographic locations
+  - `polls`: Twitter polls
+  - `topics`: Related topics
+  - `tweets`: Referenced tweets
+  - `users`: Mentioned users
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the tweet request:
+  - `newest_id`: Newest tweet ID in a collection
+  - `next_token`: Pagination token for next results
+  - `oldest_id`: Oldest tweet ID in a collection
+  - `previous_token`: Pagination token for previous results
+  - `result_count`: Number of results returned
 
 **`err`**
 
@@ -41,6 +68,7 @@ The tweet was not retrieved due to an error.
   - Failed to parse Twitter API response
   - Failed to read Twitter API response
   - Failed to send request to Twitter API
+  - No tweet data found in the response
 
 ---
 
