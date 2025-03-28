@@ -104,9 +104,8 @@ pub(crate) struct Input {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Output {
     Ok {
-        /// The successful tweet response data
-        #[serde(skip_serializing_if = "Option::is_none")]
-        data: Option<Vec<Tweet>>,
+        /// The successful mentioned tweets response data
+        data: Vec<Tweet>,
         #[serde(skip_serializing_if = "Option::is_none")]
         includes: Option<Includes>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -146,11 +145,19 @@ impl NexusTool for GetMentionedTweets {
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
         match self.fetch_mentioned_tweets(&request).await {
-            Ok(response) => Output::Ok {
-                data: response.data,
-                includes: response.includes,
-                meta: response.meta,
-            },
+            Ok(response) => {
+                if let Some(tweets) = response.data {
+                    Output::Ok {
+                        data: tweets,
+                        includes: response.includes,
+                        meta: response.meta,
+                    }
+                } else {
+                    Output::Err {
+                        reason: "No tweets found".to_string(),
+                    }
+                }
+            }
             Err(e) => Output::Err {
                 reason: e.to_string(),
             },
@@ -353,10 +360,9 @@ mod tests {
                 includes: _,
                 meta: _,
             } => {
-                assert!(data.is_some());
-                let tweet_data = data.unwrap();
-                assert_eq!(tweet_data.len(), 1);
-                assert_eq!(tweet_data[0].id, "1346889436626259968");
+                assert!(!data.is_empty());
+                assert_eq!(data.len(), 1);
+                assert_eq!(data[0].id, "1346889436626259968");
             }
             Output::Err { reason } => panic!("Expected success, got error: {}", reason),
         }
@@ -494,18 +500,10 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Ok {
-                data,
-                includes: _,
-                meta,
-            } => {
-                assert!(data.is_none() || data.unwrap().is_empty());
-                assert!(meta.is_some());
-                if let Some(meta_data) = meta {
-                    assert_eq!(meta_data.result_count, Some(0));
-                }
+            Output::Err { reason } => {
+                assert_eq!(reason, "No tweets found");
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Ok { .. } => panic!("Expected error, got success"),
         }
 
         mock.assert_async().await;

@@ -144,7 +144,7 @@ A list of Place fields to display.
 
 The tweets were retrieved successfully.
 
-- **`ok.data`: [`Option<Vec<Tweet>>`]** - The collection of tweets from the user's timeline.
+- **`ok.data`: [`Vec<Tweet>`]** - The collection of tweets from the user's timeline.
 - **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response (users, media, polls, etc.)
 - **`ok.meta`: [`Option<Meta>`]** - Metadata about the response (result_count, newest_id, oldest_id, next_token, etc.)
 
@@ -157,6 +157,7 @@ The tweets could not be retrieved due to an error.
   - Network error (e.g., "Network error: network error: Connection refused")
   - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
   - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - "No tweets found" when the API response doesn't contain tweet data
   - Other error types handled by the centralized error handling mechanism
 
 ---
@@ -394,7 +395,7 @@ A list of Place fields to display.
 
 The mentioned tweets were retrieved successfully.
 
-- **`ok.data`: [`Option<Vec<Tweet>>`]** - The collection of tweets mentioning the specified user.
+- **`ok.data`: [`Vec<Tweet>`]** - The collection of tweets mentioning the specified user.
 - **`ok.includes`: [`Option<Includes>`]** - Additional data included in the response (users, media, polls, etc.)
 - **`ok.meta`: [`Option<Meta>`]** - Metadata about the response (result_count, newest_id, oldest_id, next_token, etc.)
 
@@ -407,6 +408,7 @@ The tweet mentions retrieval failed.
   - Network error (e.g., "Network error: network error: Connection refused")
   - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
   - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - "No tweets found" when the API response doesn't contain tweet data
   - Other error types handled by the centralized error handling mechanism
 
 ---
