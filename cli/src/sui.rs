@@ -490,7 +490,7 @@ fn retrieve_wallet_with_mnemonic(net: SuiNet, mnemonic: &str) -> Result<PathBuf,
 fn get_sui_env(net: SuiNet) -> Option<sui::Env> {
     if let Ok(sui_rpc_url) = std::env::var("SUI_RPC_URL") {
         Some(sui::Env {
-            alias: "localnet".to_string(),
+            alias: "Localnet".to_string(),
             rpc: sui_rpc_url,
             ws: None,
             basic_auth: None,
