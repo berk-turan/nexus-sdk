@@ -198,15 +198,9 @@ async fn meta_handler<T: NexusTool>(
         }
     };
 
-    // Assume `http` for localhost, otherwise use `https`.
-    //
-    // TODO: This could probably be improved.
-    let scheme = if host.host() == "localhost" {
-        "http"
-    } else {
-        "https"
-    };
-
+    // NOTE: HTTPS should be used as a scheme only if the tool
+    // is running with TLS (unsupported at the moment).
+    let scheme = std::env::var("TOOL_URL_SCHEME").unwrap_or("http".to_string());
     let url = match Url::parse(&format!("{scheme}://{host}{base_path}")) {
         Ok(url) => url,
         Err(e) => {
