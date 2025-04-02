@@ -4,6 +4,7 @@ mod tool_new;
 mod tool_register;
 mod tool_unregister;
 mod tool_validate;
+mod tool_meta;
 
 use {
     crate::prelude::*,
@@ -13,6 +14,7 @@ use {
     tool_register::*,
     tool_unregister::*,
     tool_validate::*,
+    tool_meta::*,
 };
 
 #[derive(Subcommand)]
@@ -101,6 +103,13 @@ pub(crate) enum ToolCommand {
     List {
         //
     },
+
+    #[command(about = "Get a tools's metadata.")]
+    Meta {
+        /// The ident of the Tool to get meta-data about.
+        #[command(flatten)]
+        ident: ToolIdent,
+    },
 }
 
 /// Struct holding an either on-chain or off-chain Tool identifier. Off-chain
@@ -130,6 +139,7 @@ pub(crate) struct ToolIdent {
 pub(crate) struct ToolMeta {
     pub(crate) fqn: ToolFqn,
     pub(crate) url: reqwest::Url,
+    pub(crate) description: Option<String>,
     pub(crate) input_schema: serde_json::Value,
     pub(crate) output_schema: serde_json::Value,
 }
@@ -185,5 +195,15 @@ pub(crate) async fn handle(command: ToolCommand) -> AnyResult<(), NexusCliError>
 
         // == `$ nexus tool list` ==
         ToolCommand::List { .. } => list_tools().await,
+
+        // == `$ nexus tool meta` ==
+        // ToolCommand::Validate { ident } => validate_tool(ident).await.map(|_| ()),
+        ToolCommand::Meta { ident } => {
+            let meta = tool_meta(ident).await?;
+
+            println!("Tool meta: {:#?}", meta);
+
+            Ok(())
+        }
     }
 }
