@@ -5,7 +5,7 @@ description = "Nexus Toolkit provides a Rust framework to create new Nexus Tools
 edition.workspace = true
 version.workspace = true
 repository.workspace = true
-license.workspace = true
+license-file.workspace = true
 readme.workspace = true
 authors.workspace = true
 keywords.workspace = true
@@ -17,8 +17,10 @@ reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_path_to_error.workspace = true
 warp.workspace = true
-
+env_logger.workspace = true
+log.workspace = true
 # === Nexus deps ===
 nexus-sdk.workspace = true
 

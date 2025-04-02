@@ -5,7 +5,7 @@ description = "Nexus Tools for OpenAI Chat Completion."
 edition.workspace = true
 version.workspace = true
 repository.workspace = true
-license.workspace = true
+license-file.workspace = true
 readme.workspace = true
 authors.workspace = true
 keywords.workspace = true
@@ -23,10 +23,14 @@ serde_json.workspace = true
 strum.workspace = true
 strum_macros.workspace = true
 tokio.workspace = true
-
+log.workspace = true
+env_logger.workspace = true
 # === Nexus deps ===
 nexus-toolkit.workspace = true
 nexus-sdk.workspace = true
 
 [dev-dependencies]
-mockito = "1.7.0"
+mockito.workspace = true
+portpicker.workspace = true
+rstest.workspace = true
+serial_test.workspace = true

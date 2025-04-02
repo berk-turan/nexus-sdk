@@ -63,7 +63,16 @@ use {
 /// ```
 #[macro_export]
 macro_rules! bootstrap {
+    (@get_addr) => {{
+        let addr_str = std::env::var("BIND_ADDR")
+            .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+        addr_str
+            .parse::<std::net::SocketAddr>()
+            .expect("Invalid socket address in BIND_ADDR")
+    }};
+
     ($addr:expr, [$tool:ty $(, $next_tool:ty)* $(,)?]) => {{
+        let _ = $crate::env_logger::try_init();
         use {
             $crate::warp::{http::StatusCode, Filter},
         };
@@ -78,22 +87,23 @@ macro_rules! bootstrap {
             .map(|| $crate::warp::reply::with_status("", StatusCode::OK));
 
         let routes = routes.or(default_health_route);
-
         // Serve the routes.
         $crate::warp::serve(routes).run($addr).await
     }};
-    // Default address.
-    ([$($tool:ty),+ $(,)?]) => {
-        bootstrap!(([127, 0, 0, 1], 8080), [$($tool, )*]);
-    };
-    // Only 1 tool.
-    ($addr:expr, $tool:ty) => {
-        bootstrap!($addr, [$tool]);
-    };
-    // Only 1 tool with default address.
-    ($tool:ty) => {
-        bootstrap!(([127, 0, 0, 1], 8080), [$tool]);
-    };
+        // Default address.
+    ([$($tool:ty),+ $(,)?]) => {{
+        let addr = bootstrap!(@get_addr);
+        bootstrap!(addr, [$($tool,)*])
+    }};
+        // Only 1 tool.
+    ($addr:expr, $tool:ty) => {{
+        bootstrap!($addr, [$tool])
+    }};
+        // Only 1 tool with default address.
+    ($tool:ty) => {{
+        let addr = bootstrap!(@get_addr);
+        bootstrap!(addr, [$tool])
+    }};
 }
 
 /// This function generates the necessary routes for a given [NexusTool].
@@ -125,6 +135,8 @@ pub fn routes_for_<T: NexusTool>() -> impl Filter<Extract = impl Reply, Error = 
     let meta_route = warp::get()
         .and(base_path.clone())
         .and(warp::path("meta"))
+        .and(warp::header::optional::<Authority>("X-Forwarded-Host"))
+        .and(warp::header::optional::<String>("X-Forwarded-Proto"))
         .and(warp::filters::host::optional())
         .and(warp::path::full())
         .and_then(meta_handler::<T>);
@@ -151,9 +163,14 @@ async fn health_handler<T: NexusTool>() -> Result<impl Reply, Rejection> {
 }
 
 async fn meta_handler<T: NexusTool>(
+    x_forwarded_host: Option<Authority>,
+    x_forwarded_proto: Option<String>,
     host: Option<Authority>,
     path: FullPath,
 ) -> Result<impl Reply, Rejection> {
+    // We always need the most "external" host, as this is what will be called by users.
+    let host = x_forwarded_host.or(host);
+
     // If the host is malformed or not present, return a 400.
     let host = match host {
         Some(host) => host,
@@ -188,15 +205,14 @@ async fn meta_handler<T: NexusTool>(
         }
     };
 
-    // Assume `http` for localhost, otherwise use `https`.
+    // As in the case of the host, we need to use the most "external" scheme,
+    // which is basically the scheme used by the client to access the tool.
+    // If the scheme is not present, we check the environment variable, which
+    // might have been set for operational purposes.
+    // As a last resort, we use http as the default scheme.
     //
-    // TODO: This could probably be improved.
-    let scheme = if host.host() == "localhost" {
-        "http"
-    } else {
-        "https"
-    };
-
+    // Ref: https://github.com/Talus-Network/nexus-sdk/issues/77
+    let scheme = x_forwarded_proto.unwrap_or_else(|| "http".to_string());
     let url = match Url::parse(&format!("{scheme}://{host}{base_path}")) {
         Ok(url) => url,
         Err(e) => {
