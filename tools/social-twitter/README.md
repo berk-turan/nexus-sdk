@@ -568,6 +568,78 @@ The user was not retrieved due to an error.
 
 ---
 
+# `xyz.taluslabs.social.twitter.get-user-following@1`
+
+Standard Nexus Tool that retrieves the users being followed by a specified user ID. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/users/follows/api-reference/get-users-id-following)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`user_id`: [`String`]**
+
+The ID of the User to lookup their following (e.g., "2244994945").
+
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
+
+The maximum number of results to return per page (range: 1-100).
+
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
+
+Token for pagination to get the next page of results.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A list of User fields to display.
+
+_opt_ **`expansions_fields`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
+
+A list of fields to expand.
+
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
+
+A list of Tweet fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The following users were retrieved successfully.
+
+- **`ok.users`: [`Vec<UserData>`]** - List of users that the specified user is following, each containing:
+  - `id`: User's unique identifier
+  - `name`: User's display name
+  - `username`: User's @username
+  - And other optional user information depending on the requested fields
+- **`ok.includes`: [`Option<Includes>`]** - Additional entities related to the users:
+  - `users`: Other users referenced
+  - `tweets`: Tweets referenced
+  - `media`: Media items referenced
+  - `places`: Geographic places referenced
+  - `polls`: Polls referenced
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response:
+  - `result_count`: Number of results returned
+  - `next_token`: Pagination token for next results
+  - `previous_token`: Pagination token for previous results
+
+**`err`**
+
+The following users could not be retrieved due to an error.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - User not found error (e.g., "Twitter API error: User not found (code: 50)")
+  - Unauthorized error (e.g., "Twitter API error: Unauthorized (code: 32)")
+  - Rate limit exceeded error (e.g., "Twitter API error: Rate limit exceeded (code: 88)")
+  - No following data found in the response
+
+---
+
 # `xyz.taluslabs.social.twitter.create-list@1`
 
 Standard Nexus Tool that creates a new list on Twitter.
