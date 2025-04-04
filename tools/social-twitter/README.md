@@ -568,6 +568,78 @@ The user was not retrieved due to an error.
 
 ---
 
+# `xyz.taluslabs.social.twitter.get-user-followers@1`
+
+Standard Nexus Tool that retrieves followers of a user by their ID.
+Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/users/follows/api-reference/get-users-id-followers)
+
+## Input
+
+**`bearer_token`: [`String`]**
+
+The bearer token for the user's Twitter account.
+
+**`user_id`: [`String`]**
+
+The ID of the User to lookup followers for (e.g. "2244994945").
+
+_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
+
+The maximum number of results to return per page (range: 1-1000).
+
+_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
+
+This parameter is used to get a specified 'page' of results.
+
+_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
+
+A comma separated list of User fields to display.
+
+_opt_ **`expansions_fields`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
+
+A comma separated list of fields to expand.
+
+_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
+
+A comma separated list of Tweet fields to display.
+
+## Output Variants & Ports
+
+**`ok`**
+
+The followers were retrieved successfully.
+
+- **`ok.followers`: [`Vec<UserData>`]** - Array of user data for followers, containing:
+  - `id`: The user's unique identifier
+  - `name`: The user's display name
+  - `username`: The user's @username
+  - `protected` (optional): Whether the user's account is protected
+  - `created_at` (optional): When the user's account was created
+  - `description` (optional): The user's profile description/bio
+  - `location` (optional): The user's location
+  - `profile_image_url` (optional): URL of the user's profile image
+  - `verified` (optional): Whether the user is verified
+- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response, containing:
+  - `result_count` (optional): Number of results returned
+  - `next_token` (optional): Pagination token for next results
+  - `previous_token` (optional): Pagination token for previous results
+
+**`err`**
+
+The followers could not be retrieved due to an error.
+
+- **`err.reason`: [`String`]** - The reason for the error. This could be:
+  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
+  - Network error (e.g., "Network error: network error: Connection refused")
+  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
+  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
+  - User not found error (e.g., "Twitter API error: User not found (code: 50)")
+  - Invalid token error (e.g., "Twitter API error: Invalid token (code: 89)")
+  - Rate limit exceeded error (e.g., "Twitter API error: Rate limit exceeded (code: 88)")
+  - No user data found in the response
+
+---
+
 # `xyz.taluslabs.social.twitter.create-list@1`
 
 Standard Nexus Tool that creates a new list on Twitter.
@@ -984,73 +1056,3 @@ Each error includes a descriptive message that follows a consistent format:
 All modules use the `TwitterResult<T>` type for handling errors, which is a type alias for `Result<T, TwitterError>`. This ensures consistent error propagation and formatting throughout the SDK.
 
 The error handling system makes it easier to debug issues with Twitter API calls and provides clear, actionable error messages to end users.
-
-# `xyz.taluslabs.social.twitter.get-user-followers@1`
-
-Standard Nexus Tool that retrieves followers of a user by their ID.
-Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/users/follows/api-reference/get-users-id-followers)
-
-## Input
-
-**`bearer_token`: [`String`]**
-
-The bearer token for the user's Twitter account.
-
-**`user_id`: [`String`]**
-
-The ID of the User to lookup followers for (e.g. "2244994945").
-
-_opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
-
-The maximum number of results to return per page (range: 1-1000).
-
-_opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
-
-This parameter is used to get a specified 'page' of results.
-
-_opt_ **`user_fields`: [`Option<Vec<UserField>>`]** _default_: [`None`]
-
-A comma separated list of User fields to display.
-
-_opt_ **`expansions_fields`: [`Option<Vec<ExpansionField>>`]** _default_: [`None`]
-
-A comma separated list of fields to expand.
-
-_opt_ **`tweet_fields`: [`Option<Vec<TweetField>>`]** _default_: [`None`]
-
-A comma separated list of Tweet fields to display.
-
-## Output Variants & Ports
-
-**`ok`**
-
-The followers were retrieved successfully.
-
-- **`ok.followers`: [`Vec<UserData>`]** - Array of user data for followers, containing:
-  - `id`: The user's unique identifier
-  - `name`: The user's display name
-  - `username`: The user's @username
-  - `protected` (optional): Whether the user's account is protected
-  - `created_at` (optional): When the user's account was created
-  - `description` (optional): The user's profile description/bio
-  - `location` (optional): The user's location
-  - `profile_image_url` (optional): URL of the user's profile image
-  - `verified` (optional): Whether the user is verified
-- **`ok.meta`: [`Option<Meta>`]** - Metadata about the response, containing:
-  - `result_count` (optional): Number of results returned
-  - `next_token` (optional): Pagination token for next results
-  - `previous_token` (optional): Pagination token for previous results
-
-**`err`**
-
-The followers could not be retrieved due to an error.
-
-- **`err.reason`: [`String`]** - The reason for the error. This could be:
-  - Twitter API error (e.g., "Twitter API error: Not Found Error (type: https://api.twitter.com/2/problems/resource-not-found)")
-  - Network error (e.g., "Network error: network error: Connection refused")
-  - Response parsing error (e.g., "Response parsing error: expected value at line 1 column 1")
-  - Status code error (e.g., "Twitter API status error: 429 Too Many Requests")
-  - User not found error (e.g., "Twitter API error: User not found (code: 50)")
-  - Invalid token error (e.g., "Twitter API error: Invalid token (code: 89)")
-  - Rate limit exceeded error (e.g., "Twitter API error: Rate limit exceeded (code: 88)")
-  - No user data found in the response
