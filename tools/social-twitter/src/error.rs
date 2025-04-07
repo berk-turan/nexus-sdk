@@ -2,7 +2,7 @@ use {
     reqwest::{Response, StatusCode},
     serde::{Deserialize, Serialize},
     serde_json::Value,
-    std::fmt,
+    thiserror::Error,
 };
 
 /// A Twitter API error returned by the API
@@ -18,43 +18,22 @@ pub struct TwitterApiError {
 }
 
 /// Error type for Twitter operations
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum TwitterError {
-    Network(reqwest::Error),
-    ParseError(serde_json::Error),
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
+
+    #[error("Response parsing error: {0}")]
+    ParseError(#[from] serde_json::Error),
+
+    #[error("Twitter API error: {0} (type: {1}){2}")]
     ApiError(String, String, String),
+
+    #[error("Twitter API status error: {0}")]
     StatusError(StatusCode),
+
+    #[error("Unknown error: {0}")]
     Other(String),
-}
-
-impl fmt::Display for TwitterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TwitterError::Network(e) => write!(f, "Network error: {}", e),
-            TwitterError::ParseError(e) => write!(f, "Response parsing error: {}", e),
-            TwitterError::ApiError(title, error_type, detail) => {
-                write!(
-                    f,
-                    "Twitter API error: {} (type: {}){}",
-                    title, error_type, detail
-                )
-            }
-            TwitterError::StatusError(status) => write!(f, "Twitter API status error: {}", status),
-            TwitterError::Other(msg) => write!(f, "Unknown error: {}", msg),
-        }
-    }
-}
-
-impl From<reqwest::Error> for TwitterError {
-    fn from(err: reqwest::Error) -> Self {
-        TwitterError::Network(err)
-    }
-}
-
-impl From<serde_json::Error> for TwitterError {
-    fn from(err: serde_json::Error) -> Self {
-        TwitterError::ParseError(err)
-    }
 }
 
 impl TwitterError {
