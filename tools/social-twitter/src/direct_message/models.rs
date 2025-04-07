@@ -290,13 +290,13 @@ pub enum ConversationType {
 #[derive(Deserialize, JsonSchema)]
 pub struct Attachment {
     /// The media id of the attachment.
-    media_id: String,
+    pub media_id: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct Message {
     /// The text of the message.
-    text: Option<String>,
+    pub text: Option<String>,
     /// The attachments for the message.
-    attachments: Option<Vec<Attachment>>,
+    pub attachments: Option<Vec<Attachment>>,
 }
