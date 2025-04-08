@@ -27,12 +27,13 @@ pub(crate) struct Input {
     /// Bearer Token for user's Twitter account
     bearer_token: String,
 
-    /// The ID of the User to lookup followers for
+    /// The ID of the User to lookup.
     /// Example: "2244994945"
     user_id: String,
 
     /// The maximum number of results to return per page
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 100))]
     max_results: Option<i32>,
 
     /// This parameter is used to get a specified 'page' of results
@@ -108,7 +109,7 @@ impl NexusTool for GetUserFollowers {
 
     async fn new() -> Self {
         Self {
-            api_base: TWITTER_API_BASE.to_string(),
+            api_base: TWITTER_API_BASE.to_string() + "/users",
         }
     }
 
@@ -166,7 +167,7 @@ impl GetUserFollowers {
         let client = Client::new();
 
         // Construct URL with user ID
-        let url = format!("{}/users/{}/followers", self.api_base, request.user_id);
+        let url = format!("{}/{}/followers", self.api_base, request.user_id);
 
         // Build request with query parameters
         let mut req_builder = client
@@ -264,7 +265,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/users/2244994945/followers")
+            .mock("GET", "/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
@@ -332,7 +333,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/users/2244994945/followers")
+            .mock("GET", "/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
@@ -375,7 +376,7 @@ mod tests {
         input.pagination_token = Some("test_pagination_token".to_string());
 
         let mock = server
-            .mock("GET", "/users/2244994945/followers")
+            .mock("GET", "/2244994945/followers")
             .match_query(mockito::Matcher::AllOf(vec![
                 mockito::Matcher::UrlEncoded("max_results".into(), "10".into()),
                 mockito::Matcher::UrlEncoded(
@@ -422,7 +423,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/users/2244994945/followers")
+            .mock("GET", "/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
@@ -462,7 +463,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/users/2244994945/followers")
+            .mock("GET", "/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
