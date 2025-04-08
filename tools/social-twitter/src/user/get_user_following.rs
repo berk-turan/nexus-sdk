@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        error::{parse_twitter_response, TwitterResult},
+        error::{parse_twitter_response, TwitterErrorKind, TwitterResult},
         list::models::{Includes, Meta},
         tweet::{
             models::{ExpansionField, TweetField, UserField},
@@ -12,13 +12,11 @@ use {
         },
         user::models::{UserData, UsersResponse},
     },
+    nexus_sdk::{fqn, ToolFqn},
+    nexus_toolkit::*,
     reqwest::Client,
-    ::{
-        nexus_sdk::{fqn, ToolFqn},
-        nexus_toolkit::*,
-        schemars::JsonSchema,
-        serde::{Deserialize, Serialize},
-    },
+    schemars::JsonSchema,
+    serde::{Deserialize, Serialize},
 };
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -68,8 +66,13 @@ pub(crate) enum Output {
         meta: Option<Meta>,
     },
     Err {
-        /// Error message if the request failed
+        /// Type of error (network, server, auth, etc.)
+        kind: TwitterErrorKind,
+        /// Detailed error message
         reason: String,
+        /// HTTP status code if available
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status_code: Option<u16>,
     },
 }
 
@@ -110,13 +113,21 @@ impl NexusTool for GetUserFollowing {
                     }
                 } else {
                     Output::Err {
+                        kind: TwitterErrorKind::NotFound,
                         reason: "No following data found in the response".to_string(),
+                        status_code: None,
                     }
                 }
             }
-            Err(e) => Output::Err {
-                reason: e.to_string(),
-            },
+            Err(e) => {
+                let error_response = e.to_error_response();
+
+                Output::Err {
+                    kind: error_response.kind,
+                    reason: error_response.reason,
+                    status_code: error_response.status_code,
+                }
+            }
         }
     }
 }
@@ -268,7 +279,14 @@ mod tests {
                     assert_eq!(m.next_token, Some("NEXT_TOKEN".to_string()));
                 }
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} : {:?} : {:?}",
+                reason, kind, status_code
+            ),
         }
 
         mock.assert_async().await;
@@ -319,7 +337,14 @@ mod tests {
                     assert_eq!(m.previous_token, Some("PAGINATION_TOKEN".to_string()));
                 }
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} : {:?} : {:?}",
+                reason, kind, status_code
+            ),
         }
 
         mock.assert_async().await;
@@ -355,7 +380,14 @@ mod tests {
                     assert_eq!(m.result_count, Some(0));
                 }
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} : {:?} : {:?}",
+                reason, kind, status_code
+            ),
         }
 
         mock.assert_async().await;
@@ -372,7 +404,7 @@ mod tests {
                 json!({
                     "errors": [{
                         "message": "User not found",
-                        "code": 50
+                        "code": 34
                     }]
                 })
                 .to_string(),
@@ -383,11 +415,17 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(
                     reason.contains("User not found"),
                     "Expected user not found error"
                 );
+                assert_eq!(kind, TwitterErrorKind::NotFound);
+                assert_eq!(status_code, Some(404));
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -417,11 +455,17 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(
                     reason.contains("Unauthorized"),
                     "Expected unauthorized error"
                 );
+                assert_eq!(kind, TwitterErrorKind::Auth);
+                assert_eq!(status_code, Some(401));
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -451,11 +495,17 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(
                     reason.contains("Rate limit exceeded"),
                     "Expected rate limit error"
                 );
+                assert_eq!(kind, TwitterErrorKind::RateLimit);
+                assert_eq!(status_code, Some(429));
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
