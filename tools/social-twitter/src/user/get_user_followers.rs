@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        error::{parse_twitter_response, TwitterResult},
+        error::{parse_twitter_response, TwitterErrorKind, TwitterResult},
         list::models::Meta,
         tweet::{
             models::{ExpansionField, TweetField, UserField},
@@ -12,13 +12,11 @@ use {
         },
         user::models::UsersResponse,
     },
+    nexus_sdk::{fqn, ToolFqn},
+    nexus_toolkit::*,
     reqwest::Client,
-    ::{
-        nexus_sdk::{fqn, ToolFqn},
-        nexus_toolkit::*,
-        schemars::JsonSchema,
-        serde::{Deserialize, Serialize},
-    },
+    schemars::JsonSchema,
+    serde::{Deserialize, Serialize},
 };
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -65,8 +63,13 @@ pub(crate) enum Output {
         meta: Option<Meta>,
     },
     Err {
-        /// Error message if the followers lookup failed
+        /// Type of error (network, server, auth, etc.)
+        kind: TwitterErrorKind,
+        /// Detailed error message
         reason: String,
+        /// HTTP status code if available
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status_code: Option<u16>,
     },
 }
 
@@ -150,13 +153,21 @@ impl NexusTool for GetUserFollowers {
                     }
                 } else {
                     Output::Err {
-                        reason: "No user data found in the response".to_string(),
+                        kind: TwitterErrorKind::NotFound,
+                        reason: "No followers found".to_string(),
+                        status_code: None,
                     }
                 }
             }
-            Err(e) => Output::Err {
-                reason: e.to_string(),
-            },
+            Err(e) => {
+                let error_response = e.to_error_response();
+
+                Output::Err {
+                    kind: error_response.kind,
+                    reason: error_response.reason,
+                    status_code: error_response.status_code,
+                }
+            }
         }
     }
 }
@@ -322,7 +333,15 @@ mod tests {
                     assert_eq!(meta_data.next_token, Some("next_cursor_value".to_string()));
                 }
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind: _,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} ({})",
+                reason,
+                status_code.unwrap_or(0)
+            ),
         }
 
         mock.assert_async().await;
@@ -345,7 +364,7 @@ mod tests {
                 json!({
                     "errors": [{
                         "message": "User not found",
-                        "code": 50
+                        "code": 34
                     }]
                 })
                 .to_string(),
@@ -356,11 +375,16 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind: _,
+                status_code,
+            } => {
                 assert!(
                     reason.contains("User not found"),
                     "Expected user not found error"
                 );
+                assert_eq!(status_code, Some(404));
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
         }
@@ -412,9 +436,16 @@ mod tests {
                 assert_eq!(followers[0].name, "Follower 3");
                 assert_eq!(followers[0].username, "follower3");
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind: _,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} ({})",
+                reason,
+                status_code.unwrap_or(0)
+            ),
         }
-
         mock.assert_async().await;
     }
 
@@ -446,10 +477,32 @@ mod tests {
         let output = tool.invoke(create_test_input()).await;
 
         match output {
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
+                // Check error type
+                assert_eq!(
+                    kind,
+                    TwitterErrorKind::RateLimit,
+                    "Expected error kind RateLimit, got: {:?}",
+                    kind
+                );
+
+                // Check error message
                 assert!(
                     reason.contains("Rate limit exceeded"),
-                    "Expected rate limit error"
+                    "Expected error message to contain 'Rate limit exceeded', got: {}",
+                    reason
+                );
+
+                // Check status code
+                assert_eq!(
+                    status_code,
+                    Some(429),
+                    "Expected status code 429, got: {:?}",
+                    status_code
                 );
             }
             Output::Ok { .. } => panic!("Expected error, got success"),
@@ -495,9 +548,16 @@ mod tests {
                     assert_eq!(meta_data.result_count, Some(0));
                 }
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind: _,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} ({})",
+                reason,
+                status_code.unwrap_or(0)
+            ),
         }
-
         mock.assert_async().await;
     }
 }
