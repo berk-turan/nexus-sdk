@@ -1,19 +1,24 @@
 use {
     crate::{loading, notify_success, prelude::*},
-    nexus_sdk::sui,
+    nexus_sdk::{object_crawler::fetch_one, sui},
     reqwest::{header, Client, StatusCode},
 };
+
 /// Build Sui client for the provided Sui net.
-pub(crate) async fn build_sui_client(net: SuiNet) -> AnyResult<sui::Client, NexusCliError> {
+pub(crate) async fn build_sui_client(conf: &SuiConf) -> AnyResult<sui::Client, NexusCliError> {
     let building_handle = loading!("Building Sui client...");
     let client;
 
-    let builder = sui::ClientBuilder::default();
+    let mut builder = sui::ClientBuilder::default();
+
+    if let (Some(user), Some(password)) = (conf.auth_user.as_ref(), conf.auth_password.as_ref()) {
+        builder = builder.basic_auth(user, password);
+    }
 
     if let Ok(sui_rpc_url) = std::env::var("SUI_RPC_URL") {
         client = builder.build(sui_rpc_url).await
     } else {
-        client = match net {
+        client = match conf.net {
             SuiNet::Localnet => builder.build_localnet().await,
             SuiNet::Devnet => builder.build_devnet().await,
             SuiNet::Testnet => builder.build_testnet().await,
@@ -298,53 +303,18 @@ pub(crate) async fn fetch_object_by_id(
 ) -> AnyResult<sui::ObjectRef, NexusCliError> {
     let object_handle = loading!("Fetching object {object_id}...");
 
-    let options = sui::ObjectDataOptions::new().with_owner();
+    match fetch_one::<serde_json::Value>(sui, object_id).await {
+        Ok(response) => {
+            object_handle.success();
 
-    let response = match sui
-        .read_api()
-        .get_object_with_options(object_id, options)
-        .await
-    {
-        Ok(response) => response,
+            Ok(response.object_ref())
+        }
         Err(e) => {
             object_handle.error();
 
-            return Err(NexusCliError::Sui(e));
+            Err(NexusCliError::Any(e))
         }
-    };
-
-    if let Some(e) = response.error {
-        object_handle.error();
-
-        return Err(NexusCliError::Any(anyhow!(e)));
     }
-
-    let object = match response.data {
-        Some(object) => object,
-        None => {
-            object_handle.error();
-
-            return Err(NexusCliError::Any(anyhow!(
-                "The object with ID {object_id} was not found"
-            )));
-        }
-    };
-
-    // Find initial shared version for shared objects or fallback to the
-    // object's version.
-    let version = object
-        .owner
-        .and_then(|owner| match owner {
-            sui::Owner::Shared {
-                initial_shared_version,
-            } => Some(initial_shared_version),
-            _ => None,
-        })
-        .unwrap_or(object.version);
-
-    object_handle.success();
-
-    Ok((object.object_id, version, object.digest).into())
 }
 
 /// Wrapping some conf parsing functionality used around the CLI.
@@ -540,7 +510,7 @@ mod tests {
     ) {
         let sui_default_config = "/tmp/sui/config";
         // Set the default sui config folder to /tmp
-        std::env::set_var("SUI_CONFIG_DIR", &sui_default_config);
+        std::env::set_var("SUI_CONFIG_DIR", sui_default_config);
 
         // Set or remove the mnemonic environment variable as needed.
         if let Some(mnemonic) = mnemonic_env {
@@ -553,6 +523,8 @@ mod tests {
         let conf = SuiConf {
             net: SuiNet::Localnet,
             wallet_path: PathBuf::from(format!("{}/client.toml", &sui_default_config)),
+            auth_user: None,
+            auth_password: None,
         };
 
         // Call the function under test.
@@ -561,7 +533,7 @@ mod tests {
 
         // Clean up the env variable.
         std::env::remove_var("SUI_SECRET_MNEMONIC");
-        let _ = std::fs::remove_dir_all(&sui_default_config);
+        let _ = std::fs::remove_dir_all(sui_default_config);
     }
 
     #[rstest(
@@ -582,7 +554,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let sui_default_config = temp_dir.path().to_str().unwrap();
         // Set the default sui config folder to /tmp
-        std::env::set_var("SUI_CONFIG_DIR", &sui_default_config);
+        std::env::set_var("SUI_CONFIG_DIR", sui_default_config);
         let config_dir = sui::config_dir().expect("Failed to get config dir");
         let wallet_conf_path = config_dir.join(sui::CLIENT_CONFIG);
         let keystore_path = config_dir.join(sui::KEYSTORE_FILENAME);
