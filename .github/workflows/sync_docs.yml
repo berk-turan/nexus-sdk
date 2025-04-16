@@ -69,7 +69,7 @@ jobs:
           delete-branch: true
           title: "Docs update from ${{ env.REPO_NAME }}"
           body: "This PR syncs updates to documentation from the [${{ env.REPO_NAME }}](https://github.com/Talus-Network/${{ env.REPO_NAME }}) repository (source commit: ${{ github.sha }})"
-          base: test-workflow
+          base: main
           labels: |
             documentation
             automated pr
