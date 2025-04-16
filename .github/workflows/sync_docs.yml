@@ -71,6 +71,7 @@ jobs:
         with:
           token: ${{ secrets.DOCS_PAT }}
           path: gitbook-docs
+          committer: "devops@taluslabs.xyz <devops@taluslabs.xyz>"
           commit-message: "Update docs from ${{ env.REPO_NAME }} (commit: ${{ github.sha }})"
           author: ${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>
           branch: docs-update-${{ env.REPO_NAME }}-${{ github.sha }}
