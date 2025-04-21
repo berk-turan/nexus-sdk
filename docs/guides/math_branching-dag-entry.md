@@ -17,7 +17,7 @@ Entry groups define named sets of entry points for a DAG. They allow you to:
 - Explicitly specify which vertices should be considered entry points
 - Select a specific starting configuration at runtime by providing entry input ports as configuration.
 
-{% hint sytle="success" %}
+{% hint style="success" %}
 Without entry groups, a DAG uses the default entry mechanism (vertices with unsatisfied input ports become entry points). With entry groups, you gain explicit control over how the DAG can be started.
 {% endhint %}
 
