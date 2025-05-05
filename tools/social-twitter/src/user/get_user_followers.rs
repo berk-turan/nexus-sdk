@@ -3,12 +3,12 @@
 //! Standard Nexus Tool that retrieves followers of a user by their ID.
 
 use {
-    super::models::{FollowersResponse, UserData},
     crate::{
         error::TwitterErrorKind,
         list::models::{Includes, Meta},
         tweet::models::{ExpansionField, TweetField, UserField},
         twitter_client::{TwitterClient, TWITTER_API_BASE},
+        user::models::{FollowersByUserIDResponse, UserData},
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
@@ -172,7 +172,7 @@ impl NexusTool for GetUserFollowers {
         }
 
         match client
-            .get::<FollowersResponse>(request.bearer_token, Some(query_params))
+            .get::<FollowersByUserIDResponse>(request.bearer_token, Some(query_params))
             .await
         {
             Ok(data) => Output::Ok {
