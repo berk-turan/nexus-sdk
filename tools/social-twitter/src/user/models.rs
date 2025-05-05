@@ -223,7 +223,7 @@ pub struct UrlImage {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct FollowersResponse {
+pub struct FollowersByUserIDResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Vec<UserData>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -235,7 +235,7 @@ pub struct FollowersResponse {
 }
 
 impl_twitter_response_parser!(
-    FollowersResponse,
+    FollowersByUserIDResponse,
     Vec<UserData>,
     includes = Includes,
     meta = Meta
