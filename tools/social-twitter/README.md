@@ -618,7 +618,7 @@ The user was not retrieved due to an error.
 # `xyz.taluslabs.social.twitter.get-user-followers@1`
 
 Standard Nexus Tool that retrieves followers of a user by their ID.
-Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/users/follows/api-reference/get-users-id-followers)
+Twitter api [reference](https://docs.x.com/x-api/users/followers-by-user-id#followers-by-user-id)
 
 ## Input
 
@@ -632,7 +632,7 @@ The ID of the User to lookup followers for (e.g. "2244994945").
 
 _opt_ **`max_results`: [`Option<i32>`]** _default_: [`None`]
 
-The maximum number of results to return per page (range: 1-1000).
+The maximum number of results to return per page (range: 1-100).
 
 _opt_ **`pagination_token`: [`Option<String>`]** _default_: [`None`]
 
@@ -666,6 +666,12 @@ The followers were retrieved successfully.
   - `location` (optional): The user's location
   - `profile_image_url` (optional): URL of the user's profile image
   - `verified` (optional): Whether the user is verified
+- **`ok.includes`: [`Option<Includes>`]** - Additional entities related to the followers:
+  - `users`: Other users referenced by these followers
+  - `tweets`: Tweets referenced by these followers
+  - `media`: Media items referenced by these followers
+  - `places`: Geographic places referenced by these followers
+  - `polls`: Polls referenced by these followers
 - **`ok.meta`: [`Option<Meta>`]** - Metadata about the response, containing:
   - `result_count` (optional): Number of results returned
   - `next_token` (optional): Pagination token for next results

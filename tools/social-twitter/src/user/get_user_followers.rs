@@ -3,18 +3,15 @@
 //! Standard Nexus Tool that retrieves followers of a user by their ID.
 
 use {
+    super::models::{FollowersResponse, UserData},
     crate::{
-        error::{parse_twitter_response, TwitterErrorKind, TwitterResult},
-        list::models::Meta,
-        tweet::{
-            models::{ExpansionField, TweetField, UserField},
-            TWITTER_API_BASE,
-        },
-        user::models::UsersResponse,
+        error::TwitterErrorKind,
+        list::models::{Includes, Meta},
+        tweet::models::{ExpansionField, TweetField, UserField},
+        twitter_client::{TwitterClient, TWITTER_API_BASE},
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
-    reqwest::Client,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
 };
@@ -61,6 +58,10 @@ pub(crate) enum Output {
         /// Pagination metadata
         #[serde(skip_serializing_if = "Option::is_none")]
         meta: Option<Meta>,
+
+        /// Includes data
+        #[serde(skip_serializing_if = "Option::is_none")]
+        includes: Option<Includes>,
     },
     Err {
         /// Type of error (network, server, auth, etc.)
@@ -73,35 +74,6 @@ pub(crate) enum Output {
     },
 }
 
-/// User data structure for followers
-#[derive(Serialize, JsonSchema)]
-pub(crate) struct UserData {
-    /// The user's unique identifier
-    id: String,
-    /// The user's display name
-    name: String,
-    /// The user's @username
-    username: String,
-    /// Whether the user's account is protected
-    #[serde(skip_serializing_if = "Option::is_none")]
-    protected: Option<bool>,
-    /// When the user's account was created
-    #[serde(skip_serializing_if = "Option::is_none")]
-    created_at: Option<String>,
-    /// The user's profile description/bio
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    /// The user's location
-    #[serde(skip_serializing_if = "Option::is_none")]
-    location: Option<String>,
-    /// URL of the user's profile image
-    #[serde(skip_serializing_if = "Option::is_none")]
-    profile_image_url: Option<String>,
-    /// Whether the user is verified
-    #[serde(skip_serializing_if = "Option::is_none")]
-    verified: Option<bool>,
-}
-
 pub(crate) struct GetUserFollowers {
     api_base: String,
 }
@@ -112,7 +84,7 @@ impl NexusTool for GetUserFollowers {
 
     async fn new() -> Self {
         Self {
-            api_base: TWITTER_API_BASE.to_string() + "/users",
+            api_base: TWITTER_API_BASE.to_string(),
         }
     }
 
@@ -129,74 +101,36 @@ impl NexusTool for GetUserFollowers {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        match self.fetch_followers(&request).await {
-            Ok(response) => {
-                if let Some(users) = response.data {
-                    let followers = users
-                        .into_iter()
-                        .map(|user| UserData {
-                            id: user.id,
-                            name: user.name,
-                            username: user.username,
-                            protected: user.protected,
-                            created_at: user.created_at,
-                            description: user.description,
-                            location: user.location,
-                            profile_image_url: user.profile_image_url,
-                            verified: user.verified,
-                        })
-                        .collect();
+        // Build the endpoint for the Twitter API
+        let suffix = format!("users/{}/followers", request.user_id);
 
-                    Output::Ok {
-                        followers,
-                        meta: response.meta,
-                    }
-                } else {
-                    Output::Err {
-                        kind: TwitterErrorKind::NotFound,
-                        reason: "No followers found".to_string(),
-                        status_code: None,
-                    }
-                }
-            }
+        // Create a Twitter client with the mock server URL
+        let client = match TwitterClient::new(Some(&suffix), Some(&self.api_base)) {
+            Ok(client) => client,
             Err(e) => {
-                let error_response = e.to_error_response();
-
-                Output::Err {
-                    kind: error_response.kind,
-                    reason: error_response.reason,
-                    status_code: error_response.status_code,
+                return Output::Err {
+                    reason: e.to_string(),
+                    kind: TwitterErrorKind::Network,
+                    status_code: None,
                 }
             }
-        }
-    }
-}
+        };
 
-impl GetUserFollowers {
-    /// Fetch followers from Twitter API
-    async fn fetch_followers(&self, request: &Input) -> TwitterResult<UsersResponse> {
-        let client = Client::new();
+        // Build query parameters
+        let mut query_params = Vec::new();
 
-        // Construct URL with user ID
-        let url = format!("{}/{}/followers", self.api_base, request.user_id);
-
-        // Build request with query parameters
-        let mut req_builder = client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", request.bearer_token));
-
-        // Add max_results parameter if provided
+        // Add max_results if provided
         if let Some(max_results) = request.max_results {
-            req_builder = req_builder.query(&[("max_results", max_results.to_string())]);
+            query_params.push(("max_results".to_string(), max_results.to_string()));
         }
 
-        // Add pagination_token parameter if provided
-        if let Some(ref pagination_token) = request.pagination_token {
-            req_builder = req_builder.query(&[("pagination_token", pagination_token)]);
+        // Add pagination_token if provided
+        if let Some(pagination_token) = &request.pagination_token {
+            query_params.push(("pagination_token".to_string(), pagination_token.clone()));
         }
 
-        // Add optional query parameters
-        if let Some(user_fields) = &request.user_fields {
+        // Add user fields if provided
+        if let Some(user_fields) = request.user_fields {
             let fields: Vec<String> = user_fields
                 .iter()
                 .map(|f| {
@@ -206,11 +140,12 @@ impl GetUserFollowers {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("user.fields", fields.join(","))]);
+            query_params.push(("user.fields".to_string(), fields.join(",")));
         }
 
-        if let Some(expansions_fields) = &request.expansions_fields {
-            let fields: Vec<String> = expansions_fields
+        // Add expansions if provided
+        if let Some(expansions) = request.expansions_fields {
+            let fields: Vec<String> = expansions
                 .iter()
                 .map(|f| {
                     serde_json::to_string(f)
@@ -219,10 +154,11 @@ impl GetUserFollowers {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("expansions", fields.join(","))]);
+            query_params.push(("expansions".to_string(), fields.join(",")));
         }
 
-        if let Some(tweet_fields) = &request.tweet_fields {
+        // Add tweet fields if provided
+        if let Some(tweet_fields) = request.tweet_fields {
             let fields: Vec<String> = tweet_fields
                 .iter()
                 .map(|f| {
@@ -232,12 +168,24 @@ impl GetUserFollowers {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("tweet.fields", fields.join(","))]);
+            query_params.push(("tweet.fields".to_string(), fields.join(",")));
         }
 
-        // Send the request and parse the response
-        let response = req_builder.send().await?;
-        parse_twitter_response::<UsersResponse>(response).await
+        match client
+            .get::<FollowersResponse>(request.bearer_token, Some(query_params))
+            .await
+        {
+            Ok(data) => Output::Ok {
+                followers: data.0,
+                includes: data.1,
+                meta: data.2,
+            },
+            Err(e) => Output::Err {
+                reason: e.reason,
+                kind: e.kind,
+                status_code: e.status_code,
+            },
+        }
     }
 }
 
@@ -276,7 +224,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/2244994945/followers")
+            .mock("GET", "/users/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
@@ -352,7 +300,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/2244994945/followers")
+            .mock("GET", "/users/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
@@ -400,7 +348,7 @@ mod tests {
         input.pagination_token = Some("test_pagination_token".to_string());
 
         let mock = server
-            .mock("GET", "/2244994945/followers")
+            .mock("GET", "/users/2244994945/followers")
             .match_query(mockito::Matcher::AllOf(vec![
                 mockito::Matcher::UrlEncoded("max_results".into(), "10".into()),
                 mockito::Matcher::UrlEncoded(
@@ -454,7 +402,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/2244994945/followers")
+            .mock("GET", "/users/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
@@ -516,7 +464,7 @@ mod tests {
         let (mut server, tool) = create_server_and_tool().await;
 
         let mock = server
-            .mock("GET", "/2244994945/followers")
+            .mock("GET", "/users/2244994945/followers")
             .match_header("Authorization", "Bearer test_bearer_token")
             .match_query(mockito::Matcher::UrlEncoded(
                 "max_results".into(),
