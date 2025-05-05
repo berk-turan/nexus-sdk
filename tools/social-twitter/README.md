@@ -631,7 +631,7 @@ The user was not retrieved due to an error.
 
 # `xyz.taluslabs.social.twitter.get-user-following@1`
 
-Standard Nexus Tool that retrieves the users being followed by a specified user ID. Twitter api [reference](https://developer.twitter.com/en/docs/twitter-api/users/follows/api-reference/get-users-id-following)
+Standard Nexus Tool that retrieves the users being followed by a specified user ID. Twitter api [reference](https://docs.x.com/x-api/users/following-by-user-id)
 
 ## Input
 
@@ -1191,9 +1191,7 @@ The retweet operation failed.
   - `429` - Too Many Requests (rate limit exceeded)
   - `5xx` - Server errors
 
-It's important to note that some errors may have either a specific error kind (like `NotFound`, `Auth`, or `RateLimit`) or the more general `Api` error kind, and the status code may be a specific value or `None` depending on the error details.
-
----
+## It's important to note that some errors may have either a specific error kind (like `NotFound`, `Auth`, or `RateLimit`) or the more general `Api` error kind, and the status code may be a specific value or `None` depending on the error details.
 
 # Error Handling
 

@@ -4,17 +4,14 @@
 
 use {
     crate::{
-        error::{parse_twitter_response, TwitterErrorKind, TwitterResult},
+        error::TwitterErrorKind,
         list::models::{Includes, Meta},
-        tweet::{
-            models::{ExpansionField, TweetField, UserField},
-            TWITTER_API_BASE,
-        },
-        user::models::{UserData, UsersResponse},
+        tweet::models::{ExpansionField, TweetField, UserField},
+        twitter_client::{TwitterClient, TWITTER_API_BASE},
+        user::models::{FollowingByUserIDResponse, UserData},
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
-    reqwest::Client,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
 };
@@ -31,10 +28,12 @@ pub(crate) struct Input {
 
     /// The maximum number of results to return per page
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 1000))]
     max_results: Option<i32>,
 
     /// Token for pagination to get the next page of results
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 16))]
     pagination_token: Option<String>,
 
     /// A comma separated list of User fields to display
@@ -86,7 +85,7 @@ impl NexusTool for GetUserFollowing {
 
     async fn new() -> Self {
         Self {
-            api_base: TWITTER_API_BASE.to_string() + "/users",
+            api_base: TWITTER_API_BASE.to_string(),
         }
     }
 
@@ -103,60 +102,36 @@ impl NexusTool for GetUserFollowing {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        match self.fetch_following(&request).await {
-            Ok(response) => {
-                if let Some(users) = response.data {
-                    Output::Ok {
-                        users,
-                        includes: response.includes,
-                        meta: response.meta,
-                    }
-                } else {
-                    Output::Err {
-                        kind: TwitterErrorKind::NotFound,
-                        reason: "No following data found in the response".to_string(),
-                        status_code: None,
-                    }
-                }
-            }
+        // Build the endpoint for the Twitter API
+        let suffix = format!("users/{}/following", request.user_id);
+
+        // Create a Twitter client with the mock server URL
+        let client = match TwitterClient::new(Some(&suffix), Some(&self.api_base)) {
+            Ok(client) => client,
             Err(e) => {
-                let error_response = e.to_error_response();
-
-                Output::Err {
-                    kind: error_response.kind,
-                    reason: error_response.reason,
-                    status_code: error_response.status_code,
+                return Output::Err {
+                    reason: e.to_string(),
+                    kind: TwitterErrorKind::Network,
+                    status_code: None,
                 }
             }
-        }
-    }
-}
+        };
 
-impl GetUserFollowing {
-    /// Fetch users followed by the specified user ID from Twitter API
-    async fn fetch_following(&self, request: &Input) -> TwitterResult<UsersResponse> {
-        let client = Client::new();
+        // Build query parameters
+        let mut query_params = Vec::new();
 
-        // Construct URL with user ID and following endpoint
-        let url = format!("{}/{}/following", self.api_base, request.user_id);
-
-        // Build request with query parameters
-        let mut req_builder = client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", request.bearer_token));
-
-        // Add pagination token if provided
-        if let Some(token) = &request.pagination_token {
-            req_builder = req_builder.query(&[("pagination_token", token)]);
+        // Add max_results if provided
+        if let Some(max_results) = request.max_results {
+            query_params.push(("max_results".to_string(), max_results.to_string()));
         }
 
-        // Add max results if provided
-        if let Some(max_results) = &request.max_results {
-            req_builder = req_builder.query(&[("max_results", max_results.to_string())]);
+        // Add pagination_token if provided
+        if let Some(pagination_token) = &request.pagination_token {
+            query_params.push(("pagination_token".to_string(), pagination_token.clone()));
         }
 
-        // Add optional query parameters
-        if let Some(user_fields) = &request.user_fields {
+        // Add user fields if provided
+        if let Some(user_fields) = request.user_fields {
             let fields: Vec<String> = user_fields
                 .iter()
                 .map(|f| {
@@ -166,11 +141,12 @@ impl GetUserFollowing {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("user.fields", fields.join(","))]);
+            query_params.push(("user.fields".to_string(), fields.join(",")));
         }
 
-        if let Some(expansions_fields) = &request.expansions_fields {
-            let fields: Vec<String> = expansions_fields
+        // Add expansions if provided
+        if let Some(expansions) = request.expansions_fields {
+            let fields: Vec<String> = expansions
                 .iter()
                 .map(|f| {
                     serde_json::to_string(f)
@@ -179,10 +155,11 @@ impl GetUserFollowing {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("expansions", fields.join(","))]);
+            query_params.push(("expansions".to_string(), fields.join(",")));
         }
 
-        if let Some(tweet_fields) = &request.tweet_fields {
+        // Add tweet fields if provided
+        if let Some(tweet_fields) = request.tweet_fields {
             let fields: Vec<String> = tweet_fields
                 .iter()
                 .map(|f| {
@@ -192,23 +169,40 @@ impl GetUserFollowing {
                         .to_lowercase()
                 })
                 .collect();
-            req_builder = req_builder.query(&[("tweet.fields", fields.join(","))]);
+            query_params.push(("tweet.fields".to_string(), fields.join(",")));
         }
 
-        // Send the request and parse the response
-        let response = req_builder.send().await?;
-        parse_twitter_response::<UsersResponse>(response).await
+        match client
+            .get::<FollowingByUserIDResponse>(request.bearer_token, Some(query_params))
+            .await
+        {
+            Ok(data) => Output::Ok {
+                users: data.0,
+                includes: data.1,
+                meta: data.2,
+            },
+            Err(e) => Output::Err {
+                reason: e.reason,
+                kind: e.kind,
+                status_code: e.status_code,
+            },
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ::mockito::Server, serde_json::json};
+    use mockito::Matcher;
+    use {
+        super::*,
+        ::mockito::{self, Server},
+        serde_json::json,
+    };
 
     impl GetUserFollowing {
         fn with_api_base(api_base: &str) -> Self {
             Self {
-                api_base: api_base.to_string() + "/users",
+                api_base: api_base.to_string(),
             }
         }
     }
@@ -299,10 +293,26 @@ mod tests {
         let mut input = create_test_input();
         input.pagination_token = Some("PAGINATION_TOKEN".to_string());
         input.max_results = Some(5);
+        let query_params = vec![
+            (
+                "pagination_token".to_string(),
+                input.pagination_token.clone().unwrap().to_string(),
+            ),
+            (
+                "max_results".to_string(),
+                input.max_results.clone().unwrap().to_string(),
+            ),
+        ];
 
         let mock = server
             .mock("GET", "/users/2244994945/following")
-            .match_query("pagination_token=PAGINATION_TOKEN&max_results=5")
+            .match_query(Matcher::AllOf(
+                query_params
+                    .iter()
+                    .map(|(k, v)| Matcher::UrlEncoded(k.clone(), v.clone()))
+                    .collect(),
+            ))
+            .match_header("Authorization", "Bearer test_bearer_token")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
