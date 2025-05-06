@@ -176,10 +176,10 @@ impl NexusTool for GetUserFollowing {
             .get::<FollowingByUserIDResponse>(request.bearer_token, Some(query_params))
             .await
         {
-            Ok(data) => Output::Ok {
-                users: data.0,
-                includes: data.1,
-                meta: data.2,
+            Ok((data, includes, meta)) => Output::Ok {
+                users: data,
+                includes,
+                meta,
             },
             Err(e) => Output::Err {
                 reason: e.reason,
