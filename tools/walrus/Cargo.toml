@@ -1,0 +1,22 @@
+[package]
+name = "walrus"
+description = "Nexus Tools for Walrus Client Interaction"
+
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license-file.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+schemars.workspace = true
+serde.workspace = true
+tokio.workspace = true
+
+# === Nexus deps ===
+nexus-toolkit.workspace = true
+nexus-sdk = { workspace = true, features = ["walrus"] }
