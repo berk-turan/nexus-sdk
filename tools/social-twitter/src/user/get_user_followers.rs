@@ -175,10 +175,10 @@ impl NexusTool for GetUserFollowers {
             .get::<FollowersByUserIDResponse>(request.bearer_token, Some(query_params))
             .await
         {
-            Ok(data) => Output::Ok {
-                followers: data.0,
-                includes: data.1,
-                meta: data.2,
+            Ok((data, includes, meta)) => Output::Ok {
+                followers: data,
+                includes,
+                meta,
             },
             Err(e) => Output::Err {
                 reason: e.reason,
