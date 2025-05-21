@@ -12,42 +12,49 @@
 //! use rand::rngs::OsRng;
 //! use x25519_dalek::StaticSecret;
 //!
-//! // === Setup identities & Bob's bundle (omitted: signature generation) ===
-//! let alice_id = IdentityKey::generate();
-//! let bob_id   = IdentityKey::generate();
+//! // === Setup identities & Receiver's bundle (omitted: signature generation) ===
+//! let sender_id = IdentityKey::generate();
+//! let receiver_id   = IdentityKey::generate();
 //! let spk_sec  = StaticSecret::random_from_rng(OsRng);
 //! let spk_id = 1; // Some ID for the signed pre-key
-//! let bundle   = PreKeyBundle::new(&bob_id, spk_id, &spk_sec, None, None);
+//! let bundle   = PreKeyBundle::new(&receiver_id, spk_id, &spk_sec, None, None);
 //!
-//! // === Alice initiates ===
-//! let (first_packet, mut alice_sess) =
-//!     Session::initiate(&alice_id, &bundle, b"Hi Bob!")?;
+//! // === Sender initiates ===
+//! let (first_packet, mut sender_sess) =
+//!     Session::initiate(&sender_id, &bundle, b"Hi Receiver!")?;
 //!
 //! // Transmit `first_packet` over the network …
 //!
-//! // === Bob receives ===
-//! let (mut bob_sess, plaintext) = Session::recv(
-//!     &bob_id,
+//! // === Receiver receives ===
+//! let (mut receiver_sess, plaintext) = Session::recv(
+//!     &receiver_id,
 //!     &spk_sec,
 //!     &bundle,
 //!     match &first_packet {
 //!         Message::Initial(m) => m,
-//!         _ => unreachable!("Alice always starts with Initial"),
+//!         _ => unreachable!("Sender always starts with Initial"),
 //!     },
 //! )?;
-//! assert_eq!(plaintext, b"Hi Bob!");
+//! assert_eq!(plaintext, b"Hi Receiver!");
 //!
 //! // === Encrypted conversation ===
-//! let to_alice = bob_sess.encrypt(b"Hello, Alice!")?;
-//! let reply    = alice_sess.decrypt(&to_alice)?;
-//! assert_eq!(reply, b"Hello, Alice!");
+//! let to_sender = receiver_sess.encrypt(b"Hello, Sender!")?;
+//! let reply    = sender_sess.decrypt(&to_sender)?;
+//! assert_eq!(reply, b"Hello, Sender!");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 use {
     super::{
         double_ratchet::RatchetStateHE,
-        x3dh::{alice_init, bob_receive, IdentityKey, InitialMessage, PreKeyBundle, X3dhError},
+        x3dh::{
+            receiver_receive,
+            sender_init,
+            IdentityKey,
+            InitialMessage,
+            PreKeyBundle,
+            X3dhError,
+        },
     },
     hkdf::Hkdf,
     serde::{Deserialize, Serialize},
@@ -61,11 +68,7 @@ use {
 const PROTOCOL_VERSION: u8 = 1;
 
 /// Domain-separation salt for HKDF.
-///
-/// Ties the derived keys to this specific construction (`X3DH-DR-v1`) and date
-/// of last incompatible change (2025-05-20).  Updating the salt *does not*
-/// break existing sessions; it simply ensures new sessions derive keys in a
-/// distinct domain.
+/// Change when you want do domain separation
 const HKDF_SALT: [u8; 32] = *b"X3DH-DR-v1-2025-05-20-----------";
 
 /// Errors that can arise during session establishment or normal messaging.
@@ -74,19 +77,15 @@ pub enum SessionError {
     /// Propagated X3DH-handshake failure.
     #[error("X3DH error: {0}")]
     X3DH(#[from] X3dhError),
-
     /// HKDF key-derivation failure (should only occur on length mismatch).
     #[error("HKDF error")]
     HKDF,
-
     /// Authenticated-decryption failure (bad MAC / corrupt data).
     #[error("Decryption failed")]
     DecryptionFailed,
-
     /// Any attempt to use a session in an impossible state.
     #[error("Session state error: {0}")]
     InvalidState(String),
-
     /// Message claims an unsupported protocol version.
     #[error("Unsupported protocol version {0}")]
     Version(u8),
@@ -98,7 +97,7 @@ impl From<hkdf::InvalidLength> for SessionError {
     }
 }
 
-/// Wire format for a Double-Ratchet packet **with header encryption**.
+/// Message format for a Double-Ratchet packet with header encryption.
 ///
 /// The header (containing the DH ratchet public key, send-chain counter, etc.)
 /// is encrypted and authenticated by [`RatchetStateHE`], hiding metadata from
@@ -117,10 +116,9 @@ pub struct StandardMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Message {
-    /// First packet in the X3DH handshake (sent by Alice).
+    /// First packet in the X3DH handshake (sent by Sender).
     Initial(InitialMessage),
-
-    /// Ordinary Double-Ratchet message exchanged *after* the handshake.
+    /// Ordinary Double-Ratchet message exchanged after the handshake.
     Standard(StandardMessage),
 }
 
@@ -131,13 +129,10 @@ pub enum Message {
 pub struct Session {
     /// Stable database key (32-byte, random-looking).
     session_id: [u8; 32],
-
     /// Double-Ratchet state with encrypted headers.
     ratchet: RatchetStateHE,
-
     /// Local identity-DH public key (used for Associated-Data).
     local_identity: PublicKey,
-
     /// Remote peer's identity-DH public key.
     remote_identity: PublicKey,
 }
@@ -145,7 +140,7 @@ pub struct Session {
 impl Session {
     // === Low-level helpers ===
 
-    /// Deterministically derives the *session-ID* from the X3DH shared secret.
+    /// Deterministically derives the session-ID from the X3DH shared secret.
     fn calculate_session_id(shared_secret: &[u8; 32]) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"session-id");
@@ -153,11 +148,10 @@ impl Session {
         hasher.finalize().into()
     }
 
-    /// Constructs per-session Associated-Data
-    /// as `min(IK_A, IK_B) || max(IK_A, IK_B)`.
+    /// Constructs per-session Associated-Data as `min(IK_A, IK_B) || max(IK_A, IK_B)`.
     ///
     /// Ordering the identity keys lexicographically ensures both peers derive
-    /// the *same* AD irrespective of role (Alice/Bob).
+    /// the same AD irrespective of role (Sender/Receiver).
     fn make_associated_data(&self) -> Vec<u8> {
         let (first, second) = if self.local_identity.as_bytes() < self.remote_identity.as_bytes() {
             (
@@ -178,27 +172,27 @@ impl Session {
 
     // === Session establishment ===
 
-    /// **Alice-side** entry point: perform an X3DH handshake, produce the first
+    /// **Sender-side** entry point: perform an X3DH handshake, produce the first
     /// packet, and return a fully initialised [`Session`].
     ///
-    /// * `identity` — Alice's long-term identity key-pair.
-    /// * `bundle`   — Bob's advertised pre-key bundle.
+    /// * `identity` — Sender's long-term identity key-pair.
+    /// * `bundle`   — Receiver's advertised pre-key bundle.
     /// * `plaintext`— Optional application data to piggy-back on `Initial`.
     ///
     /// On success `(initial_packet, session)` is returned.  The caller should
-    /// send `initial_packet` to Bob and persist the session.
+    /// send `initial_packet` to Receiver and persist the session.
     pub fn initiate(
         identity: &IdentityKey,
         bundle: &PreKeyBundle,
         plaintext: &[u8],
     ) -> Result<(Message, Self), SessionError> {
-        // 1. Verify Bob's Signed-Pre-Key.
+        // 1. Verify Receiver's Signed-Pre-Key.
         if !bundle.verify_spk() {
             return Err(SessionError::InvalidState("Invalid SPK signature".into()));
         }
 
-        // 2. Run X3DH (Alice side).
-        let (init_msg, sk_raw) = alice_init(identity, bundle, plaintext)?;
+        // 2. Run X3DH (Sender side).
+        let (init_msg, sk_raw) = sender_init(identity, bundle, plaintext)?;
         let sk = Zeroizing::new(sk_raw); // zeroise on scope-exit
 
         // 3. Derive header-encryption keys.
@@ -208,9 +202,9 @@ impl Session {
         hkdf.expand(b"header-encrypt-sending", &mut hks)?;
         hkdf.expand(b"header-encrypt-receiving", &mut hk_r)?;
 
-        // 4. Initialise Double-Ratchet in "Alice" role.
+        // 4. Initialise Double-Ratchet in "Sender" role (using init_sender_he method).
         let mut ratchet = RatchetStateHE::new();
-        let _ = ratchet.init_alice_he(&*sk, bundle.spk_pub, hks, hk_r);
+        let _ = ratchet.init_sender_he(&*sk, bundle.spk_pub, hks, hk_r);
 
         // 5. Stable session-ID.
         let session_id = Self::calculate_session_id(&*sk);
@@ -226,8 +220,8 @@ impl Session {
         ))
     }
 
-    /// **Bob-side** entry point: accept an incoming `InitialMessage`, complete
-    /// the X3DH handshake, and return `(session, plaintext_from_alice)`.
+    /// **Receiver-side** entry point: accept an incoming `InitialMessage`, complete
+    /// the X3DH handshake, and return `(session, plaintext_from_sender)`.
     pub fn recv(
         identity: &IdentityKey,
         spk_secret: &StaticSecret,
@@ -241,21 +235,21 @@ impl Session {
             ));
         }
 
-        // 2. Run X3DH (Bob side).
-        let (plaintext, sk_raw) = bob_receive(identity, spk_secret, bundle.spk_id, None, msg)?;
+        // 2. Run X3DH (Receiver side).
+        let (plaintext, sk_raw) = receiver_receive(identity, spk_secret, bundle.spk_id, None, msg)?;
         let sk = Zeroizing::new(sk_raw);
 
         // 3. Derive HE keys (note send/recv reversed).
         let hkdf = Hkdf::<Sha256>::new(Some(&HKDF_SALT), &sk[..]);
-        let mut k_s = [0u8; 32]; // decrypt incoming (Alice→Bob)
-        let mut k_r = [0u8; 32]; // encrypt outgoing (Bob→Alice)
+        let mut k_s = [0u8; 32]; // decrypt incoming (Sender→Receiver)
+        let mut k_r = [0u8; 32]; // encrypt outgoing (Receiver→Sender)
         hkdf.expand(b"header-encrypt-sending", &mut k_s)?;
         hkdf.expand(b"header-encrypt-receiving", &mut k_r)?;
 
-        // 4. Initialise Double-Ratchet in "Bob" role.
+        // 4. Initialise Double-Ratchet in "Receiver" role (using init_bob_he method).
         let mut ratchet = RatchetStateHE::new();
-        let bob_pub = PublicKey::from(spk_secret);
-        let _ = ratchet.init_bob_he(&*sk, (spk_secret.clone(), bob_pub), k_s, k_r);
+        let receiver_pub = PublicKey::from(spk_secret);
+        let _ = ratchet.init_receiver_he(&*sk, (spk_secret.clone(), receiver_pub), k_s, k_r);
 
         // 5. Stable session-ID.
         let session_id = Self::calculate_session_id(&*sk);
@@ -273,9 +267,9 @@ impl Session {
 
     // === Messaging ===
 
-    /// Returns the stable 32-byte session identifier (opaque/random).
+    /// Returns the stable 32-byte session identifier
     ///
-    /// Useful as a primary key when persisting session state.
+    /// Useful as a primary key when persisting session state
     pub fn id(&self) -> &[u8; 32] {
         &self.session_id
     }
@@ -342,7 +336,7 @@ impl Session {
 
     /// Decrypts a packet generated by [`encrypt_without_advancing`].
     ///
-    /// This can be used by the *sender* to preview or edit drafts locally.
+    /// This can be used by the sender to preview or edit drafts locally.
     pub fn decrypt_own_without_advancing(
         &self,
         header: &[u8],
@@ -366,18 +360,18 @@ mod tests {
 
     #[test]
     fn test_x3dh_and_ratchet_roundtrip() {
-        let alice_id = IdentityKey::generate();
-        let bob_id = IdentityKey::generate();
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
 
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 1;
 
         // Initialize the bundle for testing
-        let bundle = PreKeyBundle::new(&bob_id, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver_id, spk_id, &spk_secret, None, None);
 
         let init_payload = b"hello world";
-        let (message, mut alice_sess) =
-            Session::initiate(&alice_id, &bundle, init_payload).expect("Alice initiate failed");
+        let (message, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, init_payload).expect("Sender initiate failed");
 
         // Verify message type
         match &message {
@@ -390,125 +384,145 @@ mod tests {
             _ => panic!("Expected Initial message type"),
         };
 
-        let (mut bob_sess, plaintext) =
-            Session::recv(&bob_id, &spk_secret, &bundle, &initial_msg).expect("Bob respond failed");
+        let (mut receiver_sess, plaintext) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg)
+                .expect("Receiver respond failed");
         assert_eq!(plaintext, init_payload, "Initial plaintext mismatch");
 
         // Verify session IDs match
-        assert_eq!(alice_sess.id(), bob_sess.id(), "Session IDs should match");
+        assert_eq!(
+            sender_sess.id(),
+            receiver_sess.id(),
+            "Session IDs should match"
+        );
 
         // test symmetric messaging
-        let msg1 = alice_sess.encrypt(b"second").expect("Alice encrypt failed");
-        let pt1 = bob_sess.decrypt(&msg1).expect("Bob decrypt failed");
+        let msg1 = sender_sess
+            .encrypt(b"second")
+            .expect("Sender encrypt failed");
+        let pt1 = receiver_sess
+            .decrypt(&msg1)
+            .expect("Receiver decrypt failed");
         assert_eq!(&pt1, b"second");
 
-        let msg2 = bob_sess.encrypt(b"reply").expect("Bob encrypt failed");
-        let pt2 = alice_sess.decrypt(&msg2).expect("Alice decrypt failed");
+        let msg2 = receiver_sess
+            .encrypt(b"reply")
+            .expect("Receiver encrypt failed");
+        let pt2 = sender_sess.decrypt(&msg2).expect("Sender decrypt failed");
         assert_eq!(&pt2, b"reply");
     }
 
     #[test]
     fn test_decrypt_failure() {
-        let alice_id = IdentityKey::generate();
-        let bob_id = IdentityKey::generate();
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
-        let bundle = PreKeyBundle::new(&bob_id, 1, &spk_secret, None, None);
-        let (message, mut alice_sess) = Session::initiate(&alice_id, &bundle, b"msg").unwrap();
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
+        let (message, mut sender_sess) = Session::initiate(&sender_id, &bundle, b"msg").unwrap();
 
         let initial_msg = match message {
             Message::Initial(msg) => msg,
             _ => panic!("Expected Initial message type"),
         };
 
-        let (mut bob_sess, _) = Session::recv(&bob_id, &spk_secret, &bundle, &initial_msg).unwrap();
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg).unwrap();
 
         // tamper ciphertext
-        let mut msg = alice_sess.encrypt(b"data").expect("Alice encrypt failed");
+        let mut msg = sender_sess.encrypt(b"data").expect("Sender encrypt failed");
         if let Message::Standard(ref mut standard_msg) = msg {
             standard_msg.ciphertext[0] ^= 0xff;
         }
 
         assert!(
-            bob_sess.decrypt(&msg).is_err(),
+            receiver_sess.decrypt(&msg).is_err(),
             "Tampered ciphertext should error"
         );
     }
 
     #[test]
     fn test_out_of_order_messages() {
-        let alice_id = IdentityKey::generate();
-        let bob_id = IdentityKey::generate();
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
-        let bundle = PreKeyBundle::new(&bob_id, 1, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
 
-        let (message, mut alice_sess) = Session::initiate(&alice_id, &bundle, b"initial").unwrap();
+        let (message, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, b"initial").unwrap();
         let initial_msg = match message {
             Message::Initial(msg) => msg,
             _ => panic!("Expected Initial message type"),
         };
 
-        let (mut bob_sess, _) = Session::recv(&bob_id, &spk_secret, &bundle, &initial_msg).unwrap();
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg).unwrap();
 
-        // Alice sends 3 messages
-        let msg1 = alice_sess
+        // Sender sends 3 messages
+        let msg1 = sender_sess
             .encrypt(b"message 1")
-            .expect("Alice encrypt 1 failed");
-        let msg2 = alice_sess
+            .expect("Sender encrypt 1 failed");
+        let msg2 = sender_sess
             .encrypt(b"message 2")
-            .expect("Alice encrypt 2 failed");
-        let msg3 = alice_sess
+            .expect("Sender encrypt 2 failed");
+        let msg3 = sender_sess
             .encrypt(b"message 3")
-            .expect("Alice encrypt 3 failed");
+            .expect("Sender encrypt 3 failed");
 
-        // Bob receives them out of order: 2, 3, 1
-        let pt2 = bob_sess.decrypt(&msg2).expect("Failed to decrypt msg2");
+        // Receiver receives them out of order: 2, 3, 1
+        let pt2 = receiver_sess
+            .decrypt(&msg2)
+            .expect("Failed to decrypt msg2");
         assert_eq!(&pt2, b"message 2");
 
-        let pt3 = bob_sess.decrypt(&msg3).expect("Failed to decrypt msg3");
+        let pt3 = receiver_sess
+            .decrypt(&msg3)
+            .expect("Failed to decrypt msg3");
         assert_eq!(&pt3, b"message 3");
 
-        let pt1 = bob_sess.decrypt(&msg1).expect("Failed to decrypt msg1");
+        let pt1 = receiver_sess
+            .decrypt(&msg1)
+            .expect("Failed to decrypt msg1");
         assert_eq!(&pt1, b"message 1");
     }
 
     #[test]
     fn test_multiple_sessions() {
-        // Bob identity and SPK
-        let bob_id = IdentityKey::generate();
+        // Receiver identity and SPK
+        let receiver_id = IdentityKey::generate();
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
-        let bundle = PreKeyBundle::new(&bob_id, 1, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
 
-        // Multiple Alices
-        let alice_count = 3;
-        let mut alice_sessions = Vec::new();
-        let mut alice_messages = Vec::new();
+        // Multiple Senders
+        let sender_count = 3;
+        let mut sender_sessions = Vec::new();
+        let mut sender_messages = Vec::new();
 
-        // Each Alice initiates a session with Bob
-        for i in 0..alice_count {
-            let alice_id = IdentityKey::generate();
-            let payload = format!("Hello from Alice {}", i);
-            let (message, session) = Session::initiate(&alice_id, &bundle, payload.as_bytes())
-                .expect("Alice initiate failed");
+        // Each Sender initiates a session with Receiver
+        for i in 0..sender_count {
+            let sender_id = IdentityKey::generate();
+            let payload = format!("Hello from Sender {}", i);
+            let (message, session) = Session::initiate(&sender_id, &bundle, payload.as_bytes())
+                .expect("Sender initiate failed");
 
-            alice_messages.push(message);
-            alice_sessions.push(session);
+            sender_messages.push(message);
+            sender_sessions.push(session);
         }
 
-        // Bob handles all initial messages
-        let mut bob_sessions = Vec::new();
-        for message in &alice_messages {
+        // Receiver handles all initial messages
+        let mut receiver_sessions = Vec::new();
+        for message in &sender_messages {
             if let Message::Initial(msg) = message {
-                let (session, _plaintext) =
-                    Session::recv(&bob_id, &spk_secret, &bundle, msg).expect("Bob respond failed");
-                bob_sessions.push(session);
+                let (session, _plaintext) = Session::recv(&receiver_id, &spk_secret, &bundle, msg)
+                    .expect("Receiver respond failed");
+                receiver_sessions.push(session);
             }
         }
 
-        // Verify all session IDs match between Alice and Bob pairs
-        for i in 0..alice_count {
+        // Verify all session IDs match between Sender and Receiver pairs
+        for i in 0..sender_count {
             assert_eq!(
-                alice_sessions[i].id(),
-                bob_sessions[i].id(),
+                sender_sessions[i].id(),
+                receiver_sessions[i].id(),
                 "Session ID mismatch for session {}",
                 i
             );
@@ -516,8 +530,8 @@ mod tests {
             // Also verify they're different from other sessions
             if i > 0 {
                 assert_ne!(
-                    alice_sessions[i].id(),
-                    alice_sessions[i - 1].id(),
+                    sender_sessions[i].id(),
+                    sender_sessions[i - 1].id(),
                     "Session IDs should be different between different peers"
                 );
             }
@@ -527,13 +541,13 @@ mod tests {
     #[test]
     fn test_static_encrypt_decrypt_roundtrip() {
         // 1. bootstrap a normal session
-        let alice_id = IdentityKey::generate();
-        let bob_id = IdentityKey::generate();
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
-        let bundle = PreKeyBundle::new(&bob_id, 1, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
 
-        let (init_msg, mut alice_sess) =
-            Session::initiate(&alice_id, &bundle, b"handshake").unwrap();
+        let (init_msg, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, b"handshake").unwrap();
 
         // Extract the initial message
         let initial_message = match &init_msg {
@@ -541,50 +555,54 @@ mod tests {
             _ => unreachable!(),
         };
 
-        // Initialize the bob session
-        let (mut bob_sess, _) =
-            Session::recv(&bob_id, &spk_secret, &bundle, initial_message).unwrap();
+        // Initialize the receiver session
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, initial_message).unwrap();
 
         // Do when you want to send that and the message can contain the data we want
         // Send a message in each direction to establish the ratchet
-        let setup_msg = alice_sess
+        let setup_msg = sender_sess
             .encrypt(b"setup-message")
-            .expect("Alice encrypt failed");
-        let _ = bob_sess.decrypt(&setup_msg).expect("Setup decrypt failed");
+            .expect("Sender encrypt failed");
+        let _ = receiver_sess
+            .decrypt(&setup_msg)
+            .expect("Setup decrypt failed");
 
-        let reply_msg = bob_sess
+        let reply_msg = receiver_sess
             .encrypt(b"setup-reply")
-            .expect("Bob encrypt failed");
-        let _ = alice_sess
+            .expect("Receiver encrypt failed");
+        let _ = sender_sess
             .decrypt(&reply_msg)
             .expect("Setup reply decrypt failed");
 
-        // 2. Bob → Alice  (static / peek)
-        let msg = bob_sess
+        // 2. Receiver → Sender  (static / peek)
+        let msg = receiver_sess
             .encrypt_without_advancing(b"peek-hello")
             .expect("static encrypt failed");
 
-        // 3. Alice decrypts WITHOUT advancing her ratchet
+        // 3. Sender decrypts WITHOUT advancing her ratchet
         if let Message::Standard(standard_msg) = &msg {
-            let ad = alice_sess.make_associated_data();
-            let plain = alice_sess
+            let ad = sender_sess.make_associated_data();
+            let plain = sender_sess
                 .ratchet
                 .decrypt_static_he(&standard_msg.header, &standard_msg.ciphertext, &ad)
-                .expect("Alice static decrypt failed");
+                .expect("Sender static decrypt failed");
             assert_eq!(&plain, b"peek-hello");
 
-            // 4. Bob can still read his own packet
-            let own_plain = bob_sess
+            // 4. Receiver can still read his own packet
+            let own_plain = receiver_sess
                 .decrypt_own_without_advancing(&standard_msg.header, &standard_msg.ciphertext)
-                .expect("Bob self-decrypt failed");
+                .expect("Receiver self-decrypt failed");
             assert_eq!(own_plain, b"peek-hello");
         } else {
             panic!("Expected StandardMessage");
         }
 
         // 5. Ensure neither side's counters moved
-        let msg2 = bob_sess.encrypt(b"normal-1").expect("Bob encrypt failed");
-        let pt2 = alice_sess.decrypt(&msg2).expect("Alice decrypt failed");
+        let msg2 = receiver_sess
+            .encrypt(b"normal-1")
+            .expect("Receiver encrypt failed");
+        let pt2 = sender_sess.decrypt(&msg2).expect("Sender decrypt failed");
         assert_eq!(&pt2, b"normal-1");
     }
 
@@ -600,104 +618,105 @@ mod tests {
             },
         };
 
-        const N_USERS: usize = 4; // concurrent Alices
+        const N_USERS: usize = 4; // concurrent Senders
         const N_STEPS: usize = 3; // intermediate snapshots per job
 
         // deterministic RNG → test is repeatable
         let mut rng = StdRng::seed_from_u64(0xdada_beef);
 
-        // ── 1. Bob prepares ONE distinct pre-key bundle (SPK) per Alice
-        let bob_id = IdentityKey::generate();
-        let mut bob_spk_secrets = Vec::with_capacity(N_USERS);
-        let mut bob_bundles = Vec::with_capacity(N_USERS);
+        // ── 1. Receiver prepares ONE distinct pre-key bundle (SPK) per Sender
+        let receiver_id = IdentityKey::generate();
+        let mut receiver_spk_secrets = Vec::with_capacity(N_USERS);
+        let mut receiver_bundles = Vec::with_capacity(N_USERS);
 
         for i in 0..N_USERS {
             let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
-            let bundle = PreKeyBundle::new(&bob_id, i as u32 + 1, &spk_secret, None, None);
-            bob_spk_secrets.push(spk_secret);
-            bob_bundles.push(bundle);
+            let bundle = PreKeyBundle::new(&receiver_id, i as u32 + 1, &spk_secret, None, None);
+            receiver_spk_secrets.push(spk_secret);
+            receiver_bundles.push(bundle);
         }
 
-        // ── 2.  Every Alice carries out the X3DH handshake (empty payload)
-        let mut alice_sessions = Vec::with_capacity(N_USERS);
+        // ── 2.  Every Sender carries out the X3DH handshake (empty payload)
+        let mut sender_sessions = Vec::with_capacity(N_USERS);
         let mut init_msgs = Vec::<(usize, Message)>::with_capacity(N_USERS);
 
-        for (idx, bundle) in bob_bundles.iter().enumerate() {
-            let alice_id = IdentityKey::generate();
+        // receiver can be offline and doesnt have to respond and you can send the first work here, you dont need to say hi
+        for (idx, bundle) in receiver_bundles.iter().enumerate() {
+            let sender_id = IdentityKey::generate();
             let (init_msg, sess) =
-                Session::initiate(&alice_id, bundle, b"").expect("initiate failed");
-            alice_sessions.push(sess);
-            init_msgs.push((idx, init_msg)); // remember which bundle belongs to which Alice
+                Session::initiate(&sender_id, bundle, b"").expect("initiate failed");
+            sender_sessions.push(sess);
+            init_msgs.push((idx, init_msg)); // remember which bundle belongs to which Sender
         }
-
-        // deliver the initial messages to Bob in random order
         init_msgs.shuffle(&mut rng);
 
         // Initialize without requiring Clone
-        let mut bob_sessions = Vec::with_capacity(N_USERS);
+        let mut receiver_sessions = Vec::with_capacity(N_USERS);
         for _ in 0..N_USERS {
-            bob_sessions.push(None);
+            receiver_sessions.push(None);
         }
 
         for (idx, init_msg) in init_msgs {
             let (sess, _empty) = Session::recv(
-                &bob_id,
-                &bob_spk_secrets[idx],
-                &bob_bundles[idx],
+                &receiver_id,
+                &receiver_spk_secrets[idx],
+                &receiver_bundles[idx],
                 match &init_msg {
                     Message::Initial(m) => m,
                     _ => unreachable!(),
                 },
             )
-            .expect("Bob respond failed");
+            .expect("Receiver respond failed");
 
-            bob_sessions[idx] = Some(sess);
+            receiver_sessions[idx] = Some(sess);
         }
 
-        // ── 3.  Each Alice now sends her *work* as the FIRST Double-Ratchet message
+        // ── 3.  Each Sender now sends her *work* as the FIRST Double-Ratchet message
         let mut work_packets: Vec<(usize, Vec<u8>, Message)> = Vec::new();
 
-        for (idx, alice_sess) in alice_sessions.iter_mut().enumerate() {
+        for (idx, sender_sess) in sender_sessions.iter_mut().enumerate() {
             // produce random work (32–96 bytes)
             let len = rng.gen_range(32..97);
             let mut work = vec![0u8; len];
             rng.fill(&mut work[..]);
 
-            let msg = alice_sess
+            let msg = sender_sess
                 .encrypt(&work)
-                .expect("Alice encrypt work failed"); // first DR packet
+                .expect("Sender encrypt work failed"); // first DR packet
             work_packets.push((idx, work, msg));
         }
 
-        // deliver those work packets to Bob in random order
+        // deliver those work packets to Receiver in random order
         work_packets.shuffle(&mut rng);
 
         for (idx, work, pkt) in &work_packets {
-            let bob_sess = bob_sessions[*idx].as_mut().unwrap();
-            let pt = bob_sess.decrypt(pkt).expect("Bob decrypt work failed");
+            let receiver_sess = receiver_sessions[*idx].as_mut().unwrap(); // get the right session
+            let pt = receiver_sess
+                .decrypt(pkt)
+                .expect("Receiver decrypt work failed");
             assert_eq!(pt, *work, "work mismatch for user {idx}");
         }
 
-        // ── 4.  Bob has sending-chain keys now → create N_STEPS snapshots per job
+        // ── 4.  Receiver has sending-chain keys now → create N_STEPS snapshots per job
         {
             let mut snapshots: Vec<(usize, Vec<u8>, Message)> = Vec::new();
 
-            for (idx, sess) in bob_sessions.iter_mut().enumerate() {
+            for (idx, sess) in receiver_sessions.iter_mut().enumerate() {
                 let s = sess.as_mut().unwrap();
                 for _ in 0..N_STEPS {
                     let mut data = vec![0u8; 24];
                     rng.fill(&mut data[..]);
                     let pkt = s
                         .encrypt_without_advancing(&data)
-                        .expect("Bob encrypt snapshot failed");
+                        .expect("Receiver encrypt snapshot failed");
                     snapshots.push((idx, data, pkt));
                 }
             }
-            // Bob later decrypts them in *another* random order
+            // Receiver later decrypts them in *another* random order
             snapshots.shuffle(&mut rng);
 
             for (idx, data, pkt) in &snapshots {
-                let s = bob_sessions[*idx].as_mut().unwrap();
+                let s = receiver_sessions[*idx].as_mut().unwrap();
                 if let Message::Standard(standard_msg) = pkt {
                     let out = s
                         .decrypt_own_without_advancing(
@@ -710,21 +729,21 @@ mod tests {
             }
         }
 
-        // ── 5.  Bob sends a final reply to every Alice (again shuffled)
+        // ── 5.  Receiver sends a final reply to every Sender (again shuffled)
         let mut finals: Vec<(usize, Vec<u8>, Message)> = Vec::new();
-        for (idx, sess) in bob_sessions.iter_mut().enumerate() {
+        for (idx, sess) in receiver_sessions.iter_mut().enumerate() {
             let s = sess.as_mut().unwrap();
             let mut ans = vec![0u8; 16];
             rng.fill(&mut ans[..]);
-            let msg = s.encrypt(&ans).expect("Bob encrypt final failed");
+            let msg = s.encrypt(&ans).expect("Receiver encrypt final failed");
             finals.push((idx, ans, msg));
         }
         finals.shuffle(&mut rng);
 
         for (idx, ans, pkt) in finals {
-            let pt = alice_sessions[idx]
+            let pt = sender_sessions[idx]
                 .decrypt(&pkt)
-                .expect("Alice decrypt final failed");
+                .expect("Sender decrypt final failed");
             assert_eq!(pt, ans, "final answer mismatch for user {idx}");
         }
     }

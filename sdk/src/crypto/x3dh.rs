@@ -3,23 +3,23 @@
 //!
 //! This module implements the X3DH protocol as described in Signal's public
 //! specification. X3DH enables two parties to establish a shared secret even
-//! when one party (typically Bob) is offline.  The resulting secret can be
+//! when one party (typically the Receiver) is offline.  The resulting secret can be
 //! used as the root key for a Double‑Ratchet or any other post‑handshake
 //! encryption scheme.
 //!
 //! ## High‑level flow
 //!
 //! ```text
-//! Alice                              Bob (offline)
+//! Sender                                    Receiver (that can be offline)
 //! ───────────────────────────────────────────────────────────
 //! Generate IdentityKey               Generate IdentityKey
 //!                                     │
 //!                                     ├─► Publish PreKeyBundle ──┐
 //! ┌─(1) download bundle ◄─────────────┘                         │
 //! │                                                           (server)
-//! │  (2) alice_init()                                           │
+//! │  (2) sender_init()                                          │
 //! ├─► InitialMessage ───────────────────────────────────────────┤
-//!                                     └─► (3) bob_receive() ════┘
+//!                                     └─► (3) receiver_receive() ════┘
 //! ```
 //!
 //! After step (3) both parties possess the same 32‑byte [`SharedSecret`].
@@ -27,28 +27,28 @@
 //! ## Example
 //!
 //! ```
-//! use nexus_sdk::crypto::x3dh::{IdentityKey, PreKeyBundle, alice_init, bob_receive};
+//! use nexus_sdk::crypto::x3dh::{IdentityKey, PreKeyBundle, sender_init, receiver_receive};
 //! use x25519_dalek::StaticSecret;
 //! use rand::rngs::OsRng;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // 1. Long‑term identity keys
-//! let alice_id = IdentityKey::generate();
-//! let bob_id = IdentityKey::generate();
+//! let sender_id = IdentityKey::generate();
+//! let receiver_id = IdentityKey::generate();
 //!
-//! // 2. Bob generates a pre-key bundle with a Signed Pre-Key
+//! // 2. Receiver generates a pre-key bundle with a Signed Pre-Key
 //! let spk_id = 1;
 //! let spk_secret = StaticSecret::random_from_rng(OsRng);
-//! let bundle = PreKeyBundle::new(&bob_id, spk_id, &spk_secret, None, None);
+//! let bundle = PreKeyBundle::new(&receiver_id, spk_id, &spk_secret, None, None);
 //!
-//! // 3. Alice encrypts her greeting.
-//! let (msg, alice_sk) = alice_init(&alice_id, &bundle, b"hello, Bob!")?;
+//! // 3. Sender encrypts greeting.
+//! let (msg, sender_sk) = sender_init(&sender_id, &bundle, b"hello, Receiver!")?;
 //!
-//! // 4. Bob decrypts.
-//! let (plain, bob_sk) = bob_receive(&bob_id, &spk_secret, spk_id, None, &msg)?;
+//! // 4. Receiver decrypts.
+//! let (plain, receiver_sk) = receiver_receive(&receiver_id, &spk_secret, spk_id, None, &msg)?;
 //!
-//! assert_eq!(plain, b"hello, Bob!");
-//! assert_eq!(&*alice_sk, &*bob_sk); // handshake success
+//! assert_eq!(plain, b"hello, Receiver!");
+//! assert_eq!(&*sender_sk, &*receiver_sk); // handshake success
 //! # Ok(()) }
 //! ```
 
@@ -75,8 +75,7 @@ use {
 const CURVE_ID_X25519: u8 = 0x05;
 /// Maximum ciphertext length accepted in a pre‑key message (**16 KiB**).
 const MAX_PREKEY_MSG: usize = 16 * 1024;
-/// Default string fed into HKDF's `info` field. Override at call‑site to
-/// achieve domain separation.
+/// Default string fed into HKDF's `info` field. Overwrite when its needed.
 const HKDF_INFO: &[u8] = b"X3DH";
 
 /// Shared secret produced by X3DH.
@@ -96,16 +95,16 @@ pub enum X3dhError {
     /// Authenticated decryption failed (ciphertext corrupt or wrong key).
     #[error("decryption failed")]
     DecryptFailed,
-    /// Bob attempted to decrypt a message that references an OTPK he no longer possesses.
+    /// Receiver attempted to decrypt a message that references an OTPK he no longer possesses.
     #[error("OTPK secret missing – refuse to process one‑time pre‑key message")]
     MissingOneTimeSecret,
-    /// The SPK identifier in the message does not match Bob's current SPK.
+    /// The SPK identifier in the message does not match Receiver's current SPK.
     #[error("signed pre‑key id mismatch")]
     SpkIdMismatch,
     /// The OTPK identifier in the message does not match the supplied OTPK secret.
     #[error("one‑time pre‑key id mismatch")]
     OtpkIdMismatch,
-    /// Bob's X25519 and XEdDSA public keys are not the Edwards–Montgomery map of each other.
+    /// Receiver's X25519 and XEdDSA public keys are not the Edwards–Montgomery map of each other.
     #[error("identity DH and Ed keys do not match")]
     IdentityKeyMismatch,
     /// Internal HKDF error (should be unreachable under sane parameters).
@@ -214,13 +213,13 @@ impl IdentityKey {
     }
 }
 
-// === Pre‑Key material (Bob‑side) ===
+// === Pre‑Key material (Receiver‑side) ===
 
-/// Public bundle uploaded by Bob
+/// Public bundle uploaded by Receiver
 ///
 /// The bundle contains:
 /// * the *Signed Pre‑Key* (SPK) plus its identifier and XEdDSA signature,
-/// * Bob's long‑term *Identity Key* (`IK_B`),
+/// * Receiver's long‑term *Identity Key* (`IK_B`),
 /// * **optionally** one *One‑Time Pre‑Key* (OTPK).
 pub struct PreKeyBundle {
     /// Identifier of the signed pre‑key.
@@ -231,7 +230,7 @@ pub struct PreKeyBundle {
     pub spk_sig: [u8; 64],
     /// Raw bytes of `Ed25519(IK_B)`.
     pub identity_verify_bytes: [u8; 32],
-    /// DH form of Bob's identity key.
+    /// DH form of Receiver's identity key.
     pub identity_pk: X25519PublicKey,
     /// Identifier of the accompanying OTPK (if any).
     pub otpk_id: Option<u32>,
@@ -342,13 +341,13 @@ pub mod x25519_serde {
 
 // === Network message ===
 
-/// First message sent by Alice (aka pre‑key message).
+/// First message sent by Sender (aka pre‑key message).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InitialMessage {
-    /// Alice's **I**dentity **K**ey (DH form).
+    /// Sender's Identity Key (DH form).
     #[serde(with = "x25519_serde")]
     pub ika_pub: X25519PublicKey,
-    /// Alice's ephemeral X25519 public key.
+    /// Sender's ephemeral X25519 public key.
     #[serde(with = "x25519_serde")]
     pub ek_pub: X25519PublicKey,
     /// Referenced SPK identifier.
@@ -361,7 +360,7 @@ pub struct InitialMessage {
     pub ciphertext: Vec<u8>,
 }
 
-// === Alice‑side ===
+// === Sender‑side ===
 
 /// Build an [`InitialMessage`] and derive the shared secret.
 ///
@@ -374,10 +373,10 @@ pub struct InitialMessage {
 /// * [`X3dhError::Aead`] – Encryption failure.
 ///
 /// # Example
-/// See the *Quick start* section in the crate‑level docs.
+/// See the Quick start section in the crate‑level docs.
 #[allow(clippy::too_many_arguments)]
-pub fn alice_init(
-    alice: &IdentityKey,
+pub fn sender_init(
+    sender: &IdentityKey,
     bundle: &PreKeyBundle,
     plaintext: &[u8],
 ) -> Result<(InitialMessage, SharedSecret), X3dhError> {
@@ -404,7 +403,7 @@ pub fn alice_init(
     let ek_pub = X25519PublicKey::from(&ek_secret);
 
     // 3. DH computations
-    let mut dh1 = alice.secret.diffie_hellman(&bundle.spk_pub).to_bytes();
+    let mut dh1 = sender.secret.diffie_hellman(&bundle.spk_pub).to_bytes();
     let mut dh2 = ek_secret.diffie_hellman(&bundle.identity_pk).to_bytes();
     let mut dh3 = ek_secret.diffie_hellman(&bundle.spk_pub).to_bytes();
     let mut dh4_opt = bundle
@@ -428,7 +427,7 @@ pub fn alice_init(
 
     // 4. Associated data: IK_A || IK_B
     let mut ad = Vec::with_capacity(66);
-    ad.extend_from_slice(&encode_pk(&alice.dh_public));
+    ad.extend_from_slice(&encode_pk(&sender.dh_public));
     ad.extend_from_slice(&encode_pk(&bundle.identity_pk));
 
     // 5. Encrypt application payload
@@ -446,7 +445,7 @@ pub fn alice_init(
         .map_err(|_| X3dhError::Aead)?;
 
     let message = InitialMessage {
-        ika_pub: alice.dh_public,
+        ika_pub: sender.dh_public,
         ek_pub,
         spk_id: bundle.spk_id,
         otpk_id: bundle.otpk_id,
@@ -457,9 +456,9 @@ pub fn alice_init(
     Ok((message, sk))
 }
 
-// === Bob‑side ===
+// === Receiver‑side ===
 
-/// Decrypt an [`InitialMessage`] received from Alice.
+/// Decrypt an [`InitialMessage`] received from Sender.
 ///
 /// Returns the plaintext together with the derived [`SharedSecret`].
 ///
@@ -471,10 +470,10 @@ pub fn alice_init(
 /// * [`X3dhError::DecryptFailed`]
 ///
 /// # Example
-/// Refer to the crate‑level *Quick start*.
-#[allow(clippy::too_many_arguments)]
-pub fn bob_receive(
-    bob_id: &IdentityKey,
+/// Refer to the crate‑level Quick start
+pub fn receiver_receive(
+    // Maybe a better name?
+    receiver_id: &IdentityKey,
     spk_secret: &StaticSecret,
     spk_id: u32,
     otpk_secret: Option<(&StaticSecret, u32)>,
@@ -509,7 +508,7 @@ pub fn bob_receive(
 
     // 2. DH computations
     let mut dh1 = spk_secret.diffie_hellman(&msg.ika_pub).to_bytes();
-    let mut dh2 = bob_id.secret.diffie_hellman(&msg.ek_pub).to_bytes();
+    let mut dh2 = receiver_id.secret.diffie_hellman(&msg.ek_pub).to_bytes();
     let mut dh3 = spk_secret.diffie_hellman(&msg.ek_pub).to_bytes();
     let mut dh4_opt = otpk_secret.map(|(sk, _)| sk.diffie_hellman(&msg.ek_pub).to_bytes());
 
@@ -529,7 +528,7 @@ pub fn bob_receive(
     // 3. Associated data (IK_A || IK_B)
     let mut ad = Vec::with_capacity(66);
     ad.extend_from_slice(&encode_pk(&msg.ika_pub));
-    ad.extend_from_slice(&encode_pk(&bob_id.dh_public));
+    ad.extend_from_slice(&encode_pk(&receiver_id.dh_public));
 
     // 4. Size check
     if msg.ciphertext.len() > MAX_PREKEY_MSG {
@@ -551,16 +550,16 @@ pub fn bob_receive(
     Ok((plaintext, sk))
 }
 
-// === Bob helpers ===
+// === Receiver helpers ===
 
 /// Container that pairs a publicly published [`PreKeyBundle`] with the
-/// secrets that Bob keeps in local storage.
+/// secrets that Receiver keeps in local storage.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PreKeyBundleWithSecrets {
     /// The bundle that must be posted to the key server.
     #[zeroize(skip)]
     pub bundle: PreKeyBundle,
-    /// Bob's SPK secret (only one at a time).
+    /// Receiver's SPK secret (only one at a time).
     spk_secret: StaticSecret,
     /// Queue of unused OTPK secrets.
     otpk_secrets: Vec<(u32, StaticSecret)>,
@@ -568,10 +567,11 @@ pub struct PreKeyBundleWithSecrets {
 
 /// Generate a fresh [`PreKeyBundle`] together with the matching secrets.
 ///
-/// * `spk_id` – monotonically increasing identifier managed by the caller.
-/// * `next_otpk_id` – mutable counter for OTPK ids.
+/// * `spk_id` – monotonically increasing identifier managed by the caller(used to identify the SPK)
+/// * `next_otpk_id` – mutable counter for OTPK ids(used to identify the OTPK)
 /// * `n_otpks` – how many OTPKs to attach (0‑`n`).
-pub fn bob_generate_prekey_bundle(
+/// Returns a bundle with the SPK and the OTPKs.
+pub fn receiver_generate_prekey_bundle(
     identity: &IdentityKey,
     spk_id: u32,
     next_otpk_id: &mut u32,
@@ -608,7 +608,7 @@ pub fn bob_generate_prekey_bundle(
 }
 
 /// Convenience helper: create many bundles in one go (useful for batch upload).
-pub fn bob_generate_many_prekey_bundles(
+pub fn receiver_generate_many_prekey_bundles(
     identity: &IdentityKey,
     count: usize,
     next_spk_id: &mut u32,
@@ -618,7 +618,7 @@ pub fn bob_generate_many_prekey_bundles(
     let mut out = Vec::with_capacity(count);
     for _ in 0..count {
         let bundle =
-            bob_generate_prekey_bundle(identity, *next_spk_id, next_otpk_id, otpks_per_bundle);
+            receiver_generate_prekey_bundle(identity, *next_spk_id, next_otpk_id, otpks_per_bundle);
         *next_spk_id = next_spk_id.wrapping_add(1);
         out.push(bundle);
     }
@@ -632,66 +632,76 @@ mod tests {
 
     #[test]
     fn roundtrip_no_otpk() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 1u32;
 
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
-        let plaintext = b"hi Bob!";
-        let (msg, _) = alice_init(&alice, &bundle, plaintext).unwrap();
-        let (out, _) = bob_receive(&bob, &spk_secret, spk_id, None, &msg).unwrap();
+        let plaintext = b"hi Receiver!";
+        let (msg, _) = sender_init(&sender, &bundle, plaintext).unwrap();
+        let (out, _) = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg).unwrap();
         assert_eq!(plaintext, &out[..]);
     }
 
     #[test]
     fn fails_without_otpk_secret() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 7;
 
-        // Bob OTPK
+        // Receiver OTPK
         let otpk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let otpk_id = 99;
 
         // Create bundle with OTPK
-        let bundle =
-            PreKeyBundle::new(&bob, spk_id, &spk_secret, Some(otpk_id), Some(&otpk_secret));
+        let bundle = PreKeyBundle::new(
+            &receiver,
+            spk_id,
+            &spk_secret,
+            Some(otpk_id),
+            Some(&otpk_secret),
+        );
 
-        let msg = alice_init(&alice, &bundle, b"test").unwrap();
-        // Bob forgot to pass OTPK secret – should error
+        let msg = sender_init(&sender, &bundle, b"test").unwrap();
+        // Receiver forgot to pass OTPK secret – should error
         assert!(matches!(
-            bob_receive(&bob, &spk_secret, spk_id, None, &msg.0),
+            receiver_receive(&receiver, &spk_secret, spk_id, None, &msg.0),
             Err(X3dhError::MissingOneTimeSecret)
         ));
     }
 
     #[test]
     fn roundtrip_with_otpk() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob creates pre-keys
+        // Receiver creates pre-keys
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 42u32;
         let otpk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let otpk_id = 123u32;
 
         // Create bundle with OTPK
-        let bundle =
-            PreKeyBundle::new(&bob, spk_id, &spk_secret, Some(otpk_id), Some(&otpk_secret));
+        let bundle = PreKeyBundle::new(
+            &receiver,
+            spk_id,
+            &spk_secret,
+            Some(otpk_id),
+            Some(&otpk_secret),
+        );
 
         let plaintext = b"Secret message with one-time key";
-        let msg = alice_init(&alice, &bundle, plaintext).unwrap();
+        let msg = sender_init(&sender, &bundle, plaintext).unwrap();
 
-        // Bob processes with the correct OTPK
-        let out = bob_receive(
-            &bob,
+        // Receiver processes with the correct OTPK
+        let out = receiver_receive(
+            &receiver,
             &spk_secret,
             spk_id,
             Some((&otpk_secret, otpk_id)),
@@ -705,150 +715,150 @@ mod tests {
     #[test]
     fn bundle_can_be_stored() {
         // Demonstrate that bundles can be stored in a collection
-        let bob = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
         // Create multiple bundles
         let mut bundles = Vec::new();
 
         for i in 0..5 {
             let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
-            let bundle = PreKeyBundle::new(&bob, i as u32, &spk_secret, None, None);
+            let bundle = PreKeyBundle::new(&receiver, i as u32, &spk_secret, None, None);
 
             bundles.push((bundle, spk_secret));
         }
 
         // Demonstrate we can retrieve and use a bundle
         let (bundle, spk_secret) = &bundles[2];
-        let alice = IdentityKey::generate();
+        let sender = IdentityKey::generate();
         let plaintext = b"Message for stored bundle";
 
-        let msg = alice_init(&alice, bundle, plaintext).unwrap();
-        let out = bob_receive(&bob, spk_secret, 2, None, &msg.0).unwrap();
+        let msg = sender_init(&sender, bundle, plaintext).unwrap();
+        let out = receiver_receive(&receiver, spk_secret, 2, None, &msg.0).unwrap();
         assert_eq!(plaintext, &out.0[..]);
     }
 
     #[test]
     fn test_signature_verification_failure() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
         let eve = IdentityKey::generate();
 
-        // Bob creates SPK
+        // Receiver creates SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 1u32;
 
         // Create legitimate bundle
-        let mut bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let mut bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         // Tamper with signature - replace with Eve's signature
         let eve_sig = eve.signing.sign(&encode_pk(&bundle.spk_pub), &mut OsRng);
         bundle.spk_sig = eve_sig;
 
-        // Alice should reject the tampered bundle
-        let result = alice_init(&alice, &bundle, b"test message");
+        // Sender should reject the tampered bundle
+        let result = sender_init(&sender, &bundle, b"test message");
         assert!(matches!(result, Err(X3dhError::SigVerifyFailed)));
     }
 
     #[test]
     fn test_decryption_with_wrong_keys() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
         let mallory = IdentityKey::generate(); // Attacker
 
-        // Bob's SPK
+        // Receiver's SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 5u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         let plaintext = b"secret message";
-        let msg = alice_init(&alice, &bundle, plaintext).unwrap();
+        let msg = sender_init(&sender, &bundle, plaintext).unwrap();
 
         // Mallory attempts to decrypt with wrong identity key
-        let result = bob_receive(&mallory, &spk_secret, spk_id, None, &msg.0);
+        let result = receiver_receive(&mallory, &spk_secret, spk_id, None, &msg.0);
         assert!(matches!(result, Err(X3dhError::DecryptFailed)));
 
-        // Bob attempts to decrypt with wrong SPK
+        // Receiver attempts to decrypt with wrong SPK
         let wrong_spk = StaticSecret::random_from_rng(&mut OsRng);
-        let result = bob_receive(&bob, &wrong_spk, spk_id, None, &msg.0);
+        let result = receiver_receive(&receiver, &wrong_spk, spk_id, None, &msg.0);
         assert!(matches!(result, Err(X3dhError::DecryptFailed)));
     }
 
     #[test]
     fn test_tampered_ciphertext() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 3u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         let plaintext = b"authentic message";
-        let mut msg = alice_init(&alice, &bundle, plaintext).unwrap();
+        let mut msg = sender_init(&sender, &bundle, plaintext).unwrap();
 
         // Try to tamper with the ciphertext
         if !msg.0.ciphertext.is_empty() {
             msg.0.ciphertext[0] ^= 0x01; // Flip a bit
         }
 
-        // Bob should detect tampering
-        let result = bob_receive(&bob, &spk_secret, spk_id, None, &msg.0);
+        // Receiver should detect tampering
+        let result = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg.0);
         assert!(matches!(result, Err(X3dhError::DecryptFailed)));
     }
 
     #[test]
     fn test_empty_message() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 9u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         // Empty message should work fine
         let plaintext = b"";
-        let msg = alice_init(&alice, &bundle, plaintext).unwrap();
-        let out = bob_receive(&bob, &spk_secret, spk_id, None, &msg.0).unwrap();
+        let msg = sender_init(&sender, &bundle, plaintext).unwrap();
+        let out = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg.0).unwrap();
         assert_eq!(plaintext, &out.0[..]);
     }
 
     #[test]
     fn test_large_message() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 10u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         // Create a large message (8KB)
         let plaintext = vec![0xaa; 8 * 1024]; // I agree with everything said in the message
-        let msg = alice_init(&alice, &bundle, &plaintext).unwrap();
-        let out = bob_receive(&bob, &spk_secret, spk_id, None, &msg.0).unwrap();
+        let msg = sender_init(&sender, &bundle, &plaintext).unwrap();
+        let out = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg.0).unwrap();
         assert_eq!(plaintext, out.0);
     }
 
     #[test]
     fn test_binary_data() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 11u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         // Binary data with all possible byte values
         let mut plaintext = Vec::with_capacity(256);
@@ -856,17 +866,17 @@ mod tests {
             plaintext.push(i);
         }
 
-        let msg = alice_init(&alice, &bundle, &plaintext).unwrap();
-        let out = bob_receive(&bob, &spk_secret, spk_id, None, &msg.0).unwrap();
+        let msg = sender_init(&sender, &bundle, &plaintext).unwrap();
+        let out = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg.0).unwrap();
         assert_eq!(plaintext, out.0);
     }
 
     #[test]
     fn test_multiple_otpks() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob creates pre-keys
+        // Receiver creates pre-keys
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 12u32;
 
@@ -878,15 +888,20 @@ mod tests {
         // Test each OTPK separately
         for (idx, (otpk_secret, otpk_id)) in otpk_secrets.iter().enumerate() {
             // Create bundle with this OTPK
-            let bundle =
-                PreKeyBundle::new(&bob, spk_id, &spk_secret, Some(*otpk_id), Some(otpk_secret));
+            let bundle = PreKeyBundle::new(
+                &receiver,
+                spk_id,
+                &spk_secret,
+                Some(*otpk_id),
+                Some(otpk_secret),
+            );
 
             let plaintext = format!("Message using OTPK #{}", idx).into_bytes();
-            let msg = alice_init(&alice, &bundle, &plaintext).unwrap();
+            let msg = sender_init(&sender, &bundle, &plaintext).unwrap();
 
-            // Bob processes with the correct OTPK
-            let out = bob_receive(
-                &bob,
+            // Receiver processes with the correct OTPK
+            let out = receiver_receive(
+                &receiver,
                 &spk_secret,
                 spk_id,
                 Some((otpk_secret, *otpk_id)),
@@ -900,30 +915,30 @@ mod tests {
 
     #[test]
     fn test_different_identity_keys_produce_different_outputs() {
-        // Generate two different identity keys for Alice
-        let alice1 = IdentityKey::generate();
-        let alice2 = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        // Generate two different identity keys for Sender
+        let sender1 = IdentityKey::generate();
+        let sender2 = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 13u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         let plaintext = b"Same message";
 
         // Encrypt with different identity keys
-        let msg1 = alice_init(&alice1, &bundle, plaintext).unwrap();
-        let msg2 = alice_init(&alice2, &bundle, plaintext).unwrap();
+        let msg1 = sender_init(&sender1, &bundle, plaintext).unwrap();
+        let msg2 = sender_init(&sender2, &bundle, plaintext).unwrap();
 
         // Ciphertexts should be different even with same plaintext
         assert_ne!(msg1.0.ciphertext, msg2.0.ciphertext);
 
         // Both should decrypt properly
-        let out1 = bob_receive(&bob, &spk_secret, spk_id, None, &msg1.0).unwrap();
-        let out2 = bob_receive(&bob, &spk_secret, spk_id, None, &msg2.0).unwrap();
+        let out1 = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg1.0).unwrap();
+        let out2 = receiver_receive(&receiver, &spk_secret, spk_id, None, &msg2.0).unwrap();
 
         assert_eq!(plaintext, &out1.0[..]);
         assert_eq!(plaintext, &out2.0[..]);
@@ -931,21 +946,21 @@ mod tests {
 
     #[test]
     fn test_different_nonce_produces_different_ciphertext() {
-        let alice = IdentityKey::generate();
-        let bob = IdentityKey::generate();
+        let sender = IdentityKey::generate();
+        let receiver = IdentityKey::generate();
 
-        // Bob SPK
+        // Receiver SPK
         let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
         let spk_id = 14u32;
 
         // Create bundle
-        let bundle = PreKeyBundle::new(&bob, spk_id, &spk_secret, None, None);
+        let bundle = PreKeyBundle::new(&receiver, spk_id, &spk_secret, None, None);
 
         let plaintext = b"test message";
 
         // Create two messages - they should have different nonces automatically
-        let msg1 = alice_init(&alice, &bundle, plaintext).unwrap();
-        let msg2 = alice_init(&alice, &bundle, plaintext).unwrap();
+        let msg1 = sender_init(&sender, &bundle, plaintext).unwrap();
+        let msg2 = sender_init(&sender, &bundle, plaintext).unwrap();
 
         // Nonces should be different
         assert_ne!(msg1.0.nonce, msg2.0.nonce);
