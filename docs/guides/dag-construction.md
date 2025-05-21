@@ -38,13 +38,15 @@ A DAG JSON file consists of sections defining the graph's components:
 ```
 
 - The `name` must be unique within the DAG.
-  {% hint style="success" %}
-  The input ports of a tool are specified by the tool's output schema saved in the Nexus tool registry. Each input port must have exactly one of:
 
-  1. An edge leading to it
-  2. A default value
-  3. Be part of `entry_ports`
-     {% endhint %}
+{% hint style="success" %}
+The input ports of a tool are specified by the tool's output schema saved in the Nexus tool registry. Each input port must have exactly one of:
+
+1. An edge leading to it
+2. A default value
+3. Be part of `entry_ports`
+
+{% endhint %}
 
 - Add the input port as part of `entry_ports` only if it does not have an edge leading into it nor has a default value.
 
