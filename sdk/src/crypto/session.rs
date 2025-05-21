@@ -140,8 +140,8 @@ impl Session {
         ))
     }
 
-    /// Bob responds to an incoming X3DH handshake.
-    pub fn respond(
+    /// Bob receives an incoming X3DH handshake.
+    pub fn recv(
         identity: &IdentityKey,
         spk_secret: &StaticSecret,
         bundle: &PreKeyBundle,
@@ -289,8 +289,7 @@ mod tests {
         };
 
         let (mut bob_sess, plaintext) =
-            Session::respond(&bob_id, &spk_secret, &bundle, &initial_msg)
-                .expect("Bob respond failed");
+            Session::recv(&bob_id, &spk_secret, &bundle, &initial_msg).expect("Bob respond failed");
         assert_eq!(plaintext, init_payload, "Initial plaintext mismatch");
 
         // Verify session IDs match
@@ -319,8 +318,7 @@ mod tests {
             _ => panic!("Expected Initial message type"),
         };
 
-        let (mut bob_sess, _) =
-            Session::respond(&bob_id, &spk_secret, &bundle, &initial_msg).unwrap();
+        let (mut bob_sess, _) = Session::recv(&bob_id, &spk_secret, &bundle, &initial_msg).unwrap();
 
         // tamper ciphertext
         let mut msg = alice_sess.encrypt(b"data").expect("Alice encrypt failed");
@@ -347,8 +345,7 @@ mod tests {
             _ => panic!("Expected Initial message type"),
         };
 
-        let (mut bob_sess, _) =
-            Session::respond(&bob_id, &spk_secret, &bundle, &initial_msg).unwrap();
+        let (mut bob_sess, _) = Session::recv(&bob_id, &spk_secret, &bundle, &initial_msg).unwrap();
 
         // Alice sends 3 messages
         let msg1 = alice_sess
@@ -399,8 +396,8 @@ mod tests {
         let mut bob_sessions = Vec::new();
         for message in &alice_messages {
             if let Message::Initial(msg) = message {
-                let (session, _plaintext) = Session::respond(&bob_id, &spk_secret, &bundle, msg)
-                    .expect("Bob respond failed");
+                let (session, _plaintext) =
+                    Session::recv(&bob_id, &spk_secret, &bundle, msg).expect("Bob respond failed");
                 bob_sessions.push(session);
             }
         }
@@ -444,7 +441,7 @@ mod tests {
 
         // Initialize the bob session
         let (mut bob_sess, _) =
-            Session::respond(&bob_id, &spk_secret, &bundle, initial_message).unwrap();
+            Session::recv(&bob_id, &spk_secret, &bundle, initial_message).unwrap();
 
         // Do when you want to send that and the message can contain the data we want
         // Send a message in each direction to establish the ratchet
@@ -541,7 +538,7 @@ mod tests {
         }
 
         for (idx, init_msg) in init_msgs {
-            let (sess, _empty) = Session::respond(
+            let (sess, _empty) = Session::recv(
                 &bob_id,
                 &bob_spk_secrets[idx],
                 &bob_bundles[idx],
@@ -677,7 +674,7 @@ mod tests {
         // Leader creates sessions , at first unknown users
         let mut leader_sessions: Vec<Option<Session>> = (0..N_USERS).map(|_| None).collect();
         for (idx, init_msg) in init_msgs {
-            let (sess, _) = Session::respond(
+            let (sess, _) = Session::recv(
                 &leader_id,
                 &leader_spk_secrets[idx],
                 &leader_bundles[idx],
