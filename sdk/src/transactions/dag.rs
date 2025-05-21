@@ -156,8 +156,8 @@ pub fn create_default_value(
 
     // `value: NexusData`
     let value = match &default_value.value {
-        Data::Inline { data } => {
-            primitives::Data::nexus_data_from_json(tx, objects.primitives_pkg_id, data)?
+        Data::Inline { data, encrypted } => {
+            primitives::Data::nexus_data_from_json(tx, objects.primitives_pkg_id, data, *encrypted)?
         }
         // Allowing to remind us that any other data storages can be added here.
         #[allow(unreachable_patterns)]
@@ -198,6 +198,10 @@ pub fn create_edge(
     let from_port =
         workflow::Dag::output_port_from_str(tx, objects.workflow_pkg_id, &edge.from.output_port)?;
 
+    // `encrypted: bool`
+    // TODO: <https://github.com/Talus-Network/nexus-next/issues/297>
+    let _encrypted = tx.pure(edge.from.encrypted);
+
     // `to_vertex: Vertex`
     let to_vertex = workflow::Dag::vertex_from_str(tx, objects.workflow_pkg_id, &edge.to.vertex)?;
 
@@ -205,7 +209,7 @@ pub fn create_edge(
     let to_port =
         workflow::Dag::input_port_from_str(tx, objects.workflow_pkg_id, &edge.to.input_port)?;
 
-    // `dag.with_edge(frpm_vertex, from_variant, from_port, to_vertex, to_port)`
+    // `dag.with_edge(from_vertex, from_variant, from_port, to_vertex, to_port)`
     Ok(tx.programmable_move_call(
         objects.workflow_pkg_id,
         workflow::Dag::WITH_EDGE.module.into(),
@@ -216,6 +220,7 @@ pub fn create_edge(
             from_vertex,
             from_variant,
             from_port,
+            // encrypted,
             to_vertex,
             to_port,
         ],
@@ -283,6 +288,7 @@ pub fn execute(
     dag: &sui::ObjectRef,
     entry_group: &str,
     input_json: serde_json::Value,
+    encrypt: Vec<String>,
 ) -> anyhow::Result<sui::Argument> {
     // `self: &mut DefaultSAP`
     let default_sap = tx.obj(sui::ObjectArg::SharedObject {
@@ -362,12 +368,22 @@ pub fn execute(
         );
 
         for (port, value) in data {
+            // Whether the entry port is encrypted is determined by the
+            // `--encrypt` argument which accepts a list of `vertex.port`
+            // strings.
+            let encrypted = encrypt.iter().any(|e| e == &format!("{}.{}", vertex, port));
+
             // `port: InputPort`
             let port = workflow::Dag::input_port_from_str(tx, objects.workflow_pkg_id, port)?;
 
             // `value: NexusData`
-            let value =
-                primitives::Data::nexus_data_from_json(tx, objects.primitives_pkg_id, value)?;
+            // TODO: <https://github.com/Talus-Network/nexus-next/issues/300>
+            let value = primitives::Data::nexus_data_from_json(
+                tx,
+                objects.primitives_pkg_id,
+                value,
+                encrypted,
+            )?;
 
             // `with_vertex_input.insert(port, value)`
             tx.programmable_move_call(
@@ -504,6 +520,7 @@ mod tests {
             input_port: "port1".to_string(),
             value: Data::Inline {
                 data: serde_json::json!({"key": "value"}),
+                encrypted: false,
             },
         };
 
@@ -535,6 +552,7 @@ mod tests {
                 vertex: "vertex1".to_string(),
                 output_variant: "variant1".to_string(),
                 output_port: "port1".to_string(),
+                encrypted: false,
             },
             to: ToPort {
                 vertex: "vertex2".to_string(),
@@ -628,7 +646,15 @@ mod tests {
         });
 
         let mut tx = sui::ProgrammableTransactionBuilder::new();
-        execute(&mut tx, &nexus_objects, &dag, entry_group, input_json).unwrap();
+        execute(
+            &mut tx,
+            &nexus_objects,
+            &dag,
+            entry_group,
+            input_json,
+            vec![],
+        )
+        .unwrap();
         let tx = tx.finish();
 
         let sui::Command::MoveCall(call) = &tx.commands.last().unwrap() else {

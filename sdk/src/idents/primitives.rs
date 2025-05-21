@@ -34,15 +34,18 @@ impl Data {
         tx: &mut sui::ProgrammableTransactionBuilder,
         primitives_pkg_id: sui::ObjectID,
         json: &T,
+        encrypted: bool,
     ) -> anyhow::Result<sui::Argument> {
         let json = tx.pure(serde_json::to_string(json)?.into_bytes())?;
+        // TODO: <github.com/Talus-Network/nexus-next/issues/296>
+        let _encrypted = tx.pure(encrypted)?;
 
         Ok(tx.programmable_move_call(
             primitives_pkg_id,
             Self::INLINE_ONE.module.into(),
             Self::INLINE_ONE.name.into(),
             vec![],
-            vec![json],
+            vec![json /* , encrypted */],
         ))
     }
 }

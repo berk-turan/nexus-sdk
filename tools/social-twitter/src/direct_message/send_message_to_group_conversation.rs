@@ -5,7 +5,7 @@
 use {
     crate::{
         auth::TwitterAuth,
-        direct_message::models::{DmConversationResponse, MediaIdsBag, Message},
+        direct_message::models::{DmConversationResponse, Message},
         error::TwitterErrorKind,
         twitter_client::{TwitterClient, TWITTER_API_BASE},
     },

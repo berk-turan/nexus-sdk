@@ -38,12 +38,13 @@ A DAG JSON file consists of sections defining the graph's components:
 ```
 
 - The `name` must be unique within the DAG.
-{% hint style="success" %}
-The input ports of a tool are specified by the tool's output schema saved in the Nexus tool registry. Each input port must have exactly one of:
+  {% hint style="success" %}
+  The input ports of a tool are specified by the tool's output schema saved in the Nexus tool registry. Each input port must have exactly one of:
+
   1. An edge leading to it
   2. A default value
   3. Be part of `entry_ports`
-{% endhint %}
+     {% endhint %}
 
 - Add the input port as part of `entry_ports` only if it does not have an edge leading into it nor has a default value.
 
@@ -60,7 +61,8 @@ Edges define the flow of data between vertices, connecting an output port of a s
   "from": {
     "vertex": "source_vertex_name", // Name from the "vertices" list
     "output_variant": "ok", // e.g., ok, err, gt, lt, eq
-    "output_port": "output_port_name"
+    "output_port": "output_port_name",
+    "encrypted": true // Optional, default is false
   },
   "to": {
     "vertex": "target_vertex_name", // Name from the "vertices" list
@@ -71,6 +73,7 @@ Edges define the flow of data between vertices, connecting an output port of a s
 
 - The `source_vertex_name` and `target_vertex_name` refer to the `name` field of vertices defined in the `vertices` list.
 - The `target_input_port_name` must be a valid input port for the tool used by the `target_vertex_name`.
+- If the `encrypted` field is set to `true`, the data will be encrypted before being sent on-chain. This is useful for sensitive data that should not be exposed in plaintext.
 
 ## 4. Default Values
 
@@ -78,14 +81,17 @@ Default values provide static inputs to vertices:
 
 ```json
 {
-  "vertex": "vertex_name",  // References a name from the "vertices" list
+  "vertex": "vertex_name", // References a name from the "vertices" list
   "input_port": "port_name",
   "value": {
     "storage": "inline",
-    "data": value           // This is a JSON value
+    "data": value, // This is a JSON value
+    "encrypted": true // Optional, default is false
   }
 }
 ```
+
+- If the `encrypted` field is set to `true`, the data will be encrypted before being sent on-chain. This is useful for sensitive data that should not be exposed in plaintext.
 
 **Important Constraints:**
 
@@ -114,6 +120,7 @@ Being part of an entry group does not imply that all vertices in the group get e
 {% endhint %}
 
 Practically speaking, this means that you'll need to add all vertices to the entry group that either (non-exclusive):
+
 - will immediately start execution
 - need to be provided client input for entry ports
 
