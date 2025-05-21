@@ -93,14 +93,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - added `types` module and `tool_fqn` that holds some reusable types
 - added `events` module that holds definitions of Nexus events fired from Sui
 - added `sui` module that holds and categorizes all `sui_sdk` types
-
-#### Fixed
-
-- added implicit dependencies to `test_utils`
-
-
-### Added
 - Added `crypto` module
 - added `x3dh` in `crypto` that implements X3DH key-exchange protocol according to the Signal Specs.
 - added `double_ratchet` in `crypto` that implements Double Ratchet with header encryption.
 - added `session` in `crypto` that glues together X3DH + Double Ratchet for a complete e2d Secure Session Layer.
+
+#### Fixed
+
+- added implicit dependencies to `test_utils`
