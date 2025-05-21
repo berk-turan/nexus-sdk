@@ -209,7 +209,7 @@ pub fn create_edge(
     let to_port =
         workflow::Dag::input_port_from_str(tx, objects.workflow_pkg_id, &edge.to.input_port)?;
 
-    // `dag.with_edge(from_vertex, from_variant, from_port, to_vertex, to_port)`
+    // `dag.with_edge(from_vertex, from_variant, from_port, encrypted, to_vertex, to_port)`
     Ok(tx.programmable_move_call(
         objects.workflow_pkg_id,
         workflow::Dag::WITH_EDGE.module.into(),
