@@ -203,34 +203,39 @@ impl<'de> Deserialize<'de> for Header {
 /// allow the sender to work on a reply **before** the previous ciphertext has
 /// been delivered.
 pub struct RatchetStateHE {
-    // === DH ratchet keys ===
-    dhs: StaticSecret,      // own private
-    dhs_pub: PublicKey,     // own public
-    dhr: Option<PublicKey>, // remote public key
-
-    // === Root / chain / header keys ===
-    rk: [u8; 32],          // root key
-    cks: Option<[u8; 32]>, // chain key for *sending*
-    ckr: Option<[u8; 32]>, // chain key for *receiving*
-    hks: Option<[u8; 32]>, // header key for sending
-    hkr: Option<[u8; 32]>, // header key for receiving
-    // Next header keys after the *next* DH‑ratchet step.
-    nhks: [u8; 32], // next header key for sending
-    nhkr: [u8; 32], // next header key for receiving
-
-    // === Message counters ===
-    ns: u32, // number sent in current sending chain
-    nr: u32, // number received in current receiving chain
-    pn: u32, // length of *previous* sending chain
-
-    // === Skipped‑message lookup ===
-    /// Map keyed by `(header_key, n)` → *message key*, maintained while the state
-    /// is alive.  Should be flushed to storage or truncated periodically.
+    /// Own private key
+    dhs: StaticSecret,
+    /// Own public key
+    dhs_pub: PublicKey,
+    /// Remote public key
+    dhr: Option<PublicKey>,
+    /// Root key
+    rk: [u8; 32],
+    /// Chain key for *sending*
+    cks: Option<[u8; 32]>,
+    /// Chain key for *receiving*
+    ckr: Option<[u8; 32]>,
+    /// Header key for sending
+    hks: Option<[u8; 32]>,
+    /// Header key for receiving
+    hkr: Option<[u8; 32]>,
+    /// Next header key for sending
+    nhks: [u8; 32],
+    /// Next header key for receiving
+    nhkr: [u8; 32],
+    /// Number of messages sent in current sending chain
+    ns: u32,
+    /// Number of messages received in current receiving chain
+    nr: u32,
+    /// Length of *previous* sending chain
+    pn: u32,
+    /// Map keyed by `(header_key, n)` → message key, maintained while the state
+    /// is alive.
     mkskipped: HashMap<([u8; 32], u32), [u8; 32]>,
-
-    // === Nonce sequences ===
-    nonce_seq_msg: NonceSeq,    // payload encryption nonces
-    nonce_seq_header: NonceSeq, // header encryption nonces
+    /// Nonce sequence for payload encryption
+    nonce_seq_msg: NonceSeq,
+    /// Nonce sequence for header encryption
+    nonce_seq_header: NonceSeq,
 }
 
 // Scrub everything on drop.
