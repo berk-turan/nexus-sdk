@@ -224,6 +224,13 @@ mod tests {
     }
 
     #[test]
+    fn test_encrypted_port() {
+        let dag: Dag = serde_json::from_str(include_str!("_dags/encrypted_port.json")).unwrap();
+
+        assert!(dag.edges.first().unwrap().from.encrypted);
+    }
+
+    #[test]
     fn test_def_val_on_input_port_invalid() {
         let dag: Dag =
             serde_json::from_str(include_str!("_dags/has_def_on_input_invalid.json")).unwrap();

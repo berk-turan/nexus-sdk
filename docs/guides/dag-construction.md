@@ -88,12 +88,9 @@ Default values provide static inputs to vertices:
   "value": {
     "storage": "inline",
     "data": value, // This is a JSON value
-    "encrypted": true // Optional, default is false
   }
 }
 ```
-
-- If the `encrypted` field is set to `true`, the data will be encrypted before being sent on-chain. This is useful for sensitive data that should not be exposed in plaintext.
 
 **Important Constraints:**
 
