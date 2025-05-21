@@ -40,7 +40,7 @@ pub(crate) async fn register_tool(
             .map_err(NexusCliError::Http)?
             .json::<Vec<String>>()
             .await
-            .map_err(|e| NexusCliError::Http(e))?;
+            .map_err(NexusCliError::Http)?;
 
         response
             .iter()
@@ -204,6 +204,27 @@ pub(crate) async fn register_tool(
             "OwnerCap<OverGas> object ID: {id}",
             id = over_gas_id.to_string().truecolor(100, 100, 100)
         );
+
+        // Save the owner caps to the CLI conf.
+        let save_handle = loading!("Saving the owner caps to the CLI configuration...");
+
+        let mut conf = CliConf::load().await.unwrap_or_default();
+
+        conf.tools.insert(
+            meta.fqn.clone(),
+            ToolOwnerCaps {
+                over_tool: *over_tool_id,
+                over_gas: *over_gas_id,
+            },
+        );
+
+        if let Err(e) = conf.save().await {
+            save_handle.error();
+
+            return Err(NexusCliError::Any(e));
+        }
+
+        save_handle.success();
 
         registration_results.push(json!({
             "digest": response.digest,
