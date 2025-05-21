@@ -7,14 +7,17 @@
 //! ## Example
 //!
 //! ```no_run
-//! use crate::crypto::{Session, IdentityKey, PreKeyBundle};
+//! use nexus_sdk::crypto::session::{Session, Message};
+//! use nexus_sdk::crypto::x3dh::{IdentityKey, PreKeyBundle};
+//! use rand::rngs::OsRng;
 //! use x25519_dalek::StaticSecret;
 //!
-//! // === Setup identities & Bob’s bundle (omitted: signature generation) ===
+//! // === Setup identities & Bob's bundle (omitted: signature generation) ===
 //! let alice_id = IdentityKey::generate();
 //! let bob_id   = IdentityKey::generate();
-//! let spk_sec  = StaticSecret::random();
-//! let bundle   = PreKeyBundle::new(&bob_id, &spk_sec, /* … */);
+//! let spk_sec  = StaticSecret::random_from_rng(OsRng);
+//! let spk_id = 1; // Some ID for the signed pre-key
+//! let bundle   = PreKeyBundle::new(&bob_id, spk_id, &spk_sec, None, None);
 //!
 //! // === Alice initiates ===
 //! let (first_packet, mut alice_sess) =
@@ -135,7 +138,7 @@ pub struct Session {
     /// Local identity-DH public key (used for Associated-Data).
     local_identity: PublicKey,
 
-    /// Remote peer’s identity-DH public key.
+    /// Remote peer's identity-DH public key.
     remote_identity: PublicKey,
 }
 
@@ -178,8 +181,8 @@ impl Session {
     /// **Alice-side** entry point: perform an X3DH handshake, produce the first
     /// packet, and return a fully initialised [`Session`].
     ///
-    /// * `identity` — Alice’s long-term identity key‐pair.
-    /// * `bundle`   — Bob’s advertised pre-key bundle.
+    /// * `identity` — Alice's long-term identity key-pair.
+    /// * `bundle`   — Bob's advertised pre-key bundle.
     /// * `plaintext`— Optional application data to piggy-back on `Initial`.
     ///
     /// On success `(initial_packet, session)` is returned.  The caller should
@@ -189,7 +192,7 @@ impl Session {
         bundle: &PreKeyBundle,
         plaintext: &[u8],
     ) -> Result<(Message, Self), SessionError> {
-        // 1. Verify Bob’s Signed-Pre-Key.
+        // 1. Verify Bob's Signed-Pre-Key.
         if !bundle.verify_spk() {
             return Err(SessionError::InvalidState("Invalid SPK signature".into()));
         }
@@ -205,7 +208,7 @@ impl Session {
         hkdf.expand(b"header-encrypt-sending", &mut hks)?;
         hkdf.expand(b"header-encrypt-receiving", &mut hk_r)?;
 
-        // 4. Initialise Double-Ratchet in “Alice” role.
+        // 4. Initialise Double-Ratchet in "Alice" role.
         let mut ratchet = RatchetStateHE::new();
         let _ = ratchet.init_alice_he(&*sk, bundle.spk_pub, hks, hk_r);
 
@@ -249,7 +252,7 @@ impl Session {
         hkdf.expand(b"header-encrypt-sending", &mut k_s)?;
         hkdf.expand(b"header-encrypt-receiving", &mut k_r)?;
 
-        // 4. Initialise Double-Ratchet in “Bob” role.
+        // 4. Initialise Double-Ratchet in "Bob" role.
         let mut ratchet = RatchetStateHE::new();
         let bob_pub = PublicKey::from(spk_secret);
         let _ = ratchet.init_bob_he(&*sk, (spk_secret.clone(), bob_pub), k_s, k_r);

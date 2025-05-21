@@ -1,16 +1,17 @@
-//! Double Ratchet implementation with header encryption (HE)
+//! Double Ratchet implementation with header encryption (HE)
 //!
-//! This module follows the Signal Double Ratchet specification
+//! This module follows the Signal Double Ratchet specification
 //! <https://signal.org/docs/specifications/doubleratchet/> and extends it with the
-//! header‑encryption variant described in section 4 “Security considerations”.
+//! header‑encryption variant described in section 4 "Security considerations".
 //!
 //! # Example
 //!
 //! ```rust
+//! use nexus_sdk::crypto::double_ratchet::RatchetStateHE;
 //! use rand_core::OsRng;
 //! use x25519_dalek::StaticSecret;
 //!
-//! // 1⃣ Session setup (X3DH, QR‑code, pre‑keys …).  Out of scope here:
+//! // 1⃣ Session setup (X3DH, QR‑code, pre‑keys …).  Out of scope here:
 //! let alice_root_key = [0u8; 32];          // derived elsewhere …
 //! let bob_root_key   = alice_root_key;     // shared!
 //!
@@ -18,7 +19,7 @@
 //! let shared_hka  = [1u8; 32]; // Alice‑>Bob  (HK_sending for Alice)
 //! let shared_nhkb = [2u8; 32]; // Bob‑>Alice  (NHK_sending for Bob)
 //!
-//! // 2⃣ Instantiate ratchets on both sides.
+//! // 2⃣ Instantiate ratchets on both sides.
 //! let mut alice = RatchetStateHE::new();
 //! let mut bob   = RatchetStateHE::new();
 //!
@@ -28,11 +29,11 @@
 //! alice.init_alice_he(&alice_root_key, bob_kp.1, shared_hka, shared_nhkb).unwrap();
 //! bob.init_bob_he(&bob_root_key, bob_kp, shared_hka, shared_nhkb).unwrap();
 //!
-//! // 3⃣ Alice sends an encrypted message to Bob.
-//! let (hdr, msg) = alice.ratchet_encrypt_he(b"hello Bob!", b"assoc‑data").unwrap();
+//! // 3⃣ Alice sends an encrypted message to Bob.
+//! let (hdr, msg) = alice.ratchet_encrypt_he(b"hello Bob!", b"assoc-data").unwrap();
 //!
-//! // 4⃣ Bob receives and decrypts.
-//! let plaintext = bob.ratchet_decrypt_he(&hdr, &msg, b"assoc‑data").unwrap();
+//! // 4⃣ Bob receives and decrypts.
+//! let plaintext = bob.ratchet_decrypt_he(&hdr, &msg, b"assoc-data").unwrap();
 //! assert_eq!(plaintext, b"hello Bob!");
 //!
 //! // Bob replies … and so on.
@@ -71,7 +72,7 @@ const NONCE_LEN: usize = 16;
 
 // === Type aliases ===
 
-/// HKDF‑SHA‑256 as per RFC 5869.
+/// HKDF‑SHA‑256 as per RFC 5869.
 type HkdfSha256 = Hkdf<Sha256>;
 /// HMAC‑SHA‑256 wrapper from *universal‑hash*.
 type HmacSha256 = Hmac<Sha256>;
@@ -153,8 +154,8 @@ impl Zeroize for NonceSeq {
 /// Wire header accompanying every ciphertext (encrypted again with AES‑SIV).
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Header {
-    /// Ephemeral X25519 public key of the *sender* (step 0 or 2 of the DH‑ratchet
-    /// in Figure 1 of the spec).
+    /// Ephemeral X25519 public key of the *sender* (step 0 or 2 of the DH‑ratchet
+    /// in Figure 1 of the spec).
     pub dh: PublicKey,
     /// Length of the **previous** sending chain (`pn` in the paper).
     pub pn: u32,
@@ -188,7 +189,7 @@ impl<'de> Deserialize<'de> for Header {
 
 // === Ratchet state (HE) ===
 
-/// Core **state machine** implementing the *Double Ratchet* with header
+/// Core **state machine** implementing the *Double Ratchet* with header
 /// encryption.  One instance per party *per conversation*.
 ///
 /// You normally create an empty state via [`RatchetStateHE::new`], then call
@@ -222,7 +223,7 @@ pub struct RatchetStateHE {
     nr: u32, // number received in current receiving chain
     pn: u32, // length of *previous* sending chain
 
-    // === Skipped‑message lookup ===
+    // === Skipped‑message lookup ===
     /// Map keyed by `(header_key, n)` → *message key*, maintained while the state
     /// is alive.  Should be flushed to storage or truncated periodically.
     mkskipped: HashMap<([u8; 32], u32), [u8; 32]>,
@@ -389,10 +390,10 @@ impl RatchetStateHE {
 
     /// *Alice* side initialisation (first message sender).
     ///
-    /// * `sk` – shared 32‑byte *root key* from X3DH or other handshake.
-    /// * `bob_pub` – Bob's *long‑term* DH public key.
-    /// * `shared_hka` – first header key Alice **sends** with.
-    /// * `shared_nhkb` – header key Bob will use **after** his first DH‑ratchet.
+    /// * `sk` – shared 32‑byte *root key* from X3DH or other handshake.
+    /// * `bob_pub` – Bob's *long‑term* DH public key.
+    /// * `shared_hka` – first header key Alice **sends** with.
+    /// * `shared_nhkb` – header key Bob will use **after** his first DH‑ratchet.
     pub fn init_alice_he(
         &mut self,
         sk: &[u8; 32],
@@ -426,9 +427,9 @@ impl RatchetStateHE {
 
     /// *Bob* side initialisation (first message receiver).
     ///
-    /// * `sk` – same 32‑byte *root key* as Alice.
-    /// * `bob_kp` – Bob's long‑term X25519 key‑pair.
-    /// * `shared_hka` / `shared_nhkb` – same as for `init_alice_he` but swapped
+    /// * `sk` – same 32‑byte *root key* as Alice.
+    /// * `bob_kp` – Bob's long‑term X25519 key‑pair.
+    /// * `shared_hka` / `shared_nhkb` – same as for `init_alice_he` but swapped
     ///   direction.
     pub fn init_bob_he(
         &mut self,
@@ -473,7 +474,7 @@ impl RatchetStateHE {
         let (new_cks, mk) = Self::kdf_ck(&cks);
         self.cks = Some(new_cks);
 
-        // 1⃣ Build & encrypt header.
+        // 1⃣ Build & encrypt header.
         let header = Header {
             dh: self.dhs_pub,
             pn: self.pn,
@@ -484,7 +485,7 @@ impl RatchetStateHE {
         let hk = self.hks.clone().ok_or(RatchetError::MissingHeaderKey)?;
         let enc_header = self.hencrypt(&hk, &header_bytes)?;
 
-        // 2⃣ Encrypt payload where AAD = user AD || enc_header.
+        // 2⃣ Encrypt payload where AAD = user AD || enc_header.
         let mut full_ad = ad.to_vec();
         full_ad.extend_from_slice(&enc_header);
 
@@ -508,9 +509,9 @@ impl RatchetStateHE {
     /// Decrypt an incoming message.  Handles skipped‑message lookup and automatic
     /// DH‑ratchet advancement.
     ///
-    /// * `enc_header` – encrypted header as produced by the sender.
-    /// * `ciphertext` – encrypted payload (including nonce prefix).
-    /// * `ad` – caller‑supplied associated data.
+    /// * `enc_header` – encrypted header as produced by the sender.
+    /// * `ciphertext` – encrypted payload (including nonce prefix).
+    /// * `ad` – caller‑supplied associated data.
     pub fn ratchet_decrypt_he(
         &mut self,
         enc_header: &[u8],
@@ -640,7 +641,7 @@ impl RatchetStateHE {
         self.hks = Some(self.nhks.clone());
         self.hkr = Some(self.nhkr.clone());
 
-        // 1⃣ Receiving chain (dhs ‖ header.dh)
+        // 1⃣ Receiving chain (dhs ‖ header.dh)
         Self::validate_pk(&header.dh)?;
         self.dhr = Some(header.dh);
 
@@ -650,7 +651,7 @@ impl RatchetStateHE {
         self.ckr = Some(ck_r);
         self.nhkr = nhk_r;
 
-        // 2⃣ Generate *new* sending key‑pair and chain.
+        // 2⃣ Generate *new* sending key‑pair and chain.
         let (dhs_sk, dhs_pk) = Self::generate_dh();
         self.dhs = dhs_sk;
         self.dhs_pub = dhs_pk;
@@ -676,7 +677,7 @@ impl RatchetStateHE {
         mk
     }
 
-    // === Optional helpers for asynchronous senders ("static HE") ===
+    // === Optional helpers for asynchronous senders ("static HE") ===
 
     /// Derive `enc_header` and `ciphertext` **without** mutating the state.  The
     /// caller must ensure that the real call to

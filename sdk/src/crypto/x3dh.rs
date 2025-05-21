@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! # X3DH: Extended Triple Diffie‑Hellman key agreement
 //!
-//! This module implements the X3DH protocol as described in Signal’s public
+//! This module implements the X3DH protocol as described in Signal's public
 //! specification. X3DH enables two parties to establish a shared secret even
 //! when one party (typically Bob) is offline.  The resulting secret can be
 //! used as the root key for a Double‑Ratchet or any other post‑handshake
@@ -22,38 +22,30 @@
 //!                                     └─► (3) bob_receive() ════┘
 //! ```
 //!
-//! After step (3) both parties possess the same 32‑byte [`SharedSecret`].
+//! After step (3) both parties possess the same 32‑byte [`SharedSecret`].
 //!
 //! ## Example
 //!
 //! ```
-//! use x3dh::*;
+//! use nexus_sdk::crypto::x3dh::{IdentityKey, PreKeyBundle, alice_init, bob_receive};
+//! use x25519_dalek::StaticSecret;
+//! use rand::rngs::OsRng;
+//!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // 1. Long‑term identity keys
 //! let alice_id = IdentityKey::generate();
-//! let bob_id   = IdentityKey::generate();
+//! let bob_id = IdentityKey::generate();
 //!
-//! // 2. Bob publishes one bundle containing a Signed Pre‑Key (SPK)
-//! //    and a single One‑Time Pre‑Key (OTPK).
-//! let mut next_spk_id = 1;
-//! let mut next_otpk_id = 1;
-//! let bundles = bob_generate_many_prekey_bundles(&bob_id, 1,
-//!                     &mut next_spk_id, &mut next_otpk_id, 1);
-//! let bundle_ws = &bundles[0];
-//! let bundle    = &bundle_ws.bundle;
+//! // 2. Bob generates a pre-key bundle with a Signed Pre-Key
+//! let spk_id = 1;
+//! let spk_secret = StaticSecret::random_from_rng(OsRng);
+//! let bundle = PreKeyBundle::new(&bob_id, spk_id, &spk_secret, None, None);
 //!
 //! // 3. Alice encrypts her greeting.
-//! let (msg, alice_sk) = alice_init(&alice_id, bundle, b"hello, Bob!")?;
+//! let (msg, alice_sk) = alice_init(&alice_id, &bundle, b"hello, Bob!")?;
 //!
 //! // 4. Bob decrypts.
-//! let otpk_secret = bundle_ws.otpk_secrets
-//!     .first()
-//!     .map(|(id, sk)| (sk, *id));
-//! let (plain, bob_sk) = bob_receive(&bob_id,
-//!     &bundle_ws.spk_secret,
-//!     bundle.spk_id,
-//!     otpk_secret,
-//!     &msg)?;
+//! let (plain, bob_sk) = bob_receive(&bob_id, &spk_secret, spk_id, None, &msg)?;
 //!
 //! assert_eq!(plain, b"hello, Bob!");
 //! assert_eq!(&*alice_sk, &*bob_sk); // handshake success
@@ -81,9 +73,9 @@ use {
 
 /// Curve identifier for `Encode(PK)` (see section 2.5 of the X3DH spec).
 const CURVE_ID_X25519: u8 = 0x05;
-/// Maximum ciphertext length accepted in a pre‑key message (**16 KiB**).
+/// Maximum ciphertext length accepted in a pre‑key message (**16 KiB**).
 const MAX_PREKEY_MSG: usize = 16 * 1024;
-/// Default string fed into HKDF’s `info` field. Override at call‑site to
+/// Default string fed into HKDF's `info` field. Override at call‑site to
 /// achieve domain separation.
 const HKDF_INFO: &[u8] = b"X3DH";
 
@@ -107,13 +99,13 @@ pub enum X3dhError {
     /// Bob attempted to decrypt a message that references an OTPK he no longer possesses.
     #[error("OTPK secret missing – refuse to process one‑time pre‑key message")]
     MissingOneTimeSecret,
-    /// The SPK identifier in the message does not match Bob’s current SPK.
+    /// The SPK identifier in the message does not match Bob's current SPK.
     #[error("signed pre‑key id mismatch")]
     SpkIdMismatch,
     /// The OTPK identifier in the message does not match the supplied OTPK secret.
     #[error("one‑time pre‑key id mismatch")]
     OtpkIdMismatch,
-    /// Bob’s X25519 and XEdDSA public keys are not the Edwards–Montgomery map of each other.
+    /// Bob's X25519 and XEdDSA public keys are not the Edwards–Montgomery map of each other.
     #[error("identity DH and Ed keys do not match")]
     IdentityKeyMismatch,
     /// Internal HKDF error (should be unreachable under sane parameters).
@@ -228,7 +220,7 @@ impl IdentityKey {
 ///
 /// The bundle contains:
 /// * the *Signed Pre‑Key* (SPK) plus its identifier and XEdDSA signature,
-/// * Bob’s long‑term *Identity Key* (`IK_B`),
+/// * Bob's long‑term *Identity Key* (`IK_B`),
 /// * **optionally** one *One‑Time Pre‑Key* (OTPK).
 pub struct PreKeyBundle {
     /// Identifier of the signed pre‑key.
@@ -239,7 +231,7 @@ pub struct PreKeyBundle {
     pub spk_sig: [u8; 64],
     /// Raw bytes of `Ed25519(IK_B)`.
     pub identity_verify_bytes: [u8; 32],
-    /// DH form of Bob’s identity key.
+    /// DH form of Bob's identity key.
     pub identity_pk: X25519PublicKey,
     /// Identifier of the accompanying OTPK (if any).
     pub otpk_id: Option<u32>,
@@ -353,10 +345,10 @@ pub mod x25519_serde {
 /// First message sent by Alice (aka pre‑key message).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InitialMessage {
-    /// Alice’s **I**dentity **K**ey (DH form).
+    /// Alice's **I**dentity **K**ey (DH form).
     #[serde(with = "x25519_serde")]
     pub ika_pub: X25519PublicKey,
-    /// Alice’s ephemeral X25519 public key.
+    /// Alice's ephemeral X25519 public key.
     #[serde(with = "x25519_serde")]
     pub ek_pub: X25519PublicKey,
     /// Referenced SPK identifier.
@@ -568,7 +560,7 @@ pub struct PreKeyBundleWithSecrets {
     /// The bundle that must be posted to the key server.
     #[zeroize(skip)]
     pub bundle: PreKeyBundle,
-    /// Bob’s SPK secret (only one at a time).
+    /// Bob's SPK secret (only one at a time).
     spk_secret: StaticSecret,
     /// Queue of unused OTPK secrets.
     otpk_secrets: Vec<(u32, StaticSecret)>,
