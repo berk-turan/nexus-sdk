@@ -1,9 +1,64 @@
-//! Extended Triple Diffie-Hellman (X3DH) Implementation
-//!
-//! Follows the specs from https://signal.org/docs/specifications/x3dh/#the-x3dh-protocol
-// The variable names are taken from the specs
-
 #![forbid(unsafe_code)]
+//! # X3DH: Extended Triple Diffie‑Hellman key agreement
+//!
+//! This module implements the X3DH protocol as described in Signal’s public
+//! specification. X3DH enables two parties to establish a shared secret even
+//! when one party (typically Bob) is offline.  The resulting secret can be
+//! used as the root key for a Double‑Ratchet or any other post‑handshake
+//! encryption scheme.
+//!
+//! ## High‑level flow
+//!
+//! ```text
+//! Alice                              Bob (offline)
+//! ───────────────────────────────────────────────────────────
+//! Generate IdentityKey               Generate IdentityKey
+//!                                     │
+//!                                     ├─► Publish PreKeyBundle ──┐
+//! ┌─(1) download bundle ◄─────────────┘                         │
+//! │                                                           (server)
+//! │  (2) alice_init()                                           │
+//! ├─► InitialMessage ───────────────────────────────────────────┤
+//!                                     └─► (3) bob_receive() ════┘
+//! ```
+//!
+//! After step (3) both parties possess the same 32‑byte [`SharedSecret`].
+//!
+//! ## Example
+//!
+//! ```
+//! use x3dh::*;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // 1. Long‑term identity keys
+//! let alice_id = IdentityKey::generate();
+//! let bob_id   = IdentityKey::generate();
+//!
+//! // 2. Bob publishes one bundle containing a Signed Pre‑Key (SPK)
+//! //    and a single One‑Time Pre‑Key (OTPK).
+//! let mut next_spk_id = 1;
+//! let mut next_otpk_id = 1;
+//! let bundles = bob_generate_many_prekey_bundles(&bob_id, 1,
+//!                     &mut next_spk_id, &mut next_otpk_id, 1);
+//! let bundle_ws = &bundles[0];
+//! let bundle    = &bundle_ws.bundle;
+//!
+//! // 3. Alice encrypts her greeting.
+//! let (msg, alice_sk) = alice_init(&alice_id, bundle, b"hello, Bob!")?;
+//!
+//! // 4. Bob decrypts.
+//! let otpk_secret = bundle_ws.otpk_secrets
+//!     .first()
+//!     .map(|(id, sk)| (sk, *id));
+//! let (plain, bob_sk) = bob_receive(&bob_id,
+//!     &bundle_ws.spk_secret,
+//!     bundle.spk_id,
+//!     otpk_secret,
+//!     &msg)?;
+//!
+//! assert_eq!(plain, b"hello, Bob!");
+//! assert_eq!(&*alice_sk, &*bob_sk); // handshake success
+//! # Ok(()) }
+//! ```
 
 use subtle::ConstantTimeEq; // Constant‑time comparison
 use {
@@ -24,35 +79,50 @@ use {
     zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing},
 };
 
-/// Curve identifier for `Encode(PK)`, taken from `signal.org/docs/specifications/x3dh/#the-x3dh-protocol` 2.5
+/// Curve identifier for `Encode(PK)` (see section 2.5 of the X3DH spec).
 const CURVE_ID_X25519: u8 = 0x05;
-/// Maximum ciphertext length accepted in a pre‑key message (16 KiB)
+/// Maximum ciphertext length accepted in a pre‑key message (**16 KiB**).
 const MAX_PREKEY_MSG: usize = 16 * 1024;
-/// Default HKDF --info-- label (can be overridden at call‑site)
+/// Default string fed into HKDF’s `info` field. Override at call‑site to
+/// achieve domain separation.
 const HKDF_INFO: &[u8] = b"X3DH";
 
-/// Shared secret that automatically zeroises its bytes on drop
+/// Shared secret produced by X3DH.
+///
+/// The `Zeroizing` wrapper guarantees that the 32‑byte buffer is wiped from
+/// memory when dropped, preventing accidental key leakage.
 pub type SharedSecret = Zeroizing<[u8; 32]>;
 
-// Error types
+// === Error handling ===
+
+/// Enumeration of all errors that may arise when running X3DH.
 #[derive(Debug, Error)]
 pub enum X3dhError {
+    /// Signature verification of the signed pre‑key (SPK) failed.
     #[error("signature verification failed")]
     SigVerifyFailed,
+    /// Authenticated decryption failed (ciphertext corrupt or wrong key).
     #[error("decryption failed")]
     DecryptFailed,
+    /// Bob attempted to decrypt a message that references an OTPK he no longer possesses.
     #[error("OTPK secret missing – refuse to process one‑time pre‑key message")]
     MissingOneTimeSecret,
+    /// The SPK identifier in the message does not match Bob’s current SPK.
     #[error("signed pre‑key id mismatch")]
     SpkIdMismatch,
+    /// The OTPK identifier in the message does not match the supplied OTPK secret.
     #[error("one‑time pre‑key id mismatch")]
     OtpkIdMismatch,
+    /// Bob’s X25519 and XEdDSA public keys are not the Edwards–Montgomery map of each other.
     #[error("identity DH and Ed keys do not match")]
     IdentityKeyMismatch,
+    /// Internal HKDF error (should be unreachable under sane parameters).
     #[error("HKDF output length is wrong")]
     HkdfInvalidLength,
+    /// Authenticated encryption error (should be unreachable).
     #[error("AEAD error")]
     Aead,
+    /// Ciphertext length exceeded [`MAX_PREKEY_MSG`].
     #[error("ciphertext too large")]
     CiphertextTooLarge,
 }
@@ -63,11 +133,13 @@ impl From<hkdf::InvalidLength> for X3dhError {
     }
 }
 
-// Helper utilities
+// === Helper utilities ===
 
-/// Extension trait for `XEdPublic` – convenient byte conversion
+/// Convenience methods for [`XEdPublic`].
 trait XEdPublicExt {
+    /// Return the public key as a `[u8; 32]` reference.
     fn as_bytes(&self) -> &[u8; 32];
+    /// Create a new public key from raw bytes.
     fn from_bytes(bytes: [u8; 32]) -> Self;
 }
 
@@ -81,7 +153,8 @@ impl XEdPublicExt for XEdPublic {
     }
 }
 
-/// Encode a Curve25519 public key as `curve_id || u_coordinate` (33 bytes), from the specs
+/// Encode a Curve25519 public key as `curve_id || u_coordinate` (33 bytes).
+#[inline]
 fn encode_pk(pk: &X25519PublicKey) -> [u8; 33] {
     let mut out = [0u8; 33];
     out[0] = CURVE_ID_X25519;
@@ -89,15 +162,21 @@ fn encode_pk(pk: &X25519PublicKey) -> [u8; 33] {
     out
 }
 
-/// HKDF wrapper with domain‑separator (0xFF×32) – returns a `SharedSecret`
+/// HKDF wrapper (SHA‑256) with a 32×`0xff` domain separator.
+///
+/// * `dhs` – list of raw Diffie‑Hellman outputs (`dh1..dh4`).
+/// * `info` – application‑specific label (defaults to [`HKDF_INFO`]).
+///
+/// Returns a [`SharedSecret`] that is securely zeroised on drop.
 fn kdf(dhs: &[&[u8]], info: &[u8]) -> Result<SharedSecret, X3dhError> {
     let mut ikm = Vec::with_capacity(32 + 32 * dhs.len());
+    // Domain separator – mitigates cross‑protocol attacks.
     ikm.extend([0xffu8; 32]);
     for dh in dhs {
         ikm.extend_from_slice(dh);
     }
 
-    // 32‑byte zero salt, from the specs
+    // 32‑byte zero salt (per spec §3.2)
     let salt = [0u8; 32];
     let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
     let mut okm = [0u8; 32];
@@ -107,24 +186,33 @@ fn kdf(dhs: &[&[u8]], info: &[u8]) -> Result<SharedSecret, X3dhError> {
     Ok(Zeroizing::new(okm))
 }
 
-// Identity keys (DH + XEdDSA for signing)
+// === Long‑term identity keys ===
+
+/// Combined Diffie‑Hellman and XEdDSA identity key pair.
+///
+/// A single 32‑byte secret scalar serves double purpose – it is interpreted in
+/// Montgomery form for X25519 and in Edwards form for XEdDSA.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct IdentityKey {
-    secret: StaticSecret, // The secret key
+    /// 32‑byte X25519 secret.
+    secret: StaticSecret,
+    /// Corresponding Montgomery public key.
     #[zeroize(skip)]
-    pub dh_public: X25519PublicKey, // The public key for Diffie-Hellman
-    signing: XEdPrivate,  // The private key for signing
+    pub dh_public: X25519PublicKey,
+    /// Edwards private key for signatures.
+    signing: XEdPrivate,
+    /// Edwards public key for verification.
     #[zeroize(skip)]
-    pub verify: XEdPublic, // The public key for verification
+    pub verify: XEdPublic,
 }
 
 impl IdentityKey {
+    /// Generate a fresh identity key pair.
     pub fn generate() -> Self {
-        let secret = StaticSecret::random_from_rng(&mut OsRng); // The secret key
-        let dh_public = X25519PublicKey::from(&secret); // The public key for Diffie-Hellman
-                                                        // Conveniently, XEdDSA keys use the same DH public key for signing and verification
-        let signing = XEdPrivate::from(&secret); // The private key for signing
-        let verify = XEdPublic::from(&dh_public); // The public key for verification
+        let secret = StaticSecret::random_from_rng(&mut OsRng);
+        let dh_public = X25519PublicKey::from(&secret);
+        let signing = XEdPrivate::from(&secret);
+        let verify = XEdPublic::from(&dh_public);
         Self {
             secret,
             dh_public,
@@ -134,19 +222,33 @@ impl IdentityKey {
     }
 }
 
-// Bob's published pre‑key bundle
+// === Pre‑Key material (Bob‑side) ===
+
+/// Public bundle uploaded by Bob
+///
+/// The bundle contains:
+/// * the *Signed Pre‑Key* (SPK) plus its identifier and XEdDSA signature,
+/// * Bob’s long‑term *Identity Key* (`IK_B`),
+/// * **optionally** one *One‑Time Pre‑Key* (OTPK).
 pub struct PreKeyBundle {
-    pub spk_id: u32,                       // The id of the signed pre-key
-    pub spk_pub: X25519PublicKey,          // The public key of the signed pre-key
-    pub spk_sig: [u8; 64],                 // The signature of the signed pre-key
-    pub identity_verify_bytes: [u8; 32],   // The verification bytes of the identity key
-    pub identity_pk: X25519PublicKey,      // The public key of the identity key
-    pub otpk_id: Option<u32>, /* The id of the one-time pre-key, used to identify the one-time pre-key */
-    pub otpk_pub: Option<X25519PublicKey>, // The public key of the one-time pre-key
+    /// Identifier of the signed pre‑key.
+    pub spk_id: u32,
+    /// SPK public key.
+    pub spk_pub: X25519PublicKey,
+    /// XEdDSA signature over `Encode(spk_pub)`.
+    pub spk_sig: [u8; 64],
+    /// Raw bytes of `Ed25519(IK_B)`.
+    pub identity_verify_bytes: [u8; 32],
+    /// DH form of Bob’s identity key.
+    pub identity_pk: X25519PublicKey,
+    /// Identifier of the accompanying OTPK (if any).
+    pub otpk_id: Option<u32>,
+    /// OTPK public key.
+    pub otpk_pub: Option<X25519PublicKey>,
 }
 
 impl PreKeyBundle {
-    /// Build a bundle from Bob's identity key plus freshly generated SPK/OTPK.
+    /// Assemble a bundle from an *Identity Key* and freshly generated SPK/OTPK.
     pub fn new(
         identity: &IdentityKey,
         spk_id: u32,
@@ -154,14 +256,10 @@ impl PreKeyBundle {
         otpk_id: Option<u32>,
         otpk_secret: Option<&StaticSecret>,
     ) -> Self {
-        // The public key of the signed pre-key
         let spk_pub = X25519PublicKey::from(spk_secret);
-        // Sign Encode(SPK) with XEdDSA, from the specs
+        // Signature proves possession of IK_B
         let spk_sig = identity.signing.sign(&encode_pk(&spk_pub), &mut OsRng);
-
-        // The verification bytes of the identity key
         let identity_verify_bytes = *identity.verify.as_bytes();
-
         Self {
             spk_id,
             spk_pub,
@@ -169,16 +267,16 @@ impl PreKeyBundle {
             identity_verify_bytes,
             identity_pk: identity.dh_public,
             otpk_id,
-            otpk_pub: otpk_secret.map(X25519PublicKey::from), /* The public key of the one-time pre-key */
+            otpk_pub: otpk_secret.map(X25519PublicKey::from),
         }
     }
 
-    /// Verify the SPK signature
+    /// Verify `spk_sig` ⁠and⁠ the Montgomery⇄Edwards mapping for `IK_B`.
     pub fn verify_spk(&self) -> bool {
         let spk_bytes = encode_pk(&self.spk_pub);
         let identity_verify = self.get_identity_verify();
 
-        // Ensure DH‑to‑Ed mapping is intact
+        // Check that `Ed(IK_B)` == Edwards map of `Mont(IK_B)`.
         let expected_verify = XEdPublic::from(&self.identity_pk);
         if identity_verify
             .as_bytes()
@@ -188,17 +286,20 @@ impl PreKeyBundle {
         {
             return false;
         }
-
-        // Verify signature
         identity_verify.verify(&spk_bytes, &self.spk_sig).is_ok()
     }
 
+    /// Helper: return XEdDSA public key.
     fn get_identity_verify(&self) -> XEdPublic {
         XEdPublic::from_bytes(self.identity_verify_bytes)
     }
 }
 
-// Serde helper for X25519 public keys
+// === Serde helpers ===
+
+/// Serde (de)serialisation for `x25519_dalek::PublicKey`.
+///
+/// Serialises as a raw 32‑byte string.
 pub mod x25519_serde {
     use {
         super::X25519PublicKey,
@@ -247,22 +348,42 @@ pub mod x25519_serde {
     }
 }
 
-// Initial pre‑key message
+// === Network message ===
+
+/// First message sent by Alice (aka pre‑key message).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InitialMessage {
-    // Header (unencrypted)
+    /// Alice’s **I**dentity **K**ey (DH form).
     #[serde(with = "x25519_serde")]
-    pub ika_pub: X25519PublicKey, // The public key of the identity key (the DH public key)
+    pub ika_pub: X25519PublicKey,
+    /// Alice’s ephemeral X25519 public key.
     #[serde(with = "x25519_serde")]
-    pub ek_pub: X25519PublicKey, // The public key of the ephemeral key (the DH public key)
-    pub spk_id: u32,          // The id of the signed pre-key
-    pub otpk_id: Option<u32>, // The id of the one-time pre-key
-    pub nonce: [u8; 24],      // A random nonce
-    // Ciphertext
-    pub ciphertext: Vec<u8>, // The encrypted message
+    pub ek_pub: X25519PublicKey,
+    /// Referenced SPK identifier.
+    pub spk_id: u32,
+    /// Referenced OTPK identifier (if any).
+    pub otpk_id: Option<u32>,
+    /// XChaCha20‑Poly1305 nonce.
+    pub nonce: [u8; 24],
+    /// Ciphertext of the application payload.
+    pub ciphertext: Vec<u8>,
 }
 
-// Alice side
+// === Alice‑side ===
+
+/// Build an [`InitialMessage`] and derive the shared secret.
+///
+/// This corresponds to section 3.1–3.4 in the X3DH specification.
+///
+/// # Errors
+/// * [`X3dhError::SigVerifyFailed`] – SPK signature invalid.
+/// * [`X3dhError::IdentityKeyMismatch`] – `Ed(IK_B)` ≠ map(`IK_B`).
+/// * [`X3dhError::HkdfInvalidLength`] – HKDF failure.
+/// * [`X3dhError::Aead`] – Encryption failure.
+///
+/// # Example
+/// See the *Quick start* section in the crate‑level docs.
+#[allow(clippy::too_many_arguments)]
 pub fn alice_init(
     alice: &IdentityKey,
     bundle: &PreKeyBundle,
@@ -272,7 +393,6 @@ pub fn alice_init(
     let spk_bytes = encode_pk(&bundle.spk_pub);
     let identity_verify = bundle.get_identity_verify();
 
-    // Ensure DH‑to‑Ed mapping is intact
     let expected_verify = XEdPublic::from(&bundle.identity_pk);
     if identity_verify
         .as_bytes()
@@ -304,21 +424,22 @@ pub fn alice_init(
     if let Some(ref d4) = dh4_opt {
         dh_slices.push(d4.as_slice());
     }
-    let sk = kdf(&dh_slices, HKDF_INFO)?; // Derive the shared secret
+    let sk = kdf(&dh_slices, HKDF_INFO)?;
 
-    dh1.zeroize(); // Zeroise the DH values
-    dh2.zeroize(); // Zeroise the DH values
-    dh3.zeroize(); // Zeroise the DH values
+    // Zeroise temporary DH values
+    dh1.zeroize();
+    dh2.zeroize();
+    dh3.zeroize();
     if let Some(ref mut d4) = dh4_opt {
         d4.zeroize();
-    } // Zeroise the DH values
+    }
 
-    // 4. Associated data
+    // 4. Associated data: IK_A || IK_B
     let mut ad = Vec::with_capacity(66);
     ad.extend_from_slice(&encode_pk(&alice.dh_public));
     ad.extend_from_slice(&encode_pk(&bundle.identity_pk));
 
-    // 5. Encrypt
+    // 5. Encrypt application payload
     let cipher = XChaCha20Poly1305::new((&*sk).into());
     let mut nonce = [0u8; 24];
     OsRng.fill_bytes(&mut nonce);
@@ -341,11 +462,25 @@ pub fn alice_init(
         ciphertext,
     };
 
-    // 6. Return the message and the shared secret (zeroises on drop)
-    Ok((message, sk)) // The shared secret can be used for post-X3DH encryption
+    Ok((message, sk))
 }
 
-// Bob side
+// === Bob‑side ===
+
+/// Decrypt an [`InitialMessage`] received from Alice.
+///
+/// Returns the plaintext together with the derived [`SharedSecret`].
+///
+/// # Errors
+/// * [`X3dhError::SpkIdMismatch`]
+/// * [`X3dhError::MissingOneTimeSecret`]
+/// * [`X3dhError::OtpkIdMismatch`]
+/// * [`X3dhError::CiphertextTooLarge`]
+/// * [`X3dhError::DecryptFailed`]
+///
+/// # Example
+/// Refer to the crate‑level *Quick start*.
+#[allow(clippy::too_many_arguments)]
 pub fn bob_receive(
     bob_id: &IdentityKey,
     spk_secret: &StaticSecret,
@@ -364,10 +499,10 @@ pub fn bob_receive(
         return Err(X3dhError::SpkIdMismatch);
     }
 
-    // 1. OTPK book‑keeping / checks
+    // 1. OTPK bookkeeping
     match (msg.otpk_id, otpk_secret) {
-        (None, None) => {}                                              // No OTPKs
-        (Some(_), None) => return Err(X3dhError::MissingOneTimeSecret), // Missing OTPK secret
+        (None, None) => {}
+        (Some(_), None) => return Err(X3dhError::MissingOneTimeSecret),
         (Some(msg_id), Some((_, stored_id)))
             if msg_id
                 .to_be_bytes()
@@ -375,12 +510,12 @@ pub fn bob_receive(
                 .unwrap_u8()
                 == 0 =>
         {
-            return Err(X3dhError::OtpkIdMismatch); // OTPK id mismatch
+            return Err(X3dhError::OtpkIdMismatch);
         }
-        _ => {} // Should never happen
+        _ => {}
     }
 
-    // 2. Compute DH values, do the same as Alice
+    // 2. DH computations
     let mut dh1 = spk_secret.diffie_hellman(&msg.ika_pub).to_bytes();
     let mut dh2 = bob_id.secret.diffie_hellman(&msg.ek_pub).to_bytes();
     let mut dh3 = spk_secret.diffie_hellman(&msg.ek_pub).to_bytes();
@@ -390,21 +525,21 @@ pub fn bob_receive(
     if let Some(ref d4) = dh4_opt {
         dh_slices.push(d4.as_slice());
     }
-    let sk = kdf(&dh_slices, HKDF_INFO)?; // Derive the shared secret
+    let sk = kdf(&dh_slices, HKDF_INFO)?;
 
-    dh1.zeroize(); // Zeroise the DH values
-    dh2.zeroize(); // Zeroise the DH values
-    dh3.zeroize(); // Zeroise the DH values
+    dh1.zeroize();
+    dh2.zeroize();
+    dh3.zeroize();
     if let Some(ref mut d4) = dh4_opt {
         d4.zeroize();
-    } // Zeroise the DH values
+    }
 
-    // 3. Associated data, do the same as Alice
+    // 3. Associated data (IK_A || IK_B)
     let mut ad = Vec::with_capacity(66);
     ad.extend_from_slice(&encode_pk(&msg.ika_pub));
     ad.extend_from_slice(&encode_pk(&bob_id.dh_public));
 
-    // 4. Defensive length check
+    // 4. Size check
     if msg.ciphertext.len() > MAX_PREKEY_MSG {
         return Err(X3dhError::CiphertextTooLarge);
     }
@@ -421,20 +556,29 @@ pub fn bob_receive(
         )
         .map_err(|_| X3dhError::DecryptFailed)?;
 
-    // 6. Return the plaintext and the shared secret (zeroises on drop)
-    Ok((plaintext, sk)) // The shared secret can be used for post-X3DH encryption, it is the same as the one used by Alice
+    Ok((plaintext, sk))
 }
 
-// Helpers for Bob to generate pre‑key material
+// === Bob helpers ===
 
+/// Container that pairs a publicly published [`PreKeyBundle`] with the
+/// secrets that Bob keeps in local storage.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PreKeyBundleWithSecrets {
+    /// The bundle that must be posted to the key server.
     #[zeroize(skip)]
     pub bundle: PreKeyBundle,
+    /// Bob’s SPK secret (only one at a time).
     spk_secret: StaticSecret,
+    /// Queue of unused OTPK secrets.
     otpk_secrets: Vec<(u32, StaticSecret)>,
 }
 
+/// Generate a fresh [`PreKeyBundle`] together with the matching secrets.
+///
+/// * `spk_id` – monotonically increasing identifier managed by the caller.
+/// * `next_otpk_id` – mutable counter for OTPK ids.
+/// * `n_otpks` – how many OTPKs to attach (0‑`n`).
 pub fn bob_generate_prekey_bundle(
     identity: &IdentityKey,
     spk_id: u32,
@@ -443,7 +587,6 @@ pub fn bob_generate_prekey_bundle(
 ) -> PreKeyBundleWithSecrets {
     let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
 
-    // Generate OTPKs
     let mut otpk_secrets = Vec::with_capacity(n_otpks);
     for _ in 0..n_otpks {
         let id = *next_otpk_id;
@@ -472,6 +615,7 @@ pub fn bob_generate_prekey_bundle(
     }
 }
 
+/// Convenience helper: create many bundles in one go (useful for batch upload).
 pub fn bob_generate_many_prekey_bundles(
     identity: &IdentityKey,
     count: usize,

@@ -1,4 +1,45 @@
-// Session module for end2end encryption
+//! # Session Module ­— X3DH + Double-Ratchet (Header-Encrypted)
+//!
+//! This module glues together the X3DH key-agreement protocol and a
+//! header-encrypted variant of the Double-Ratchet algorithm to give a
+//! complete end-to-end encrypted session layer.
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use crate::crypto::{Session, IdentityKey, PreKeyBundle};
+//! use x25519_dalek::StaticSecret;
+//!
+//! // === Setup identities & Bob’s bundle (omitted: signature generation) ===
+//! let alice_id = IdentityKey::generate();
+//! let bob_id   = IdentityKey::generate();
+//! let spk_sec  = StaticSecret::random();
+//! let bundle   = PreKeyBundle::new(&bob_id, &spk_sec, /* … */);
+//!
+//! // === Alice initiates ===
+//! let (first_packet, mut alice_sess) =
+//!     Session::initiate(&alice_id, &bundle, b"Hi Bob!")?;
+//!
+//! // Transmit `first_packet` over the network …
+//!
+//! // === Bob receives ===
+//! let (mut bob_sess, plaintext) = Session::recv(
+//!     &bob_id,
+//!     &spk_sec,
+//!     &bundle,
+//!     match &first_packet {
+//!         Message::Initial(m) => m,
+//!         _ => unreachable!("Alice always starts with Initial"),
+//!     },
+//! )?;
+//! assert_eq!(plaintext, b"Hi Bob!");
+//!
+//! // === Encrypted conversation ===
+//! let to_alice = bob_sess.encrypt(b"Hello, Alice!")?;
+//! let reply    = alice_sess.decrypt(&to_alice)?;
+//! assert_eq!(reply, b"Hello, Alice!");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 use {
     super::{
@@ -16,20 +57,34 @@ use {
 /// Protocol version
 const PROTOCOL_VERSION: u8 = 1;
 
-/// Domain‑separation salt
+/// Domain-separation salt for HKDF.
+///
+/// Ties the derived keys to this specific construction (`X3DH-DR-v1`) and date
+/// of last incompatible change (2025-05-20).  Updating the salt *does not*
+/// break existing sessions; it simply ensures new sessions derive keys in a
+/// distinct domain.
 const HKDF_SALT: [u8; 32] = *b"X3DH-DR-v1-2025-05-20-----------";
 
-/// Errors that can occur during session setup or messaging.
+/// Errors that can arise during session establishment or normal messaging.
 #[derive(Debug, Error)]
 pub enum SessionError {
+    /// Propagated X3DH-handshake failure.
     #[error("X3DH error: {0}")]
     X3DH(#[from] X3dhError),
+
+    /// HKDF key-derivation failure (should only occur on length mismatch).
     #[error("HKDF error")]
     HKDF,
+
+    /// Authenticated-decryption failure (bad MAC / corrupt data).
     #[error("Decryption failed")]
     DecryptionFailed,
+
+    /// Any attempt to use a session in an impossible state.
     #[error("Session state error: {0}")]
     InvalidState(String),
+
+    /// Message claims an unsupported protocol version.
     #[error("Unsupported protocol version {0}")]
     Version(u8),
 }
@@ -40,39 +95,54 @@ impl From<hkdf::InvalidLength> for SessionError {
     }
 }
 
-/// Standard Double‑Ratchet packet ( with header encryption).
+/// Wire format for a Double-Ratchet packet **with header encryption**.
+///
+/// The header (containing the DH ratchet public key, send-chain counter, etc.)
+/// is encrypted and authenticated by [`RatchetStateHE`], hiding metadata from
+/// passive observers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StandardMessage {
-    /// Protocol version
+    /// Protocol version tag — currently `1`.
     pub version: u8,
-    /// Encrypted header produced by `RatchetStateHE`.
+    /// Encrypted ratchet header returned by `ratchet_encrypt_he`.
     pub header: Vec<u8>,
-    /// Cipher‑text payload.
+    /// AEAD-protected application payload.
     pub ciphertext: Vec<u8>,
 }
 
-/// Message types exchanged over the transport.
+/// Discriminated union covering all messages that can traverse the transport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Message {
-    /// X3DH initial handshake packet.
+    /// First packet in the X3DH handshake (sent by Alice).
     Initial(InitialMessage),
-    /// Standard Double‑Ratchet message (version‑tagged).
+
+    /// Ordinary Double-Ratchet message exchanged *after* the handshake.
     Standard(StandardMessage),
 }
 
+/// A live end-to-end encrypted session.
+///
+/// Both parties maintain a copy containing identical symmetric state.  
+/// Cloning is disallowed to avoid accidental divergence.
 pub struct Session {
-    /// Stable session identifier (32‑byte random‑looking value).
+    /// Stable database key (32-byte, random-looking).
     session_id: [u8; 32],
-    /// Double‑Ratchet state (header‑encrypted variant).
+
+    /// Double-Ratchet state with encrypted headers.
     ratchet: RatchetStateHE,
-    /// Peer ordering for Associated‑Data construction.
+
+    /// Local identity-DH public key (used for Associated-Data).
     local_identity: PublicKey,
+
+    /// Remote peer’s identity-DH public key.
     remote_identity: PublicKey,
 }
 
 impl Session {
-    /// Derive the session‑ID from the shared secret only.
+    // === Low-level helpers ===
+
+    /// Deterministically derives the *session-ID* from the X3DH shared secret.
     fn calculate_session_id(shared_secret: &[u8; 32]) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"session-id");
@@ -80,7 +150,11 @@ impl Session {
         hasher.finalize().into()
     }
 
-    /// Construct Associated‑Data as `min(IK_A, IK_B) || max(IK_A, IK_B)`.
+    /// Constructs per-session Associated-Data
+    /// as `min(IK_A, IK_B) || max(IK_A, IK_B)`.
+    ///
+    /// Ordering the identity keys lexicographically ensures both peers derive
+    /// the *same* AD irrespective of role (Alice/Bob).
     fn make_associated_data(&self) -> Vec<u8> {
         let (first, second) = if self.local_identity.as_bytes() < self.remote_identity.as_bytes() {
             (
@@ -99,36 +173,45 @@ impl Session {
         ad
     }
 
-    /// Alice initiates a new session (X3DH handshake + DR initialisation).
+    // === Session establishment ===
+
+    /// **Alice-side** entry point: perform an X3DH handshake, produce the first
+    /// packet, and return a fully initialised [`Session`].
+    ///
+    /// * `identity` — Alice’s long-term identity key‐pair.
+    /// * `bundle`   — Bob’s advertised pre-key bundle.
+    /// * `plaintext`— Optional application data to piggy-back on `Initial`.
+    ///
+    /// On success `(initial_packet, session)` is returned.  The caller should
+    /// send `initial_packet` to Bob and persist the session.
     pub fn initiate(
         identity: &IdentityKey,
         bundle: &PreKeyBundle,
         plaintext: &[u8],
     ) -> Result<(Message, Self), SessionError> {
-        // 1. Verify Bob's Signed‑Pre‑Key.  Fails early if data is tampered.
+        // 1. Verify Bob’s Signed-Pre-Key.
         if !bundle.verify_spk() {
             return Err(SessionError::InvalidState("Invalid SPK signature".into()));
         }
 
-        // 2. X3DH: produce InitialMessage & shared secret SK.
+        // 2. Run X3DH (Alice side).
         let (init_msg, sk_raw) = alice_init(identity, bundle, plaintext)?;
-        let sk = Zeroizing::new(sk_raw); // zeroised on scope‑exit
+        let sk = Zeroizing::new(sk_raw); // zeroise on scope-exit
 
-        // 3. Derive header‑encryption keys via HKDF
+        // 3. Derive header-encryption keys.
         let hkdf = Hkdf::<Sha256>::new(Some(&HKDF_SALT), &sk[..]);
         let mut hks = [0u8; 32]; // send
         let mut hk_r = [0u8; 32]; // receive
         hkdf.expand(b"header-encrypt-sending", &mut hks)?;
         hkdf.expand(b"header-encrypt-receiving", &mut hk_r)?;
 
-        // 4. Initialise Double‑Ratchet (Alice perspective).
+        // 4. Initialise Double-Ratchet in “Alice” role.
         let mut ratchet = RatchetStateHE::new();
         let _ = ratchet.init_alice_he(&*sk, bundle.spk_pub, hks, hk_r);
 
-        // 5. Compute session‑ID
+        // 5. Stable session-ID.
         let session_id = Self::calculate_session_id(&*sk);
 
-        // 6. Return the initial message and the session.
         Ok((
             Message::Initial(init_msg),
             Session {
@@ -140,37 +223,38 @@ impl Session {
         ))
     }
 
-    /// Bob receives an incoming X3DH handshake.
+    /// **Bob-side** entry point: accept an incoming `InitialMessage`, complete
+    /// the X3DH handshake, and return `(session, plaintext_from_alice)`.
     pub fn recv(
         identity: &IdentityKey,
         spk_secret: &StaticSecret,
         bundle: &PreKeyBundle,
         msg: &InitialMessage,
     ) -> Result<(Self, Vec<u8>), SessionError> {
-        // 1. Verify our own bundle to catch programming errors.
+        // 1. Sanity-check our own bundle (defensive).
         if !bundle.verify_spk() {
             return Err(SessionError::InvalidState(
                 "Local SPK signature invalid".into(),
             ));
         }
 
-        // 2. Complete the X3DH handshake.
+        // 2. Run X3DH (Bob side).
         let (plaintext, sk_raw) = bob_receive(identity, spk_secret, bundle.spk_id, None, msg)?;
         let sk = Zeroizing::new(sk_raw);
 
-        // 3. Derive HE keys with domain‑separated HKDF.
+        // 3. Derive HE keys (note send/recv reversed).
         let hkdf = Hkdf::<Sha256>::new(Some(&HKDF_SALT), &sk[..]);
         let mut k_s = [0u8; 32]; // decrypt incoming (Alice→Bob)
         let mut k_r = [0u8; 32]; // encrypt outgoing (Bob→Alice)
         hkdf.expand(b"header-encrypt-sending", &mut k_s)?;
         hkdf.expand(b"header-encrypt-receiving", &mut k_r)?;
 
-        // 4. Initialise DR (Bob perspective).
+        // 4. Initialise Double-Ratchet in “Bob” role.
         let mut ratchet = RatchetStateHE::new();
         let bob_pub = PublicKey::from(spk_secret);
         let _ = ratchet.init_bob_he(&*sk, (spk_secret.clone(), bob_pub), k_s, k_r);
 
-        // 5. Session‑ID.
+        // 5. Stable session-ID.
         let session_id = Self::calculate_session_id(&*sk);
 
         Ok((
@@ -184,12 +268,17 @@ impl Session {
         ))
     }
 
-    /// Stable 32‑byte identifier (suitable for database key as its black)
+    // === Messaging ===
+
+    /// Returns the stable 32-byte session identifier (opaque/random).
+    ///
+    /// Useful as a primary key when persisting session state.
     pub fn id(&self) -> &[u8; 32] {
         &self.session_id
     }
 
-    /// Encrypt a message, advancing the ratchet.  Returns `SessionError` on failure.
+    /// Encrypts `plaintext`, advances the sending chain, and returns a
+    /// [`Message::Standard`].  Fails only if ratchet state is inconsistent.
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Message, SessionError> {
         let ad = self.make_associated_data();
         self.ratchet
@@ -204,7 +293,11 @@ impl Session {
             .map_err(|_| SessionError::InvalidState("Encryption failed".into()))
     }
 
-    /// Decrypt a message, advancing the ratchet as required.
+    /// Decrypts an incoming `message`, performing DH/PN ratchets as required.
+    ///
+    /// *Errors*:
+    /// * `SessionError::Version` — peer sent an unsupported version tag.
+    /// * `SessionError::DecryptionFailed` — MAC failed / bad ciphertext.
     pub fn decrypt(&mut self, message: &Message) -> Result<Vec<u8>, SessionError> {
         match message {
             Message::Initial(_) => Err(SessionError::InvalidState(
@@ -226,7 +319,11 @@ impl Session {
         }
     }
 
-    /// Encrypt `plaintext` without advancing the sending chain.
+    /// Generates an *ephemeral* packet without committing to the send-chain.
+    ///
+    /// Intended for draft messages where the UI may repeatedly re-encrypt as
+    /// the user edits.  Once the final text is confirmed, call [`encrypt`]
+    /// instead, discarding any cached static packets.
     pub fn encrypt_without_advancing(&self, plaintext: &[u8]) -> Option<Message> {
         let ad = self.make_associated_data();
         self.ratchet
@@ -240,8 +337,9 @@ impl Session {
             })
     }
 
-    /// Decrypt a previously generated static packet.
-    /// Useful when the sender is still working on the message, and construct the final message later.
+    /// Decrypts a packet generated by [`encrypt_without_advancing`].
+    ///
+    /// This can be used by the *sender* to preview or edit drafts locally.
     pub fn decrypt_own_without_advancing(
         &self,
         header: &[u8],
@@ -253,6 +351,7 @@ impl Session {
 }
 
 impl Drop for Session {
+    /// Zeroises the session-ID on drop to reduce key-material lifetime in RAM.
     fn drop(&mut self) {
         self.session_id.zeroize();
     }

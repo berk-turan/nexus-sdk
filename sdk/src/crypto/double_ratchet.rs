@@ -1,5 +1,42 @@
-// Double Ratchet implementation in Rust
-// https://signal.org/docs/specifications/doubleratchet/#security-considerations
+//! Double Ratchet implementation with header encryption (HE)
+//!
+//! This module follows the Signal Double Ratchet specification
+//! <https://signal.org/docs/specifications/doubleratchet/> and extends it with the
+//! header‑encryption variant described in section 4 “Security considerations”.
+//!
+//! # Example
+//!
+//! ```rust
+//! use rand_core::OsRng;
+//! use x25519_dalek::StaticSecret;
+//!
+//! // 1⃣ Session setup (X3DH, QR‑code, pre‑keys …).  Out of scope here:
+//! let alice_root_key = [0u8; 32];          // derived elsewhere …
+//! let bob_root_key   = alice_root_key;     // shared!
+//!
+//! // Initial shared header keys obtained through X3DH or similar.
+//! let shared_hka  = [1u8; 32]; // Alice‑>Bob  (HK_sending for Alice)
+//! let shared_nhkb = [2u8; 32]; // Bob‑>Alice  (NHK_sending for Bob)
+//!
+//! // 2⃣ Instantiate ratchets on both sides.
+//! let mut alice = RatchetStateHE::new();
+//! let mut bob   = RatchetStateHE::new();
+//!
+//! // Bob chooses a long‑term X25519 key‑pair for the first DH‑ratchet step.
+//! let bob_kp = RatchetStateHE::generate_dh();
+//!
+//! alice.init_alice_he(&alice_root_key, bob_kp.1, shared_hka, shared_nhkb).unwrap();
+//! bob.init_bob_he(&bob_root_key, bob_kp, shared_hka, shared_nhkb).unwrap();
+//!
+//! // 3⃣ Alice sends an encrypted message to Bob.
+//! let (hdr, msg) = alice.ratchet_encrypt_he(b"hello Bob!", b"assoc‑data").unwrap();
+//!
+//! // 4⃣ Bob receives and decrypts.
+//! let plaintext = bob.ratchet_decrypt_he(&hdr, &msg, b"assoc‑data").unwrap();
+//! assert_eq!(plaintext, b"hello Bob!");
+//!
+//! // Bob replies … and so on.
+//! ```
 
 use {
     aes_siv::{
@@ -20,32 +57,49 @@ use {
     zeroize::Zeroize,
 };
 
+/// Maximum number of *skipped* message keys to derive *per chain* before
+/// rejecting incoming traffic, as mentioned in section 4 of the spec.
 const MAX_SKIP_PER_CHAIN: usize = 1_000;
+/// Upper bound across *all* chains maintained in memory at any moment.  This is
+/// a defence‑in‑depth limit to avoid unbounded growth of
+/// [`mkskipped`](RatchetStateHE::mkskipped).
 const MAX_SKIP_GLOBAL: usize = 2 * MAX_SKIP_PER_CHAIN;
 
-// Each AES‑SIV nonce is 128‑bit. We use an 8‑byte random prefix + 8‑byte counter.
+/// Each AES‑SIV nonce is 128‑bit.  We concatenate an 8‑byte *random prefix* with
+/// an 8‑byte *big‑endian counter* to get a unique value for every encryption.
 const NONCE_LEN: usize = 16;
 
-// Type aliases
+// === Type aliases ===
 
+/// HKDF‑SHA‑256 as per RFC 5869.
 type HkdfSha256 = Hkdf<Sha256>;
+/// HMAC‑SHA‑256 wrapper from *universal‑hash*.
 type HmacSha256 = Hmac<Sha256>;
 
-// Errors
+// === Error types ===
+
+/// Possible failures returned by [`RatchetStateHE`] operations.
 #[derive(Debug, Error)]
 pub enum RatchetError {
+    /// Called a sending‑side API before [`RatchetStateHE::cks`] was initialised.
     #[error("missing sending chain")]
     MissingSendingChain,
+    /// Called a receiving‑side API before [`RatchetStateHE::ckr`] was initialised.
     #[error("missing receiving chain")]
     MissingReceivingChain,
+    /// Header key not available in the current direction (encrypt/decrypt).
     #[error("missing header key")]
     MissingHeaderKey,
+    /// Wrapper around any cryptographic backend failure (AES‑SIV, etc.).
     #[error("crypto error")]
     CryptoError,
+    /// Invalid CBOR or authentication failure while parsing an incoming header.
     #[error("header parse error")]
     HeaderParse,
+    /// Safety valve triggered: too many skipped messages or malformed counter.
     #[error("max skip exceeded")]
     MaxSkipExceeded,
+    /// Public‑key rejected (identity / small‑order curve point).
     #[error("invalid public key")]
     InvalidPublicKey,
 }
@@ -56,7 +110,11 @@ impl From<aes_siv::aead::Error> for RatchetError {
     }
 }
 
-// Nonce sequence generator (16‑byte)
+// === Nonce sequence generator ===
+
+/// Deterministic, **unique** 128‑bit nonce generator used for both header and
+/// payload encryption.  Each instance starts with a random prefix so that two
+/// different [`RatchetStateHE`] values never collide.
 #[derive(Clone)]
 struct NonceSeq {
     prefix: [u8; 8],
@@ -64,13 +122,15 @@ struct NonceSeq {
 }
 
 impl NonceSeq {
+    /// Create a new sequence with a cryptographically random 64‑bit prefix.
     fn new() -> Self {
         let mut prefix = [0u8; 8];
         OsRng.fill_bytes(&mut prefix);
         Self { prefix, counter: 0 }
     }
 
-    /// Return next unique 16‑byte nonce (prefix || counter_be).
+    /// Return the next **never‑repeating** 16‑byte nonce: `prefix || counter_be`.
+    #[inline(always)]
     fn next(&mut self) -> [u8; NONCE_LEN] {
         let mut out = [0u8; NONCE_LEN];
         out[..8].copy_from_slice(&self.prefix);
@@ -80,7 +140,7 @@ impl NonceSeq {
     }
 }
 
-// Manually implement Zeroize for NonceSeq
+// Manual [`Zeroize`] to shred secrets when dropped.
 impl Zeroize for NonceSeq {
     fn zeroize(&mut self) {
         self.prefix.zeroize();
@@ -88,14 +148,21 @@ impl Zeroize for NonceSeq {
     }
 }
 
-// Header object
+// === Header structure ===
+
+/// Wire header accompanying every ciphertext (encrypted again with AES‑SIV).
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Header {
-    pub dh: PublicKey, // public key of the sender
-    pub pn: u32,       // previous chain length
-    pub n: u32,        // the message number in the current chain
+    /// Ephemeral X25519 public key of the *sender* (step 0 or 2 of the DH‑ratchet
+    /// in Figure 1 of the spec).
+    pub dh: PublicKey,
+    /// Length of the **previous** sending chain (`pn` in the paper).
+    pub pn: u32,
+    /// Index of the current message inside the *active* sending chain.
+    pub n: u32,
 }
 
+// Compact CBOR serialisation – 3‑tuple of fixed‑size fields.
 impl Serialize for Header {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -119,36 +186,56 @@ impl<'de> Deserialize<'de> for Header {
     }
 }
 
-// Ratchet state with header encryption
+// === Ratchet state (HE) ===
+
+/// Core **state machine** implementing the *Double Ratchet* with header
+/// encryption.  One instance per party *per conversation*.
+///
+/// You normally create an empty state via [`RatchetStateHE::new`], then call
+/// either [`init_alice_he`](RatchetStateHE::init_alice_he) **or**
+/// [`init_bob_he`](RatchetStateHE::init_bob_he) depending on your role.  After
+/// the handshake, the public API is:
+/// * [`ratchet_encrypt_he`](RatchetStateHE::ratchet_encrypt_he) → send message.
+/// * [`ratchet_decrypt_he`](RatchetStateHE::ratchet_decrypt_he) → receive.
+///
+/// Additional *static* helpers (`encrypt_static_he`, `decrypt_static_he`, …)
+/// allow the sender to work on a reply **before** the previous ciphertext has
+/// been delivered.
 pub struct RatchetStateHE {
-    // DH ratchet keys
+    // === DH ratchet keys ===
     dhs: StaticSecret,      // own private
     dhs_pub: PublicKey,     // own public
     dhr: Option<PublicKey>, // remote public key
-    // Root/Chain/Header keys
+
+    // === Root / chain / header keys ===
     rk: [u8; 32],          // root key
-    cks: Option<[u8; 32]>, // chain key for sending
-    ckr: Option<[u8; 32]>, // chain key for receiving
+    cks: Option<[u8; 32]>, // chain key for *sending*
+    ckr: Option<[u8; 32]>, // chain key for *receiving*
     hks: Option<[u8; 32]>, // header key for sending
     hkr: Option<[u8; 32]>, // header key for receiving
-    nhks: [u8; 32],        // next header key for sending
-    nhkr: [u8; 32],        // next header key for receiving
-    // Counters
-    ns: u32, // message number in the sending chain
-    nr: u32, // message number in the receiving chain
-    pn: u32, // previous chain length
-    // Skipped (header_key || n)  ->  msg_key
+    // Next header keys after the *next* DH‑ratchet step.
+    nhks: [u8; 32], // next header key for sending
+    nhkr: [u8; 32], // next header key for receiving
+
+    // === Message counters ===
+    ns: u32, // number sent in current sending chain
+    nr: u32, // number received in current receiving chain
+    pn: u32, // length of *previous* sending chain
+
+    // === Skipped‑message lookup ===
+    /// Map keyed by `(header_key, n)` → *message key*, maintained while the state
+    /// is alive.  Should be flushed to storage or truncated periodically.
     mkskipped: HashMap<([u8; 32], u32), [u8; 32]>,
-    // Nonce sequences
-    nonce_seq_msg: NonceSeq,    // nonce sequence for message encryption
-    nonce_seq_header: NonceSeq, // nonce sequence for header encryption
+
+    // === Nonce sequences ===
+    nonce_seq_msg: NonceSeq,    // payload encryption nonces
+    nonce_seq_header: NonceSeq, // header encryption nonces
 }
 
-// Manually implement Zeroize for RatchetStateHE
+// Scrub everything on drop.
 impl Zeroize for RatchetStateHE {
     fn zeroize(&mut self) {
-        // StaticSecret already implements Zeroize
-        // PublicKey doesn't contain sensitive material
+        // StaticSecret already implements Zeroize; PublicKey is public data.
         self.rk.zeroize();
         if let Some(ref mut k) = self.cks {
             k.zeroize();
@@ -170,26 +257,30 @@ impl Zeroize for RatchetStateHE {
     }
 }
 
-// Implement Drop for RatchetStateHE to zeroize on drop
 impl Drop for RatchetStateHE {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
-// Helper functions
+// === Helper functions ===
+
 impl RatchetStateHE {
-    /// Generate new X25519 keypair.
-    fn generate_dh() -> (StaticSecret, PublicKey) {
+    // === Key utilities ===
+
+    /// Generate a fresh **ephemeral** X25519 key‑pair.
+    #[inline]
+    pub fn generate_dh() -> (StaticSecret, PublicKey) {
         let sk = StaticSecret::random_from_rng(OsRng);
         let pk = PublicKey::from(&sk);
         (sk, pk)
     }
 
-    /// Validate remote public key (reject small‑order / identity).
+    /// Reject the identity point and other small‑order curve points.
+    #[inline]
     fn validate_pk(pk: &PublicKey) -> Result<(), RatchetError> {
-        // Reject identity (all‑zero) & blacklist of known small‑order points
-        const SMALL_ORDER: [[u8; 32]; 1] = [[0u8; 32]]; // can be extended if needed
+        // Extend `SMALL_ORDER` as needed.
+        const SMALL_ORDER: [[u8; 32]; 1] = [[0u8; 32]];
         for bad in SMALL_ORDER.iter() {
             if pk.as_bytes().ct_eq(bad).unwrap_u8() == 1 {
                 return Err(RatchetError::InvalidPublicKey);
@@ -198,12 +289,17 @@ impl RatchetStateHE {
         Ok(())
     }
 
+    /// Perform X25519 Diffie‑Hellman and return the 32‑byte shared secret.
     #[inline]
     fn dh(sk: &StaticSecret, pk: &PublicKey) -> [u8; 32] {
         sk.diffie_hellman(pk).to_bytes()
     }
 
-    // KDF‑RK‑HE: domain‑separated label "DR‑RootHE"
+    // === Key derivation functions (KDFs) ===
+
+    /// *Root‑key* KDF with domain‑separated label `"DR‑RootHE"` producing the
+    /// tuple `(new_rk, ck, nhk)` as per the specification.
+    #[inline]
     fn kdf_rk_he(rk: &[u8; 32], dh_out: &[u8; 32]) -> ([u8; 32], [u8; 32], [u8; 32]) {
         let hk = HkdfSha256::new(Some(rk), dh_out);
         let mut okm = [0u8; 96];
@@ -217,7 +313,8 @@ impl RatchetStateHE {
         (new_rk, ck, nhk)
     }
 
-    // KDF‑CK with byte labels 0x01 / 0x02 , from the specs
+    /// *Chain‑key* KDF using single‑byte labels `0x01` / `0x02`.
+    #[inline]
     fn kdf_ck(ck: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
         let mut mac1 = <HmacSha256 as Mac>::new_from_slice(ck).expect("hmac");
         mac1.update(&[0x01]);
@@ -231,7 +328,10 @@ impl RatchetStateHE {
         (new_ck, mk)
     }
 
-    // Header encryption (AES‑SIV)
+    // === Header encryption helpers (AES‑SIV) ===
+
+    /// Encrypt and authenticate a *header* with AES‑128‑SIV.
+    #[inline]
     fn hencrypt(&mut self, hk: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, RatchetError> {
         let cipher = Aes128SivAead::new_from_slice(hk).map_err(|_| RatchetError::CryptoError)?;
         let nonce_bytes = self.nonce_seq_header.next();
@@ -248,7 +348,8 @@ impl RatchetStateHE {
         Ok(out)
     }
 
-    // Header decryption (AES‑SIV)
+    /// Decrypt and verify a *header* given the 32‑byte header key.
+    #[inline]
     fn hdecrypt(hk: &[u8; 32], data: &[u8]) -> Result<Header, RatchetError> {
         if data.len() < NONCE_LEN {
             return Err(RatchetError::HeaderParse);
@@ -260,7 +361,10 @@ impl RatchetStateHE {
         serde_cbor::from_slice(&pt).map_err(|_| RatchetError::HeaderParse)
     }
 
-    // Constructors
+    // === Constructors / initialisers ===
+
+    /// Create a *blank* state with fresh DH key‑pair and zeroed secrets.
+    #[must_use]
     pub fn new() -> Self {
         let (dhs_sk, dhs_pk) = Self::generate_dh();
         Self {
@@ -283,7 +387,12 @@ impl RatchetStateHE {
         }
     }
 
-    // Init (Alice)
+    /// *Alice* side initialisation (first message sender).
+    ///
+    /// * `sk` – shared 32‑byte *root key* from X3DH or other handshake.
+    /// * `bob_pub` – Bob's *long‑term* DH public key.
+    /// * `shared_hka` – first header key Alice **sends** with.
+    /// * `shared_nhkb` – header key Bob will use **after** his first DH‑ratchet.
     pub fn init_alice_he(
         &mut self,
         sk: &[u8; 32],
@@ -315,7 +424,12 @@ impl RatchetStateHE {
         Ok(())
     }
 
-    // Init (Bob)
+    /// *Bob* side initialisation (first message receiver).
+    ///
+    /// * `sk` – same 32‑byte *root key* as Alice.
+    /// * `bob_kp` – Bob's long‑term X25519 key‑pair.
+    /// * `shared_hka` / `shared_nhkb` – same as for `init_alice_he` but swapped
+    ///   direction.
     pub fn init_bob_he(
         &mut self,
         sk: &[u8; 32],
@@ -343,7 +457,13 @@ impl RatchetStateHE {
         Ok(())
     }
 
-    // Send with header encryption
+    // === Public API – send / receive ===
+
+    /// Encrypt a *plaintext* with associated data `ad` into `(enc_header, payload)`.
+    ///
+    /// Returns `(enc_header, ciphertext_payload)` suitable for transport.  The
+    /// function **advances the sending chain**, so do *not* call it twice for
+    /// the same message.
     pub fn ratchet_encrypt_he(
         &mut self,
         plaintext: &[u8],
@@ -353,7 +473,7 @@ impl RatchetStateHE {
         let (new_cks, mk) = Self::kdf_ck(&cks);
         self.cks = Some(new_cks);
 
-        // build & encrypt header
+        // 1⃣ Build & encrypt header.
         let header = Header {
             dh: self.dhs_pub,
             pn: self.pn,
@@ -364,7 +484,7 @@ impl RatchetStateHE {
         let hk = self.hks.clone().ok_or(RatchetError::MissingHeaderKey)?;
         let enc_header = self.hencrypt(&hk, &header_bytes)?;
 
-        // payload encryption (AAD = AD || enc_header)
+        // 2⃣ Encrypt payload where AAD = user AD || enc_header.
         let mut full_ad = ad.to_vec();
         full_ad.extend_from_slice(&enc_header);
 
@@ -385,7 +505,12 @@ impl RatchetStateHE {
         Ok((enc_header, payload))
     }
 
-    // Receive with header encryption
+    /// Decrypt an incoming message.  Handles skipped‑message lookup and automatic
+    /// DH‑ratchet advancement.
+    ///
+    /// * `enc_header` – encrypted header as produced by the sender.
+    /// * `ciphertext` – encrypted payload (including nonce prefix).
+    /// * `ad` – caller‑supplied associated data.
     pub fn ratchet_decrypt_he(
         &mut self,
         enc_header: &[u8],
@@ -428,7 +553,9 @@ impl RatchetStateHE {
             .map_err(Into::into)
     }
 
-    // try to decrypt a skipped message
+    // === Internal helpers (skipped messages, DH‑ratchet) ===
+
+    // try_skipped_keys: attempt decryption with previously stored skipped keys.
     fn try_skipped_keys(
         &mut self,
         enc_header: &[u8],
@@ -440,7 +567,7 @@ impl RatchetStateHE {
                 continue;
             }
 
-            // constant‑time compare header key before attempting decryption
+            // Avoid timing side‑channels by checking header keys in constant time.
             if hk_bytes.ct_eq(&self.nhkr).unwrap_u8() == 0
                 && hk_bytes.ct_eq(&self.hkr.unwrap_or([0u8; 32])).unwrap_u8() == 0
             {
@@ -471,7 +598,7 @@ impl RatchetStateHE {
         Ok(None)
     }
 
-    // Decrypt header
+    // decrypt_header: try current HK, else next‑HK (DH‑ratchet trigger).
     fn decrypt_header(&self, enc_header: &[u8]) -> Result<(Header, bool), RatchetError> {
         if let Some(hk) = &self.hkr {
             if let Ok(hdr) = Self::hdecrypt(hk, enc_header) {
@@ -482,7 +609,7 @@ impl RatchetStateHE {
         Ok((hdr, true))
     }
 
-    // Skip message keys with header encryption
+    // skip_message_keys_he: derive and store skipped message‑keys up to `until`.
     fn skip_message_keys_he(&mut self, until: u32) -> Result<(), RatchetError> {
         if self.nr + (MAX_SKIP_PER_CHAIN as u32) < until {
             return Err(RatchetError::MaxSkipExceeded);
@@ -494,7 +621,7 @@ impl RatchetStateHE {
                 if let Some(hkr) = &self.hkr {
                     self.mkskipped.insert((*hkr, self.nr), mk);
                     if self.mkskipped.len() > MAX_SKIP_GLOBAL {
-                        return Err(RatchetError::MaxSkipExceeded); // error instead of flush
+                        return Err(RatchetError::MaxSkipExceeded); // flush or error
                     }
                 }
                 self.nr = self.nr.wrapping_add(1);
@@ -504,7 +631,7 @@ impl RatchetStateHE {
         Ok(())
     }
 
-    // DH ratchet with header encryption
+    // dh_ratchet_he: advance root, header & chain keys after *every* DH step.
     fn dh_ratchet_he(&mut self, header: &Header) -> Result<(), RatchetError> {
         self.pn = self.ns;
         self.ns = 0;
@@ -513,18 +640,17 @@ impl RatchetStateHE {
         self.hks = Some(self.nhks.clone());
         self.hkr = Some(self.nhkr.clone());
 
-        // store new remote DH
+        // 1⃣ Receiving chain (dhs ‖ header.dh)
         Self::validate_pk(&header.dh)?;
         self.dhr = Some(header.dh);
 
-        // Step 1: derive receiving chain
         let dh_out1 = Self::dh(&self.dhs, &header.dh);
         let (new_rk, ck_r, nhk_r) = Self::kdf_rk_he(&self.rk, &dh_out1);
         self.rk = new_rk;
         self.ckr = Some(ck_r);
         self.nhkr = nhk_r;
 
-        // Step 2: generate new sending keys & chain
+        // 2⃣ Generate *new* sending key‑pair and chain.
         let (dhs_sk, dhs_pk) = Self::generate_dh();
         self.dhs = dhs_sk;
         self.dhs_pub = dhs_pk;
@@ -540,7 +666,7 @@ impl RatchetStateHE {
         Ok(())
     }
 
-    // Convenience: compute Message Key from Chain Key
+    // Convenience: derive *message key* directly from a chain key.
     fn mk_from_ck(ck: &[u8; 32]) -> [u8; 32] {
         let mut mac = <HmacSha256 as Mac>::new_from_slice(ck).unwrap();
         mac.update(&[0x02]);
@@ -550,8 +676,12 @@ impl RatchetStateHE {
         mk
     }
 
-    // Convenient: function for encryption that allows the sender to work on the message intermittently
-    // Encrypt static HE
+    // === Optional helpers for asynchronous senders ("static HE") ===
+
+    /// Derive `enc_header` and `ciphertext` **without** mutating the state.  The
+    /// caller must ensure that the real call to
+    /// [`ratchet_encrypt_he`](Self::ratchet_encrypt_he) follows *immediately*
+    /// afterwards; otherwise the chain and header keys will diverge.
     pub fn encrypt_static_he(&self, plaintext: &[u8], ad: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
         let ck_s = self.cks.as_ref()?;
         let hk_s = self.hks.as_ref()?;
@@ -601,7 +731,8 @@ impl RatchetStateHE {
         Some((enc_header, payload))
     }
 
-    // Decrypt static HE
+    /// Decrypt *receiver side* using **immutable** state.  Useful for "peek" or
+    /// stateless workers.
     pub fn decrypt_static_he(
         &self,
         enc_header: &[u8],
@@ -634,7 +765,8 @@ impl RatchetStateHE {
             .ok()
     }
 
-    // Decrypt own static HE, for the sender while it still works on the message final message
+    /// Symmetric to [`decrypt_static_he`] but runs on the **sender** to inspect
+    /// its own in‑flight message.
     pub fn decrypt_own_static_he(
         &self,
         enc_header: &[u8],
