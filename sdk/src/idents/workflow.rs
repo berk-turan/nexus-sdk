@@ -186,6 +186,13 @@ impl Dag {
         module: DAG_MODULE,
         name: sui::move_ident_str!("with_encrypted_edge"),
     };
+    /// Add an encrypted output to a DAG.
+    ///
+    /// `nexus_workflow::dag::with_encrypted_output`
+    pub const WITH_ENCRYPTED_OUTPUT: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("with_encrypted_output"),
+    };
     /// Mark a vertex as an entry vertex and assign it to a group.
     ///
     /// `nexus_workflow::dag::with_entry_in_group`
@@ -207,6 +214,13 @@ impl Dag {
     pub const WITH_ENTRY_VERTEX: ModuleAndNameIdent = ModuleAndNameIdent {
         module: DAG_MODULE,
         name: sui::move_ident_str!("with_entry_vertex"),
+    };
+    /// Add an output to a DAG.
+    ///
+    /// `nexus_workflow::dag::with_output`
+    pub const WITH_OUTPUT: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("with_output"),
     };
     /// Add a Vertex to a DAG.
     ///

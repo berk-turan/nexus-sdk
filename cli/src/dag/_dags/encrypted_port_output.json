@@ -29,5 +29,13 @@
         "input_port": "1"
       }
     }
+  ],
+  "outputs": [
+    {
+      "vertex": "b",
+      "output_variant": "1",
+      "output_port": "1.0",
+      "encrypted": true
+    }
   ]
 }

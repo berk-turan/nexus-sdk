@@ -1,7 +1,17 @@
 use crate::{
     idents::{primitives, sui_framework, workflow},
     sui,
-    types::{Dag, Data, DefaultValue, Edge, NexusObjects, Vertex, VertexKind, DEFAULT_ENTRY_GROUP},
+    types::{
+        Dag,
+        Data,
+        DefaultValue,
+        Edge,
+        FromPort,
+        NexusObjects,
+        Vertex,
+        VertexKind,
+        DEFAULT_ENTRY_GROUP,
+    },
 };
 
 /// PTB template for creating a new empty DAG.
@@ -57,6 +67,13 @@ pub fn create(
     // Create all edges.
     for edge in &dag.edges {
         dag_arg = create_edge(tx, objects, dag_arg, edge)?;
+    }
+
+    // Create all outputs.
+    if let Some(outputs) = &dag.outputs {
+        for output in outputs {
+            dag_arg = create_output(tx, objects, dag_arg, output)?;
+        }
     }
 
     // Create all entry ports and vertices. Or create a default entry group
@@ -239,6 +256,48 @@ pub fn create_edge(
             to_vertex,
             to_port,
         ],
+    ))
+}
+
+/// PTB template for creating a new DAG edge.
+pub fn create_output(
+    tx: &mut sui::ProgrammableTransactionBuilder,
+    objects: &NexusObjects,
+    dag: sui::Argument,
+    output: &FromPort,
+) -> anyhow::Result<sui::Argument> {
+    // `vertex: Vertex`
+    let vertex = workflow::Dag::vertex_from_str(tx, objects.workflow_pkg_id, &output.vertex)?;
+
+    // `variant: OutputVariant`
+    let variant = workflow::Dag::output_variant_from_str(
+        tx,
+        objects.workflow_pkg_id,
+        &output.output_variant,
+    )?;
+
+    // `port: OutputPort`
+    let port =
+        workflow::Dag::output_port_from_str(tx, objects.workflow_pkg_id, &output.output_port)?;
+
+    if output.encrypted {
+        // `dag.with_encrypted_output(vertex, variant, port)`
+        return Ok(tx.programmable_move_call(
+            objects.workflow_pkg_id,
+            workflow::Dag::WITH_ENCRYPTED_OUTPUT.module.into(),
+            workflow::Dag::WITH_ENCRYPTED_OUTPUT.name.into(),
+            vec![],
+            vec![dag, vertex, variant, port],
+        ));
+    }
+
+    // `dag.with_output(vertex, variant, port)`
+    Ok(tx.programmable_move_call(
+        objects.workflow_pkg_id,
+        workflow::Dag::WITH_OUTPUT.module.into(),
+        workflow::Dag::WITH_OUTPUT.name.into(),
+        vec![],
+        vec![dag, vertex, variant, port],
     ))
 }
 
@@ -684,6 +743,60 @@ mod tests {
         assert_eq!(
             call.function,
             workflow::DefaultSap::BEGIN_DAG_EXECUTION.name.to_string()
+        );
+    }
+
+    #[test]
+    fn test_create_output_unencrypted() {
+        let objects = sui_mocks::mock_nexus_objects();
+        let dag = sui::Argument::Result(0);
+        let output = FromPort {
+            vertex: "vertex1".to_string(),
+            output_variant: "variant1".to_string(),
+            output_port: "port1".to_string(),
+            encrypted: false,
+        };
+
+        let mut tx = sui::ProgrammableTransactionBuilder::new();
+        create_output(&mut tx, &objects, dag, &output).unwrap();
+        let tx = tx.finish();
+
+        let sui::Command::MoveCall(call) = &tx.commands.last().unwrap() else {
+            panic!("Expected last command to be a MoveCall to create an output");
+        };
+
+        assert_eq!(call.package, objects.workflow_pkg_id);
+        assert_eq!(call.module, workflow::Dag::WITH_OUTPUT.module.to_string());
+        assert_eq!(call.function, workflow::Dag::WITH_OUTPUT.name.to_string());
+    }
+
+    #[test]
+    fn test_create_output_encrypted() {
+        let objects = sui_mocks::mock_nexus_objects();
+        let dag = sui::Argument::Result(0);
+        let output = FromPort {
+            vertex: "vertex1".to_string(),
+            output_variant: "variant1".to_string(),
+            output_port: "port1".to_string(),
+            encrypted: true,
+        };
+
+        let mut tx = sui::ProgrammableTransactionBuilder::new();
+        create_output(&mut tx, &objects, dag, &output).unwrap();
+        let tx = tx.finish();
+
+        let sui::Command::MoveCall(call) = &tx.commands.last().unwrap() else {
+            panic!("Expected last command to be a MoveCall to create an encrypted output");
+        };
+
+        assert_eq!(call.package, objects.workflow_pkg_id);
+        assert_eq!(
+            call.module,
+            workflow::Dag::WITH_ENCRYPTED_OUTPUT.module.to_string()
+        );
+        assert_eq!(
+            call.function,
+            workflow::Dag::WITH_ENCRYPTED_OUTPUT.name.to_string()
         );
     }
 }

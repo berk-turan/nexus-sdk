@@ -53,7 +53,11 @@ pub(crate) async fn validate_dag(path: PathBuf) -> AnyResult<Dag, NexusCliError>
 
 #[cfg(test)]
 mod tests {
-    use {super::*, assert_matches::assert_matches, nexus_sdk::types::Dag};
+    use {
+        super::*,
+        assert_matches::assert_matches,
+        nexus_sdk::types::{Dag, FromPort},
+    };
 
     // == Various graph shapes ==
 
@@ -224,10 +228,20 @@ mod tests {
     }
 
     #[test]
-    fn test_encrypted_port() {
-        let dag: Dag = serde_json::from_str(include_str!("_dags/encrypted_port.json")).unwrap();
+    fn test_encrypted_port_output() {
+        let dag: Dag =
+            serde_json::from_str(include_str!("_dags/encrypted_port_output.json")).unwrap();
 
         assert!(dag.edges.first().unwrap().from.encrypted);
+        assert_eq!(
+            *dag.outputs.unwrap().first().unwrap(),
+            FromPort {
+                vertex: "b".to_string(),
+                output_variant: "1".to_string(),
+                output_port: "1.0".to_string(),
+                encrypted: true,
+            }
+        )
     }
 
     #[test]

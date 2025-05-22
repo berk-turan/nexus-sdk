@@ -17,6 +17,9 @@ pub struct Dag {
     /// If there are no entry groups specified, all specified input ports are
     /// considered to be part of the [`DEFAULT_ENTRY_GROUP`].
     pub entry_groups: Option<Vec<EntryGroup>>,
+    /// Which output variants & ports of which vertices should be the output of
+    /// the DAG.
+    pub outputs: Option<Vec<FromPort>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -71,7 +74,7 @@ pub struct Edge {
     pub to: ToPort,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FromPort {
     pub vertex: String,
     pub output_variant: String,
