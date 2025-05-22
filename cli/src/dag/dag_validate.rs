@@ -228,9 +228,9 @@ mod tests {
     }
 
     #[test]
-    fn test_encrypted_port_output() {
+    fn test_encrypted_port_output_valid() {
         let dag: Dag =
-            serde_json::from_str(include_str!("_dags/encrypted_port_output.json")).unwrap();
+            serde_json::from_str(include_str!("_dags/encrypted_port_output_valid.json")).unwrap();
 
         assert!(dag.edges.first().unwrap().from.encrypted);
         assert_eq!(
@@ -242,6 +242,16 @@ mod tests {
                 encrypted: true,
             }
         )
+    }
+
+    #[test]
+    fn test_output_and_edge_invalid() {
+        let dag: Dag =
+            serde_json::from_str(include_str!("_dags/output_and_edge_invalid.json")).unwrap();
+
+        let res = validate(dag);
+
+        assert_matches!(res, Err(e) if e.to_string().contains("'Vertex: a' cannot have both outgoing edges and ports marked as output."));
     }
 
     #[test]
