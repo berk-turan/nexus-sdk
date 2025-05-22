@@ -127,6 +127,7 @@ impl From<hkdf::InvalidLength> for X3dhError {
 // === Helper utilities ===
 
 /// Convenience methods for [`XEdPublic`].
+/// Extension trait for XEdPublic
 trait XEdPublicExt {
     /// Return the public key as a `[u8; 32]` reference.
     fn as_bytes(&self) -> &[u8; 32];
@@ -145,6 +146,8 @@ impl XEdPublicExt for XEdPublic {
 }
 
 /// Encode a Curve25519 public key as `curve_id || u_coordinate` (33 bytes).
+///
+/// This is the format used by the X3DH specification.
 #[inline]
 fn encode_pk(pk: &X25519PublicKey) -> [u8; 33] {
     let mut out = [0u8; 33];
@@ -160,19 +163,20 @@ fn encode_pk(pk: &X25519PublicKey) -> [u8; 33] {
 ///
 /// Returns a [`SharedSecret`] that is securely zeroised on drop.
 fn kdf(dhs: &[&[u8]], info: &[u8]) -> Result<SharedSecret, X3dhError> {
+    // Input key material
     let mut ikm = Vec::with_capacity(32 + 32 * dhs.len());
     // Domain separator – mitigates cross‑protocol attacks.
     ikm.extend([0xffu8; 32]);
     for dh in dhs {
         ikm.extend_from_slice(dh);
     }
-
     // 32‑byte zero salt (per spec §3.2)
     let salt = [0u8; 32];
     let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+    // Output key material
     let mut okm = [0u8; 32];
     hk.expand(info, &mut okm)?;
-
+    // Zeroise temporary key material
     ikm.zeroize();
     Ok(Zeroizing::new(okm))
 }
@@ -229,6 +233,7 @@ pub struct PreKeyBundle {
     /// XEdDSA signature over `Encode(spk_pub)`.
     pub spk_sig: [u8; 64],
     /// Raw bytes of `Ed25519(IK_B)`.
+    /// It allows verify the signature of the SPK.
     pub identity_verify_bytes: [u8; 32],
     /// DH form of Receiver's identity key.
     pub identity_pk: X25519PublicKey,
@@ -239,7 +244,7 @@ pub struct PreKeyBundle {
 }
 
 impl PreKeyBundle {
-    /// Assemble a bundle from an *Identity Key* and freshly generated SPK/OTPK.
+    /// Assemble a bundle from an Identity Key and freshly generated SPK/OTPK.
     pub fn new(
         identity: &IdentityKey,
         spk_id: u32,
@@ -263,6 +268,7 @@ impl PreKeyBundle {
     }
 
     /// Verify `spk_sig` ⁠and⁠ the Montgomery⇄Edwards mapping for `IK_B`.
+    /// Used to verify the integrity of the PreKeyBundle.
     pub fn verify_spk(&self) -> bool {
         let spk_bytes = encode_pk(&self.spk_pub);
         let identity_verify = self.get_identity_verify();
@@ -472,7 +478,6 @@ pub fn sender_init(
 /// # Example
 /// Refer to the crate‑level Quick start
 pub fn receiver_receive(
-    // Maybe a better name?
     receiver_id: &IdentityKey,
     spk_secret: &StaticSecret,
     spk_id: u32,

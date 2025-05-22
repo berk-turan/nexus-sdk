@@ -1,6 +1,6 @@
 //! Double Ratchet implementation with header encryption (HE)
 //!
-//! This module follows the Signal Double Ratchet specification
+//! This module follows the Public Signal Double Ratchet specification
 //! <https://signal.org/docs/specifications/doubleratchet/> and extends it with the
 //! header‑encryption variant described in section 4 "Security considerations".
 //!
@@ -66,15 +66,15 @@ const MAX_SKIP_PER_CHAIN: usize = 1_000;
 /// [`mkskipped`](RatchetStateHE::mkskipped).
 const MAX_SKIP_GLOBAL: usize = 2 * MAX_SKIP_PER_CHAIN;
 
-/// Each AES‑SIV nonce is 128‑bit.  We concatenate an 8‑byte *random prefix* with
-/// an 8‑byte *big‑endian counter* to get a unique value for every encryption.
+/// Each AES‑SIV nonce is 128‑bit.  We concatenate an 8‑byte random prefix with
+/// an 8‑byte big‑endian counter to get a unique value for every encryption.
 const NONCE_LEN: usize = 16;
 
 // === Type aliases ===
 
 /// HKDF‑SHA‑256 as per RFC 5869.
 type HkdfSha256 = Hkdf<Sha256>;
-/// HMAC‑SHA‑256 wrapper from *universal‑hash*.
+/// HMAC‑SHA‑256 wrapper from universal‑hash.
 type HmacSha256 = Hmac<Sha256>;
 
 // === Error types ===
@@ -91,7 +91,7 @@ pub enum RatchetError {
     /// Header key not available in the current direction (encrypt/decrypt).
     #[error("missing header key")]
     MissingHeaderKey,
-    /// Wrapper around any cryptographic backend failure (AES‑SIV, etc.).
+    /// Wrapper around any cryptographic backend failure (AES‑SIV).
     #[error("crypto error")]
     CryptoError,
     /// Invalid CBOR or authentication failure while parsing an incoming header.
@@ -155,6 +155,7 @@ impl Zeroize for NonceSeq {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Header {
     /// Ephemeral X25519 public key of the sender
+    /// Used for DH ratchet step
     pub dh: PublicKey,
     /// Length of the previous sending chain (`pn` in the paper).
     pub pn: u32,
@@ -188,8 +189,8 @@ impl<'de> Deserialize<'de> for Header {
 
 // === Ratchet state (HE) ===
 
-/// Core **state machine** implementing the Double Ratchet with header
-/// encryption. One instance per party per conversation.
+/// Core state machine implementing the Double Ratchet with header
+/// encryption.
 ///
 /// You normally create an empty state via [`RatchetStateHE::new`], then call
 /// either [`init_sender_he`](RatchetStateHE::init_sender_he) or
@@ -273,7 +274,7 @@ impl Drop for RatchetStateHE {
 impl RatchetStateHE {
     // === Key utilities ===
 
-    /// Generate a fresh **ephemeral** X25519 key‑pair.
+    /// Generate a fresh ephemeral X25519 key‑pair.
     #[inline]
     pub fn generate_dh() -> (StaticSecret, PublicKey) {
         let sk = StaticSecret::random_from_rng(OsRng);
@@ -282,6 +283,7 @@ impl RatchetStateHE {
     }
 
     /// Reject the identity point and other small‑order curve points.
+    /// This is a defence‑in‑depth measure.
     #[inline]
     fn validate_pk(pk: &PublicKey) -> Result<(), RatchetError> {
         // Extend `SMALL_ORDER` as needed.
@@ -304,6 +306,7 @@ impl RatchetStateHE {
 
     /// Root‑key KDF with domain‑separated label `"DR‑RootHE"` producing the
     /// tuple `(new_rk, ck, nhk)` as per the specification.
+    /// (new_rk, ck, nhk) are the new root key, chain key and next header key respectively.
     #[inline]
     fn kdf_rk_he(rk: &[u8; 32], dh_out: &[u8; 32]) -> ([u8; 32], [u8; 32], [u8; 32]) {
         let hk = HkdfSha256::new(Some(rk), dh_out);
@@ -319,6 +322,7 @@ impl RatchetStateHE {
     }
 
     /// Chain‑key KDF using single‑byte labels `0x01` / `0x02`.
+    /// Takes the current chain key and returns the new chain key and message key.
     #[inline]
     fn kdf_ck(ck: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
         let mut mac1 = <HmacSha256 as Mac>::new_from_slice(ck).expect("hmac");
@@ -336,6 +340,7 @@ impl RatchetStateHE {
     // === Header encryption helpers (AES‑SIV) ===
 
     /// Encrypt and authenticate a header with AES‑128‑SIV.
+    /// Takes the header key and plaintext and returns the encrypted header.
     #[inline]
     fn hencrypt(&mut self, hk: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, RatchetError> {
         let cipher = Aes128SivAead::new_from_slice(hk).map_err(|_| RatchetError::CryptoError)?;
@@ -354,6 +359,7 @@ impl RatchetStateHE {
     }
 
     /// Decrypt and verify a header given the 32‑byte header key.
+    /// Takes the header key and encrypted header and returns the decrypted header.
     #[inline]
     fn hdecrypt(hk: &[u8; 32], data: &[u8]) -> Result<Header, RatchetError> {
         if data.len() < NONCE_LEN {
@@ -368,7 +374,7 @@ impl RatchetStateHE {
 
     // === Constructors / initialisers ===
 
-    /// Create a *blank* state with fresh DH key‑pair and zeroed secrets.
+    /// Create a blank state with fresh DH key‑pair and zeroed secrets.
     #[must_use]
     pub fn new() -> Self {
         let (dhs_sk, dhs_pk) = Self::generate_dh();
@@ -474,8 +480,11 @@ impl RatchetStateHE {
         plaintext: &[u8],
         ad: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), RatchetError> {
+        // Check if sender has a sending chain
         let cks = self.cks.ok_or(RatchetError::MissingSendingChain)?;
+        // Derive new chain key and message key
         let (new_cks, mk) = Self::kdf_ck(&cks);
+        // Update chain key
         self.cks = Some(new_cks);
 
         // 1⃣ Build & encrypt header.
@@ -487,9 +496,10 @@ impl RatchetStateHE {
         let header_bytes = serde_cbor::to_vec(&header).expect("cbor");
 
         let hk = self.hks.clone().ok_or(RatchetError::MissingHeaderKey)?;
+        // Encrypt header
         let enc_header = self.hencrypt(&hk, &header_bytes)?;
 
-        // 2⃣ Encrypt payload where AAD = user AD || enc_header.
+        // 2⃣ Encrypt payload where AAD = user AD || enc_header(see specs)
         let mut full_ad = ad.to_vec();
         full_ad.extend_from_slice(&enc_header);
 
@@ -516,23 +526,29 @@ impl RatchetStateHE {
     /// * `enc_header` – encrypted header as produced by the sender.
     /// * `ciphertext` – encrypted payload (including nonce prefix).
     /// * `ad` – caller‑supplied associated data.
+    ///
+    /// Returns the decrypted payload.
     pub fn ratchet_decrypt_he(
         &mut self,
         enc_header: &[u8],
         ciphertext: &[u8],
         ad: &[u8],
     ) -> Result<Vec<u8>, RatchetError> {
+        // Try for skipped message keys
         if let Some(pt) = self.try_skipped_keys(enc_header, ciphertext, ad)? {
             return Ok(pt);
         }
 
+        // Decrypt header
         let (header, did_dh_ratchet) = self.decrypt_header(enc_header)?;
+        // If we did a DH ratchet step, skip message keys
         if did_dh_ratchet {
             self.skip_message_keys_he(header.pn)?;
             self.dh_ratchet_he(&header)?;
         }
         self.skip_message_keys_he(header.n)?;
 
+        // Is there a receiving chain?
         let ckr = self.ckr.ok_or(RatchetError::MissingReceivingChain)?;
         let (new_ckr, mk) = Self::kdf_ck(&ckr);
         self.ckr = Some(new_ckr);
@@ -610,6 +626,8 @@ impl RatchetStateHE {
                 return Ok((hdr, false));
             }
         }
+        // Try next header key
+        // it means we did a DH ratchet step
         let hdr = Self::hdecrypt(&self.nhkr, enc_header)?;
         Ok((hdr, true))
     }
@@ -636,7 +654,7 @@ impl RatchetStateHE {
         Ok(())
     }
 
-    // dh_ratchet_he: advance root, header & chain keys after *every* DH step.
+    // dh_ratchet_he: advance root, header & chain keys after every DH step.
     fn dh_ratchet_he(&mut self, header: &Header) -> Result<(), RatchetError> {
         self.pn = self.ns;
         self.ns = 0;
@@ -683,10 +701,10 @@ impl RatchetStateHE {
 
     // === Optional helpers for asynchronous senders ("static HE") ===
 
-    /// Derive `enc_header` and `ciphertext` **without** mutating the state.  The
-    /// caller must ensure that the real call to
-    /// [`ratchet_encrypt_he`](Self::ratchet_encrypt_he) follows *immediately*
-    /// afterwards; otherwise the chain and header keys will diverge.
+    /// Derive `enc_header` and `ciphertext` without mutating the state.
+    /// The caller must ensure that the real call to
+    /// [`ratchet_encrypt_he`](Self::ratchet_encrypt_he) follows immediately;
+    /// otherwise the chain and header keys will diverge.
     pub fn encrypt_static_he(&self, plaintext: &[u8], ad: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
         let ck_s = self.cks.as_ref()?;
         let hk_s = self.hks.as_ref()?;
@@ -736,8 +754,7 @@ impl RatchetStateHE {
         Some((enc_header, payload))
     }
 
-    /// Decrypt *receiver side* using **immutable** state.  Useful for "peek" or
-    /// stateless workers.
+    /// Decrypt receiver side using immutable state. Useful for "peek" or stateless workers.
     pub fn decrypt_static_he(
         &self,
         enc_header: &[u8],
@@ -770,8 +787,9 @@ impl RatchetStateHE {
             .ok()
     }
 
-    /// Symmetric to [`decrypt_static_he`] but runs on the **sender** to inspect
-    /// its own in‑flight message.
+    /// Symmetric to [`decrypt_static_he`] but runs on the sender to inspect its own in‑flight message.
+    /// We sent this message to the receiver. But we want to inspect it before sending a final message.
+    /// Returns the decrypted payload.
     pub fn decrypt_own_static_he(
         &self,
         enc_header: &[u8],

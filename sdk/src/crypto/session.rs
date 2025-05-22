@@ -2,7 +2,7 @@
 //!
 //! This module glues together the X3DH key-agreement protocol and a
 //! header-encrypted variant of the Double-Ratchet algorithm to give a
-//! complete end-to-end encrypted session layer.
+//! complete end-to-end encrypted session layer(Full Signal Protocol).
 //!
 //! ## Example
 //!
@@ -68,7 +68,7 @@ use {
 const PROTOCOL_VERSION: u8 = 1;
 
 /// Domain-separation salt for HKDF.
-/// Change when you want do domain separation
+/// Change when you want to have a domain separation
 const HKDF_SALT: [u8; 32] = *b"X3DH-DR-v1-2025-05-20-----------";
 
 /// Errors that can arise during session establishment or normal messaging.
@@ -99,7 +99,7 @@ impl From<hkdf::InvalidLength> for SessionError {
 
 /// Message format for a Double-Ratchet packet with header encryption.
 ///
-/// The header (containing the DH ratchet public key, send-chain counter, etc.)
+/// The header (containing the DH ratchet public key, send-chain counter, ...)
 /// is encrypted and authenticated by [`RatchetStateHE`], hiding metadata from
 /// passive observers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +112,7 @@ pub struct StandardMessage {
     pub ciphertext: Vec<u8>,
 }
 
-/// Discriminated union covering all messages that can traverse the transport.
+/// Union covering all messages that can traverse the transport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Message {
@@ -141,8 +141,10 @@ impl Session {
     // === Low-level helpers ===
 
     /// Deterministically derives the session-ID from the X3DH shared secret.
+    /// Use something else if its more convenient for your application.
     fn calculate_session_id(shared_secret: &[u8; 32]) -> [u8; 32] {
         let mut hasher = Sha256::new();
+        // session-id | shared-secret
         hasher.update(b"session-id");
         hasher.update(shared_secret);
         hasher.finalize().into()
@@ -172,12 +174,12 @@ impl Session {
 
     // === Session establishment ===
 
-    /// **Sender-side** entry point: perform an X3DH handshake, produce the first
+    /// Sender-side entry point: perform an X3DH handshake, produce the first
     /// packet, and return a fully initialised [`Session`].
     ///
     /// * `identity` — Sender's long-term identity key-pair.
     /// * `bundle`   — Receiver's advertised pre-key bundle.
-    /// * `plaintext`— Optional application data to piggy-back on `Initial`.
+    /// * `plaintext`— Optional application data.
     ///
     /// On success `(initial_packet, session)` is returned.  The caller should
     /// send `initial_packet` to Receiver and persist the session.
@@ -207,6 +209,7 @@ impl Session {
         let _ = ratchet.init_sender_he(&*sk, bundle.spk_pub, hks, hk_r);
 
         // 5. Stable session-ID.
+        // Change if needed for your application.
         let session_id = Self::calculate_session_id(&*sk);
 
         Ok((
@@ -220,8 +223,13 @@ impl Session {
         ))
     }
 
-    /// **Receiver-side** entry point: accept an incoming `InitialMessage`, complete
+    /// Receiver-side entry point: accept an incoming `InitialMessage`, complete
     /// the X3DH handshake, and return `(session, plaintext_from_sender)`.
+    ///
+    /// * `identity` — Receiver's long-term identity key-pair.
+    /// * `spk_secret` Receiver's Signed-Pre-Key secret.
+    /// * `bundle` — Sender's advertised pre-key bundle.
+    /// * `msg` — Initial message from Sender.
     pub fn recv(
         identity: &IdentityKey,
         spk_secret: &StaticSecret,
@@ -316,7 +324,7 @@ impl Session {
         }
     }
 
-    /// Generates an *ephemeral* packet without committing to the send-chain.
+    /// Generates an *  ephemeral packet without committing to the send-chain.
     ///
     /// Intended for draft messages where the UI may repeatedly re-encrypt as
     /// the user edits.  Once the final text is confirmed, call [`encrypt`]
