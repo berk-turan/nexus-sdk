@@ -200,16 +200,30 @@ pub fn create_edge(
     let from_port =
         workflow::Dag::output_port_from_str(tx, objects.workflow_pkg_id, &edge.from.output_port)?;
 
-    // `encrypted: bool`
-    // TODO: <https://github.com/Talus-Network/nexus-next/issues/297>
-    let _encrypted = tx.pure(edge.from.encrypted);
-
     // `to_vertex: Vertex`
     let to_vertex = workflow::Dag::vertex_from_str(tx, objects.workflow_pkg_id, &edge.to.vertex)?;
 
     // `to_port: InputPort`
     let to_port =
         workflow::Dag::input_port_from_str(tx, objects.workflow_pkg_id, &edge.to.input_port)?;
+
+    if edge.from.encrypted {
+        // `dag.with_encrypted_edge(from_vertex, from_variant, from_port, to_vertex, to_port)`
+        return Ok(tx.programmable_move_call(
+            objects.workflow_pkg_id,
+            workflow::Dag::WITH_ENCRYPTED_EDGE.module.into(),
+            workflow::Dag::WITH_ENCRYPTED_EDGE.name.into(),
+            vec![],
+            vec![
+                dag,
+                from_vertex,
+                from_variant,
+                from_port,
+                to_vertex,
+                to_port,
+            ],
+        ));
+    }
 
     // `dag.with_edge(from_vertex, from_variant, from_port, encrypted, to_vertex, to_port)`
     Ok(tx.programmable_move_call(
@@ -222,7 +236,6 @@ pub fn create_edge(
             from_vertex,
             from_variant,
             from_port,
-            // encrypted,
             to_vertex,
             to_port,
         ],

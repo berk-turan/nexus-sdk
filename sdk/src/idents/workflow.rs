@@ -179,6 +179,13 @@ impl Dag {
         module: DAG_MODULE,
         name: sui::move_ident_str!("with_edge"),
     };
+    /// Add an encrypted Edge to a DAG.
+    ///
+    /// `nexus_workflow::dag::with_encrypted_edge`
+    pub const WITH_ENCRYPTED_EDGE: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("with_encrypted_edge"),
+    };
     /// Mark a vertex as an entry vertex and assign it to a group.
     ///
     /// `nexus_workflow::dag::with_entry_in_group`
