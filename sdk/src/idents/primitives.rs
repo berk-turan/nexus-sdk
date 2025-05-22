@@ -7,14 +7,14 @@ pub struct Data;
 const DATA_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("data");
 
 impl Data {
-    /// Create NexusData from an  vector of vectors of bytes.
+    /// Create NexusData from a vector of vectors of bytes.
     ///
     /// `nexus_primitives::data::inline_many`
     pub const INLINE_MANY: ModuleAndNameIdent = ModuleAndNameIdent {
         module: DATA_MODULE,
         name: sui::move_ident_str!("inline_many"),
     };
-    /// Create NexusData from an vector of vectors of bytes and mark it as
+    /// Create NexusData from a vector of vectors of bytes and mark it as
     /// encrypted.
     ///
     /// `nexus_primitives::data::inline_many_encrypted`
@@ -22,7 +22,7 @@ impl Data {
         module: DATA_MODULE,
         name: sui::move_ident_str!("inline_many_encrypted"),
     };
-    /// Create NexusData from an vector of bytes.
+    /// Create NexusData from a vector of bytes.
     ///
     /// `nexus_primitives::data::inline_one`
     pub const INLINE_ONE: ModuleAndNameIdent = ModuleAndNameIdent {
