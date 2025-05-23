@@ -1,10 +1,15 @@
 use {
     super::master_key,
-    aes_gcm::{aead::{Aead, KeyInit, OsRng}, Aes256Gcm, Key, Nonce},
+    aes_gcm::{
+        aead::{Aead, KeyInit, OsRng},
+        Aes256Gcm,
+        Key,
+        Nonce,
+    },
     base64::{engine::general_purpose, Engine as _},
     bincode,
-    serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer},
     rand::RngCore,
+    serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer},
 };
 
 /// Length of the nonce for AES-GCM (96-bit).
@@ -22,6 +27,7 @@ impl<T: Default> Default for Secret<T> {
 
 impl<T> std::ops::Deref for Secret<T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -88,8 +94,7 @@ where
             Err(_) => {
                 // Legacy path: try to parse directly from TOML-encoded inner struct.
                 // We re-serialise the string as TOML then deserialize T.
-                let legacy = toml::from_str::<T>(&encoded)
-                    .map_err(serde::de::Error::custom)?;
+                let legacy = toml::from_str::<T>(&encoded).map_err(serde::de::Error::custom)?;
                 return Ok(Secret(legacy));
             }
         };
@@ -112,4 +117,4 @@ where
         let inner: T = bincode::deserialize(&plain).map_err(serde::de::Error::custom)?;
         Ok(Secret(inner))
     }
-} 
+}

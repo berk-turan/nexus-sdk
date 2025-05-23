@@ -1,9 +1,14 @@
 pub(crate) use {
-    crate::error::NexusCliError,
+    crate::{error::NexusCliError, secrets::secret::Secret},
     anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult},
     clap::{builder::ValueParser, Args, CommandFactory, Parser, Subcommand, ValueEnum},
     colored::Colorize,
-    nexus_sdk::{sui::traits::*, types::NexusObjects, *},
+    nexus_sdk::{
+        crypto::{session::Session, x3dh::IdentityKey},
+        sui::traits::*,
+        types::NexusObjects,
+        *,
+    },
     serde::{Deserialize, Serialize},
     serde_json::json,
     std::{
@@ -11,8 +16,6 @@ pub(crate) use {
         path::{Path, PathBuf},
         sync::atomic::{AtomicBool, Ordering},
     },
-    nexus_sdk::crypto::{x3dh::IdentityKey, session::Session},
-    crate::secrets::secret::Secret,
 };
 
 // Where to find config file.

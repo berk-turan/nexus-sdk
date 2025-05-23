@@ -181,6 +181,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(master_key_env)]
     fn test_passphrase_key_derivation() {
         let _guard = acquire_env_lock();
         let temp_dir = TempDir::new().unwrap();
@@ -215,6 +216,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(master_key_env)]
     fn test_keystore_locked_protection() {
         let _guard = acquire_env_lock();
         let temp_dir = TempDir::new().unwrap();
@@ -241,6 +243,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(master_key_env)]
     fn test_salt_file_security() {
         let temp_dir = TempDir::new().unwrap();
         let salt_path = temp_dir.path().join("nested").join("salt.bin");
@@ -264,6 +267,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    #[serial_test::serial(master_key_env)]
     fn test_salt_file_permissions() {
         use std::os::unix::fs::PermissionsExt;
 
@@ -284,6 +288,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(master_key_env)]
     fn test_different_passphrases_different_keys() {
         let _guard = acquire_env_lock();
         let temp_dir = TempDir::new().unwrap();
@@ -309,6 +314,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(master_key_env)]
     fn test_malformed_salt_handling() {
         let _guard = acquire_env_lock();
         let temp_dir = TempDir::new().unwrap();
@@ -331,6 +337,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(master_key_env)]
     fn test_real_world_workflow() {
         let _guard = acquire_env_lock();
         let temp_dir = TempDir::new().unwrap();
