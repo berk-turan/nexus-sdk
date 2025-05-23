@@ -130,10 +130,10 @@ impl StateStore {
         }
     }
 
-    pub fn insert_session(&mut self, s: &Session) {
-        if let Ok(stored) = StoredSession::from_session(s) {
-            self.sessions.insert(*s.id(), stored);
-        }
+    pub fn insert_session(&mut self, s: &Session) -> Result<(), StateStoreError> {
+        let stored = StoredSession::from_session(s)?;
+        self.sessions.insert(*s.id(), stored);
+        Ok(())
     }
 
     pub fn to_runtime(self) -> Result<(IdentityKey, HashMap<[u8; 32], Session>), StateStoreError> {
@@ -249,4 +249,210 @@ fn load_state<P: AsRef<Path>, T: for<'de> Deserialize<'de>>(
 
     let state: T = ciborium::from_reader(plaintext.as_slice())?;
     Ok(Some(state))
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::crypto::{session::Message, x3dh::PreKeyBundle},
+        rand::rngs::OsRng,
+        tempfile::TempDir,
+        x25519_dalek::StaticSecret,
+    };
+
+    #[test]
+    fn test_complete_session_persistence() {
+        // Setup test directory and master key
+        let temp_dir = TempDir::new().unwrap();
+        let alice_store_path = temp_dir.path().join("alice_store.dat");
+        let bob_store_path = temp_dir.path().join("bob_store.dat");
+        let master_key = [42u8; 32];
+
+        println!("Setting up Alice and Bob with initial session");
+
+        // Create identities
+        let alice_id = IdentityKey::generate();
+        let bob_id = IdentityKey::generate();
+
+        // Bob's prekey bundle
+        let bob_spk_secret = StaticSecret::random_from_rng(OsRng);
+        let spk_id = 1;
+        let bundle = PreKeyBundle::new(&bob_id, spk_id, &bob_spk_secret, None, None);
+
+        // Alice initiates session
+        let initial_message =
+            b"Hello, this is from the President of the United States(totally not a joke)";
+        let (first_packet, mut alice_session) =
+            Session::initiate(&alice_id, &bundle, initial_message).unwrap();
+
+        // Bob receives and establishes session
+        let (mut bob_session, received_initial) = Session::recv(
+            &bob_id,
+            &bob_spk_secret,
+            &bundle,
+            match &first_packet {
+                Message::Initial(m) => m,
+                _ => panic!("Expected initial message"),
+            },
+        )
+        .unwrap();
+        assert_eq!(received_initial, initial_message);
+
+        println!("Exchanging messages before first save");
+
+        // Alice sends the first post-handshake message
+        let alice_msg1 = b"Hey, its me";
+        let encrypted_alice1 = alice_session.encrypt(alice_msg1).unwrap();
+        let decrypted_alice1 = bob_session.decrypt(&encrypted_alice1).unwrap();
+        assert_eq!(decrypted_alice1, alice_msg1);
+
+        // Bob responds
+        let bob_msg1 = b"Hey, whats up?";
+        let encrypted_bob1 = bob_session.encrypt(bob_msg1).unwrap();
+        let decrypted_bob1 = alice_session.decrypt(&encrypted_bob1).unwrap();
+        assert_eq!(decrypted_bob1, bob_msg1);
+
+        println!("Saving session states");
+
+        // Save Alice's state
+        let mut alice_store = StateStore::new(&alice_id);
+        alice_store.insert_session(&alice_session).unwrap();
+        save_store(&alice_store_path, &master_key, &alice_store).unwrap();
+
+        // Save Bob's state
+        let mut bob_store = StateStore::new(&bob_id);
+        bob_store.insert_session(&bob_session).unwrap();
+        save_store(&bob_store_path, &master_key, &bob_store).unwrap();
+
+        // Clear sessions from memory to simulate restart
+        drop(alice_session);
+        drop(bob_session);
+        drop(alice_store);
+        drop(bob_store);
+
+        println!("Loading sessions and continuing conversation");
+
+        // Load Alice's state
+        let alice_loaded_store = load_store(&alice_store_path, &master_key)
+            .unwrap()
+            .expect("Alice's store should exist");
+        let (alice_loaded_id, alice_sessions) = alice_loaded_store.to_runtime().unwrap();
+        assert_eq!(
+            alice_loaded_id.dh_public.as_bytes(),
+            alice_id.dh_public.as_bytes()
+        );
+
+        // Load Bob's state
+        let bob_loaded_store = load_store(&bob_store_path, &master_key)
+            .unwrap()
+            .expect("Bob's store should exist");
+        let (bob_loaded_id, bob_sessions) = bob_loaded_store.to_runtime().unwrap();
+        assert_eq!(
+            bob_loaded_id.dh_public.as_bytes(),
+            bob_id.dh_public.as_bytes()
+        );
+
+        // Get the sessions (there should be exactly one for each)
+        assert_eq!(alice_sessions.len(), 1);
+        assert_eq!(bob_sessions.len(), 1);
+
+        let mut alice_session = alice_sessions.into_iter().next().unwrap().1;
+        let mut bob_session = bob_sessions.into_iter().next().unwrap().1;
+
+        println!("Verifying sessions work after load");
+
+        // Bob sends a message with the loaded session
+        let bob_msg_after_load = b"Just loaded my session from disk. I think it works";
+        let encrypted_bob_after = bob_session.encrypt(bob_msg_after_load).unwrap();
+        let decrypted_bob_after = alice_session.decrypt(&encrypted_bob_after).unwrap();
+        assert_eq!(decrypted_bob_after, bob_msg_after_load);
+
+        // Alice responds
+        let alice_msg_after_load = b"Me too, this is totally working";
+        let encrypted_alice_after = alice_session.encrypt(alice_msg_after_load).unwrap();
+        let decrypted_alice_after = bob_session.decrypt(&encrypted_alice_after).unwrap();
+        assert_eq!(decrypted_alice_after, alice_msg_after_load);
+
+        println!("Testing multiple save/load cycles");
+
+        for i in 0..3 {
+            println!("  Cycle {}", i + 1);
+
+            // Exchange messages
+            let msg_from_alice = format!("Message {} from Alice", i).into_bytes();
+            let encrypted = alice_session.encrypt(&msg_from_alice).unwrap();
+            let decrypted = bob_session.decrypt(&encrypted).unwrap();
+            assert_eq!(decrypted, msg_from_alice);
+
+            let msg_from_bob = format!("Message {} from Bob", i).into_bytes();
+            let encrypted = bob_session.encrypt(&msg_from_bob).unwrap();
+            let decrypted = alice_session.decrypt(&encrypted).unwrap();
+            assert_eq!(decrypted, msg_from_bob);
+
+            // Save both sessions
+            let mut alice_store = StateStore::new(&alice_id);
+            alice_store.insert_session(&alice_session).unwrap();
+            save_store(&alice_store_path, &master_key, &alice_store).unwrap();
+
+            let mut bob_store = StateStore::new(&bob_id);
+            bob_store.insert_session(&bob_session).unwrap();
+            save_store(&bob_store_path, &master_key, &bob_store).unwrap();
+
+            // Load both sessions
+            let alice_loaded = load_store(&alice_store_path, &master_key).unwrap().unwrap();
+            let (_, alice_sessions) = alice_loaded.to_runtime().unwrap();
+            alice_session = alice_sessions.into_iter().next().unwrap().1;
+
+            let bob_loaded = load_store(&bob_store_path, &master_key).unwrap().unwrap();
+            let (_, bob_sessions) = bob_loaded.to_runtime().unwrap();
+            bob_session = bob_sessions.into_iter().next().unwrap().1;
+        }
+
+        println!("Verifying double ratchet continues to work");
+
+        // Send multiple messages in a row from Alice (tests sending chain)
+        for i in 0..5 {
+            let msg = format!("Rapid message {} from Alice", i).into_bytes();
+            let encrypted = alice_session.encrypt(&msg).unwrap();
+            let decrypted = bob_session.decrypt(&encrypted).unwrap();
+            assert_eq!(decrypted, msg);
+        }
+
+        // Send multiple messages in a row from Bob (tests receiving chain)
+        for i in 0..5 {
+            let msg = format!("Rapid message {} from Bob", i).into_bytes();
+            let encrypted = bob_session.encrypt(&msg).unwrap();
+            let decrypted = alice_session.decrypt(&encrypted).unwrap();
+            assert_eq!(decrypted, msg);
+        }
+
+        println!("Final verification");
+
+        // One more save/load cycle
+        let mut alice_store = StateStore::new(&alice_id);
+        alice_store.insert_session(&alice_session).unwrap();
+        save_store(&alice_store_path, &master_key, &alice_store).unwrap();
+
+        let mut bob_store = StateStore::new(&bob_id);
+        bob_store.insert_session(&bob_session).unwrap();
+        save_store(&bob_store_path, &master_key, &bob_store).unwrap();
+
+        // Load and send final messages
+        let alice_final_store = load_store(&alice_store_path, &master_key).unwrap().unwrap();
+        let (_, alice_sessions) = alice_final_store.to_runtime().unwrap();
+        let mut alice_session_final = alice_sessions.into_iter().next().unwrap().1;
+
+        let bob_final_store = load_store(&bob_store_path, &master_key).unwrap().unwrap();
+        let (_, bob_sessions) = bob_final_store.to_runtime().unwrap();
+        let mut bob_session_final = bob_sessions.into_iter().next().unwrap().1;
+
+        // Final message exchange
+        let final_msg = b"This is totally working";
+        let encrypted_final = alice_session_final.encrypt(final_msg).unwrap();
+        let decrypted_final = bob_session_final.decrypt(&encrypted_final).unwrap();
+        assert_eq!(decrypted_final, final_msg);
+
+        println!("Nice");
+    }
 }
