@@ -57,7 +57,7 @@ use {
         },
     },
     hkdf::Hkdf,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize, Serializer},
     sha2::{Digest, Sha256},
     thiserror::Error,
     x25519_dalek::{PublicKey, StaticSecret},
@@ -135,6 +135,42 @@ pub struct Session {
     local_identity: PublicKey,
     /// Remote peer's identity-DH public key.
     remote_identity: PublicKey,
+}
+
+impl Serialize for Session {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (
+            &self.session_id,
+            &self.ratchet,
+            self.local_identity.as_bytes(),
+            self.remote_identity.as_bytes(),
+        )
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Session {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (session_id, ratchet, local_bytes, remote_bytes): (
+            [u8; 32],
+            RatchetStateHE,
+            [u8; 32],
+            [u8; 32],
+        ) = Deserialize::deserialize(deserializer)?;
+
+        Ok(Session {
+            session_id,
+            ratchet,
+            local_identity: PublicKey::from(local_bytes),
+            remote_identity: PublicKey::from(remote_bytes),
+        })
+    }
 }
 
 impl Session {
