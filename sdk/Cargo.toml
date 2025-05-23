@@ -24,7 +24,7 @@ crypto = [
     "aead", "chacha20poly1305", "hkdf", "rand", "rand_core", "sha2", "subtle", 
     "x25519-dalek", "xeddsa", "zeroize", "thiserror", "curve25519-dalek", 
     "hmac", "serde_cbor", "aes-gcm", "zerocopy", "bincode", "hpke", 
-    "serde_json", "heapless", "aes-siv"
+    "serde_json", "heapless", "aes-siv", "serde_bytes", "keyring", "argon2", "hex", "directories",
 ]
 
 # Sui Types feature gives access to the re-exported Sui types.
@@ -82,10 +82,12 @@ full = [
     "transactions",
     "walrus",
 ]
+argon2 = ["dep:argon2"]
 
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+dirs = "6.0.0"
 serde.workspace = true
 
 # === Crypto deps ===
@@ -93,8 +95,28 @@ serde.workspace = true
 version = "0.5"
 optional = true
 
+[dependencies.hex]
+version = "0.4.3"
+optional = true
+
+[dependencies.argon2]
+version = "0.5"
+optional = true
+
+[dependencies.keyring]
+version = "3.6"
+optional = true
+
+[dependencies.serde_bytes]
+version = "0.11"
+optional = true
+
 [dependencies.aes-gcm]
 version = "0.10"
+optional = true
+
+[dependencies.directories]
+version = "5"
 optional = true
 
 [dependencies.aes-siv]

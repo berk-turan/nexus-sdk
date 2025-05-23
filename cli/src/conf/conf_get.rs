@@ -45,6 +45,7 @@ mod tests {
             sui: sui_conf,
             nexus: Some(nexus_objects),
             tools,
+            state_store: StateStoreConf::default(),
         };
 
         // Write the configuration to the file.

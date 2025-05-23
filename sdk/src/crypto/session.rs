@@ -142,7 +142,7 @@ impl Session {
 
     /// Deterministically derives the session-ID from the X3DH shared secret.
     /// Use something else if its more convenient for your application.
-    fn calculate_session_id(shared_secret: &[u8; 32]) -> [u8; 32] {
+    pub fn calculate_session_id(shared_secret: &[u8; 32]) -> [u8; 32] {
         let mut hasher = Sha256::new();
         // session-id | shared-secret
         hasher.update(b"session-id");
@@ -352,6 +352,31 @@ impl Session {
     ) -> Option<Vec<u8>> {
         let ad = self.make_associated_data();
         self.ratchet.decrypt_own_static_he(header, ciphertext, &ad)
+    }
+
+    /// Creates a Session from storage data
+    pub fn from_storage(
+        session_id: [u8; 32],
+        ratchet: RatchetStateHE,
+        local_identity: PublicKey,
+        remote_identity: PublicKey,
+    ) -> Self {
+        Self {
+            session_id,
+            ratchet,
+            local_identity,
+            remote_identity,
+        }
+    }
+
+    /// Get a reference to the internal ratchet state
+    pub fn ratchet(&self) -> &RatchetStateHE {
+        &self.ratchet
+    }
+
+    /// Get a reference to the remote identity public key
+    pub fn remote_identity(&self) -> &PublicKey {
+        &self.remote_identity
     }
 }
 

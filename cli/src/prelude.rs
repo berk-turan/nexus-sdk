@@ -43,6 +43,8 @@ pub(crate) struct CliConf {
     pub(crate) nexus: Option<NexusObjects>,
     #[serde(default)]
     pub(crate) tools: HashMap<ToolFqn, ToolOwnerCaps>,
+    #[serde(default)]
+    pub(crate) state_store: StateStoreConf,
 }
 
 impl CliConf {
@@ -96,6 +98,20 @@ impl Default for SuiConf {
             auth_password: None,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StateStoreConf {
+    /// Where the encrypted state blob lives.
+    #[serde(default = "default_state_path")]
+    pub(crate) state_file: std::path::PathBuf,
+}
+
+fn default_state_path() -> std::path::PathBuf {
+    home::home_dir()
+        .unwrap()
+        .join(".nexus")
+        .join("state_store.bin")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

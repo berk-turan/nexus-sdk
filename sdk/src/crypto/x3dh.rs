@@ -215,6 +215,24 @@ impl IdentityKey {
             verify,
         }
     }
+
+    /// Get a reference to the secret key
+    pub fn secret(&self) -> &StaticSecret {
+        &self.secret
+    }
+    
+    /// Create an identity key from an existing secret
+    pub fn from_secret(secret: StaticSecret) -> Self {
+        let dh_public = X25519PublicKey::from(&secret);
+        let signing = XEdPrivate::from(&secret);
+        let verify = XEdPublic::from(&dh_public);
+        Self {
+            secret,
+            dh_public,
+            signing,
+            verify,
+        }
+    }
 }
 
 // === Pre‑Key material (Receiver‑side) ===

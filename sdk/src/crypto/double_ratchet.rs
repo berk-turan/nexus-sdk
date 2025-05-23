@@ -202,12 +202,16 @@ impl<'de> Deserialize<'de> for Header {
 /// Additional static helpers (`encrypt_static_he`, `decrypt_static_he`, …)
 /// allow the sender to work on a reply before the previous ciphertext has
 /// been delivered.
+#[derive(Serialize, Deserialize)]
 pub struct RatchetStateHE {
     /// Own private key
+    #[serde(with = "secret_bytes_serde")]
     dhs: StaticSecret,
     /// Own public key
+    #[serde(with = "public_key_serde")]
     dhs_pub: PublicKey,
     /// Remote public key
+    #[serde(with = "public_key_option_serde")]
     dhr: Option<PublicKey>,
     /// Root key
     rk: [u8; 32],
@@ -233,9 +237,72 @@ pub struct RatchetStateHE {
     /// is alive.
     mkskipped: HashMap<([u8; 32], u32), [u8; 32]>,
     /// Nonce sequence for payload encryption
+    #[serde(with = "nonce_seq_serde")]
     nonce_seq_msg: NonceSeq,
     /// Nonce sequence for header encryption
+    #[serde(with = "nonce_seq_serde")]
     nonce_seq_header: NonceSeq,
+}
+
+mod secret_bytes_serde {
+    use super::StaticSecret;
+    use crate::crypto::secret_bytes::SecretBytes;
+    use serde::{Serializer, Deserializer, Serialize, Deserialize};
+    pub fn serialize<S>(sk: &StaticSecret, s: S) -> Result<S::Ok, S::Error>
+    where S: Serializer { SecretBytes::from(sk).serialize(s) }
+    pub fn deserialize<'de, D>(d: D) -> Result<StaticSecret, D::Error>
+    where D: Deserializer<'de> { Ok(SecretBytes::deserialize(d)?.into()) }
+}
+
+mod public_key_serde {
+    use super::PublicKey;
+    use serde::{Serializer, Deserializer, Serialize, Deserialize};
+    
+    pub fn serialize<S>(pk: &PublicKey, s: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        pk.as_bytes().serialize(s)
+    }
+    
+    pub fn deserialize<'de, D>(d: D) -> Result<PublicKey, D::Error>
+    where D: Deserializer<'de> {
+        let bytes: [u8; 32] = Deserialize::deserialize(d)?;
+        Ok(PublicKey::from(bytes))
+    }
+}
+
+mod public_key_option_serde {
+    use super::PublicKey;
+    use serde::{Serializer, Deserializer, Serialize, Deserialize};
+    
+    pub fn serialize<S>(opt_pk: &Option<PublicKey>, s: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        match opt_pk {
+            Some(pk) => Some(pk.as_bytes()).serialize(s),
+            None => None::<[u8; 32]>.serialize(s),
+        }
+    }
+    
+    pub fn deserialize<'de, D>(d: D) -> Result<Option<PublicKey>, D::Error>
+    where D: Deserializer<'de> {
+        let opt_bytes: Option<[u8; 32]> = Deserialize::deserialize(d)?;
+        Ok(opt_bytes.map(PublicKey::from))
+    }
+}
+
+mod nonce_seq_serde {
+    use super::NonceSeq;
+    use serde::{Serializer, Deserializer, Serialize, Deserialize};
+    
+    pub fn serialize<S>(nonce_seq: &NonceSeq, s: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        (nonce_seq.prefix, nonce_seq.counter).serialize(s)
+    }
+    
+    pub fn deserialize<'de, D>(d: D) -> Result<NonceSeq, D::Error>
+    where D: Deserializer<'de> {
+        let (prefix, counter): ([u8; 8], u64) = Deserialize::deserialize(d)?;
+        Ok(NonceSeq { prefix, counter })
+    }
 }
 
 // Scrub everything on drop.
@@ -818,6 +885,11 @@ impl RatchetStateHE {
                 },
             )
             .ok()
+    }
+
+    /// Get a reference to the root key
+    pub fn root_key(&self) -> &[u8; 32] {
+        &self.rk
     }
 }
 
