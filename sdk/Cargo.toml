@@ -23,7 +23,7 @@ tool_fqn = ["regex", "lazy-regex"]
 crypto = [
     "aead", "chacha20poly1305", "hkdf", "rand", "rand_core", "sha2", "subtle", 
     "x25519-dalek", "xeddsa", "zeroize", "thiserror", "curve25519-dalek", 
-    "hmac", "serde_cbor", "aes-gcm", "zerocopy", "bincode", "hpke", 
+    "hmac", "ciborium", "aes-gcm", "zerocopy", "bincode", "hpke", 
     "serde_json", "heapless", "aes-siv", "serde_bytes", "keyring", "argon2", "hex", "directories",
 ]
 
@@ -165,10 +165,6 @@ optional = true
 version = "0.6.4"
 optional = true
 
-[dependencies.serde_cbor]
-version = "0.11"
-optional = true
-
 [dependencies.sha2]
 version = "0.10"
 optional = true
@@ -296,3 +292,7 @@ mockito.workspace = true
 # === Build deps ===
 [build-dependencies]
 toml = "0.8.20"
+
+[dependencies.ciborium]
+version = "0.2"
+optional = true

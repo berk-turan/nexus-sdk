@@ -220,7 +220,7 @@ impl IdentityKey {
     pub fn secret(&self) -> &StaticSecret {
         &self.secret
     }
-    
+
     /// Create an identity key from an existing secret
     pub fn from_secret(secret: StaticSecret) -> Self {
         let dh_public = X25519PublicKey::from(&secret);

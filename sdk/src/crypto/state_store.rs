@@ -1,34 +1,39 @@
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
-use std::path::Path;
-use std::fs::{self, OpenOptions, Permissions};
-use std::os::unix::fs::PermissionsExt;
-use std::io::{Write, self};
-use rand::rngs::OsRng;
-use thiserror::Error;
-use super::{
-    x3dh::IdentityKey,
-    session::Session,
-    double_ratchet::RatchetStateHE,
-    secret_bytes::SecretBytes,
+use {
+    super::{
+        double_ratchet::RatchetStateHE,
+        secret_bytes::SecretBytes,
+        session::Session,
+        x3dh::IdentityKey,
+    },
+    aes_siv::{
+        aead::{Aead, KeyInit, Payload},
+        Aes128SivAead,
+        Nonce,
+    },
+    rand::{rngs::OsRng, RngCore},
+    serde::{Deserialize, Serialize},
+    std::{
+        collections::HashMap,
+        fs::{self, OpenOptions, Permissions},
+        io::{self, Write},
+        os::unix::fs::PermissionsExt,
+        path::Path,
+    },
+    thiserror::Error,
+    x25519_dalek::{PublicKey, StaticSecret},
 };
-use x25519_dalek::{PublicKey, StaticSecret};
-use aes_siv::{
-    aead::{Aead, KeyInit, Payload},
-    Aes128SivAead,
-    Nonce,
-};
-use rand::RngCore;
 
-const STORE_VERSION: u8 = 1;     
-const NONCE_LEN: usize = 16;     
+const STORE_VERSION: u8 = 1;
+const NONCE_LEN: usize = 16;
 
 #[derive(Debug, Error)]
 pub enum StateStoreError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
     #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_cbor::Error),
+    Serialization(#[from] ciborium::ser::Error<io::Error>),
+    #[error("Deserialization error: {0}")]
+    Deserialization(#[from] ciborium::de::Error<io::Error>),
     #[error("Encryption error: {0}")]
     Encryption(String),
     #[error("Decryption error: {0}")]
@@ -53,16 +58,21 @@ fn fresh_nonce() -> [u8; NONCE_LEN] {
 
 // IdentityKey is stored in the state store
 #[derive(Serialize, Deserialize)]
-struct StoredIdentityKey { 
+struct StoredIdentityKey {
     /// The secret key of the identity key
-    secret: SecretBytes 
+    secret: SecretBytes,
 }
 
 impl From<&IdentityKey> for StoredIdentityKey {
-    fn from(id: &IdentityKey) -> Self { Self { secret: id.secret().into() } }
+    fn from(id: &IdentityKey) -> Self {
+        Self {
+            secret: id.secret().into(),
+        }
+    }
 }
 impl TryFrom<StoredIdentityKey> for IdentityKey {
     type Error = StateStoreError;
+
     fn try_from(stored: StoredIdentityKey) -> Result<Self, Self::Error> {
         let secret: StaticSecret = stored.secret.into();
         Ok(IdentityKey::from_secret(secret))
@@ -82,9 +92,10 @@ impl StoredSession {
     fn from_session(s: &Session) -> Result<Self, StateStoreError> {
         // Probably there is a better idea, dont want to give clone the ratchet state, that may be dangerous
         // TODO: find a better way to do this
-        let serialized = serde_cbor::to_vec(s.ratchet())?;
-        let ratchet: RatchetStateHE = serde_cbor::from_slice(&serialized)?;
-        
+        let mut serialized = Vec::new();
+        ciborium::into_writer(s.ratchet(), &mut serialized)?;
+        let ratchet: RatchetStateHE = ciborium::from_reader(serialized.as_slice())?;
+
         Ok(Self {
             ratchet,
             remote_identity: *s.remote_identity().as_bytes(),
@@ -113,7 +124,10 @@ pub struct StateStore {
 
 impl StateStore {
     pub fn new(id: &IdentityKey) -> Self {
-        Self { identity: id.into(), sessions: HashMap::new() }
+        Self {
+            identity: id.into(),
+            sessions: HashMap::new(),
+        }
     }
 
     pub fn insert_session(&mut self, s: &Session) {
@@ -133,15 +147,18 @@ impl StateStore {
 }
 
 /// Thin wrappers around the existing helper functions
-pub fn save_store<P: AsRef<Path>>(path: P,
+pub fn save_store<P: AsRef<Path>>(
+    path: P,
     master_key: &[u8; 32],
-    store: &StateStore) -> Result<(), StateStoreError> {
+    store: &StateStore,
+) -> Result<(), StateStoreError> {
     save_state(path, master_key, store)
 }
 
-pub fn load_store<P: AsRef<Path>>(path: P,
-    master_key: &[u8; 32])
-    -> Result<Option<StateStore>, StateStoreError> {
+pub fn load_store<P: AsRef<Path>>(
+    path: P,
+    master_key: &[u8; 32],
+) -> Result<Option<StateStore>, StateStoreError> {
     load_state(path, master_key)
 }
 
@@ -150,14 +167,21 @@ fn save_state<P: AsRef<Path>, T: Serialize>(
     key: &[u8; 32],
     state: &T,
 ) -> Result<(), StateStoreError> {
-    let serialized = serde_cbor::to_vec(state)?;
+    let mut serialized = Vec::new();
+    ciborium::into_writer(state, &mut serialized)?;
 
     // 1. fresh nonce
     let nonce_bytes = fresh_nonce();
     let cipher = Aes128SivAead::new_from_slice(key)
         .map_err(|e| StateStoreError::Encryption(e.to_string()))?;
-    let nonce  = Nonce::from_slice(&nonce_bytes);
-    let mut ciphertext = cipher.encrypt(nonce, Payload { msg: &serialized, aad: &[] })?;
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let mut ciphertext = cipher.encrypt(
+        nonce,
+        Payload {
+            msg: &serialized,
+            aad: &[],
+        },
+    )?;
 
     // 2. prepend store-version | nonce
     let mut disk_blob = Vec::with_capacity(1 + NONCE_LEN + ciphertext.len());
@@ -167,8 +191,11 @@ fn save_state<P: AsRef<Path>, T: Serialize>(
 
     // 3. Replace the file with the new one
     let path = path.as_ref();
-    let dir  = path.parent().unwrap_or_else(|| Path::new("."));
-    let tmp  = dir.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let tmp = dir.join(format!(
+        ".{}.tmp",
+        path.file_name().unwrap().to_string_lossy()
+    ));
 
     let mut f = OpenOptions::new()
         .create(true)
@@ -177,8 +204,8 @@ fn save_state<P: AsRef<Path>, T: Serialize>(
         .open(&tmp)?;
     fs::set_permissions(&tmp, Permissions::from_mode(0o600))?;
     f.write_all(&disk_blob)?;
-    f.sync_all()?;             
-    std::fs::rename(&tmp, path)?;       
+    f.sync_all()?;
+    std::fs::rename(&tmp, path)?;
     std::fs::File::open(dir)?.sync_all()?;
     Ok(())
 }
@@ -191,28 +218,35 @@ fn load_state<P: AsRef<Path>, T: for<'de> Deserialize<'de>>(
     if !path.exists() {
         return Ok(None);
     }
-    
-    // 
+
+    //
     const MAX_STORE: usize = 10 * 1024 * 1024;
     let blob = fs::read(path)?;
     if blob.len() < 1 + NONCE_LEN || blob.len() > MAX_STORE {
         return Err(StateStoreError::CorruptStore);
     }
-    
+
     // 1. format header
     let version = blob[0];
     if version != STORE_VERSION {
         return Err(StateStoreError::UnsupportedVersion(version));
     }
     let nonce_bytes = &blob[1..1 + NONCE_LEN];
-    let ciphertext  = &blob[1 + NONCE_LEN..];
+    let ciphertext = &blob[1 + NONCE_LEN..];
 
     // 2. decrypt
     let cipher = Aes128SivAead::new_from_slice(key)
         .map_err(|e| StateStoreError::Encryption(e.to_string()))?;
-    let plaintext = cipher.decrypt(Nonce::from_slice(nonce_bytes), Payload { msg: ciphertext, aad: &[] })
+    let plaintext = cipher
+        .decrypt(
+            Nonce::from_slice(nonce_bytes),
+            Payload {
+                msg: ciphertext,
+                aad: &[],
+            },
+        )
         .map_err(|e| StateStoreError::Decryption(e.to_string()))?;
 
-    let state: T = serde_cbor::from_slice(&plaintext)?;
+    let state: T = ciborium::from_reader(plaintext.as_slice())?;
     Ok(Some(state))
 }

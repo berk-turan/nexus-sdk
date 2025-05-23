@@ -1,15 +1,18 @@
-use argon2::{Algorithm, Argon2, Params, Version};
-use directories::ProjectDirs;
-use hex::FromHexError;
-use keyring::Entry;
-use rand::rngs::OsRng;
-use rand::RngCore;
-use std::env;
-use std::fs::{self, OpenOptions};
-use std::io;
-use std::path::PathBuf;
-use thiserror::Error;
-use zeroize::Zeroizing;
+use {
+    argon2::{Algorithm, Argon2, Params, Version},
+    directories::ProjectDirs,
+    hex::FromHexError,
+    keyring::Entry,
+    rand::{rngs::OsRng, RngCore},
+    std::{
+        env,
+        fs::{self, OpenOptions},
+        io,
+        path::PathBuf,
+    },
+    thiserror::Error,
+    zeroize::Zeroizing,
+};
 
 pub const SERVICE: &str = "nexus-cli-store";
 pub const USER: &str = "master-key";
@@ -26,7 +29,6 @@ pub const ARGON2_MEMORY_KIB: u32 = 64 * 1024;
 pub const ARGON2_ITERATIONS: u32 = 4;
 /// Parallelism degree.
 pub const ARGON2_PARALLELISM: u32 = 1;
-
 
 #[derive(Debug, Error)]
 pub enum MasterKeyError {
@@ -51,7 +53,6 @@ pub enum MasterKeyError {
 // Get the master key from the key-ring or try the passphrase from the environment variable
 // If the key is not found, generate a new one and store it in the key-ring
 pub fn get_master_key() -> Result<Zeroizing<[u8; KEY_LEN]>, MasterKeyError> {
-    
     // 1. Try the OS key-ring first.
     let entry = Entry::new(SERVICE, USER)?;
     if let Ok(hex) = entry.get_password() {
@@ -99,7 +100,7 @@ pub fn get_master_key() -> Result<Zeroizing<[u8; KEY_LEN]>, MasterKeyError> {
 
     // 3. No existing key: create a fresh random one, unless the keystore is
     //    already initialised (state file present).
-    let state_path = dirs.data_dir().join("state.cbor");
+    let state_path = dirs.data_dir().join("state.dat");
     if state_path.exists() {
         return Err(MasterKeyError::KeystoreLocked);
     }
@@ -113,10 +114,8 @@ pub fn get_master_key() -> Result<Zeroizing<[u8; KEY_LEN]>, MasterKeyError> {
 // Helper functions
 
 fn project_dirs() -> Result<ProjectDirs, MasterKeyError> {
-    ProjectDirs::from("com", "nexus", "nexus-cli")
-        .ok_or(MasterKeyError::ProjectDirNotFound)
+    ProjectDirs::from("com", "nexus", "nexus-cli").ok_or(MasterKeyError::ProjectDirNotFound)
 }
-
 
 fn write_salt_securely(path: &PathBuf, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
@@ -125,8 +124,7 @@ fn write_salt_securely(path: &PathBuf, bytes: &[u8]) -> io::Result<()> {
 
     #[cfg(unix)]
     {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::{io::Write, os::unix::fs::OpenOptionsExt};
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -137,11 +135,9 @@ fn write_salt_securely(path: &PathBuf, bytes: &[u8]) -> io::Result<()> {
 
     #[cfg(not(unix))]
     {
-        // Non-Unix: fall back to default perms 
+        // Non-Unix: fall back to default perms
         fs::write(path, bytes)?;
     }
 
     Ok(())
 }
-
-

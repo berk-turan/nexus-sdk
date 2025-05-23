@@ -41,15 +41,15 @@
 
 use {
     aes_siv::{
-        aead::{Aead, KeyInit, Payload},
+        aead::{Aead, Payload},
         Aes128SivAead,
+        KeyInit,
         Nonce,
     },
     hkdf::Hkdf,
     hmac::{Hmac, Mac},
     rand::{rngs::OsRng, RngCore},
     serde::{Deserialize, Deserializer, Serialize, Serializer},
-    serde_cbor,
     sha2::Sha256,
     std::collections::HashMap,
     subtle::ConstantTimeEq,
@@ -245,61 +245,89 @@ pub struct RatchetStateHE {
 }
 
 mod secret_bytes_serde {
-    use super::StaticSecret;
-    use crate::crypto::secret_bytes::SecretBytes;
-    use serde::{Serializer, Deserializer, Serialize, Deserialize};
+    use {
+        super::StaticSecret,
+        crate::crypto::secret_bytes::SecretBytes,
+        serde::{Deserialize, Deserializer, Serialize, Serializer},
+    };
     pub fn serialize<S>(sk: &StaticSecret, s: S) -> Result<S::Ok, S::Error>
-    where S: Serializer { SecretBytes::from(sk).serialize(s) }
+    where
+        S: Serializer,
+    {
+        SecretBytes::from(sk).serialize(s)
+    }
     pub fn deserialize<'de, D>(d: D) -> Result<StaticSecret, D::Error>
-    where D: Deserializer<'de> { Ok(SecretBytes::deserialize(d)?.into()) }
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(SecretBytes::deserialize(d)?.into())
+    }
 }
 
 mod public_key_serde {
-    use super::PublicKey;
-    use serde::{Serializer, Deserializer, Serialize, Deserialize};
-    
+    use {
+        super::PublicKey,
+        serde::{Deserialize, Deserializer, Serialize, Serializer},
+    };
+
     pub fn serialize<S>(pk: &PublicKey, s: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         pk.as_bytes().serialize(s)
     }
-    
+
     pub fn deserialize<'de, D>(d: D) -> Result<PublicKey, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let bytes: [u8; 32] = Deserialize::deserialize(d)?;
         Ok(PublicKey::from(bytes))
     }
 }
 
 mod public_key_option_serde {
-    use super::PublicKey;
-    use serde::{Serializer, Deserializer, Serialize, Deserialize};
-    
+    use {
+        super::PublicKey,
+        serde::{Deserialize, Deserializer, Serialize, Serializer},
+    };
+
     pub fn serialize<S>(opt_pk: &Option<PublicKey>, s: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         match opt_pk {
             Some(pk) => Some(pk.as_bytes()).serialize(s),
             None => None::<[u8; 32]>.serialize(s),
         }
     }
-    
+
     pub fn deserialize<'de, D>(d: D) -> Result<Option<PublicKey>, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let opt_bytes: Option<[u8; 32]> = Deserialize::deserialize(d)?;
         Ok(opt_bytes.map(PublicKey::from))
     }
 }
 
 mod nonce_seq_serde {
-    use super::NonceSeq;
-    use serde::{Serializer, Deserializer, Serialize, Deserialize};
-    
+    use {
+        super::NonceSeq,
+        serde::{Deserialize, Deserializer, Serialize, Serializer},
+    };
+
     pub fn serialize<S>(nonce_seq: &NonceSeq, s: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         (nonce_seq.prefix, nonce_seq.counter).serialize(s)
     }
-    
+
     pub fn deserialize<'de, D>(d: D) -> Result<NonceSeq, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let (prefix, counter): ([u8; 8], u64) = Deserialize::deserialize(d)?;
         Ok(NonceSeq { prefix, counter })
     }
@@ -430,13 +458,13 @@ impl RatchetStateHE {
     #[inline]
     fn hdecrypt(hk: &[u8; 32], data: &[u8]) -> Result<Header, RatchetError> {
         if data.len() < NONCE_LEN {
-            return Err(RatchetError::HeaderParse);
+            return Err(RatchetError::CryptoError);
         }
         let (nonce_bytes, ct) = data.split_at(NONCE_LEN);
         let cipher = Aes128SivAead::new_from_slice(hk).map_err(|_| RatchetError::CryptoError)?;
         let nonce = Nonce::from_slice(nonce_bytes);
         let pt = cipher.decrypt(nonce, Payload { msg: ct, aad: &[] })?;
-        serde_cbor::from_slice(&pt).map_err(|_| RatchetError::HeaderParse)
+        ciborium::from_reader(pt.as_slice()).map_err(|_| RatchetError::HeaderParse)
     }
 
     // === Constructors / initialisers ===
@@ -560,7 +588,8 @@ impl RatchetStateHE {
             pn: self.pn,
             n: self.ns,
         };
-        let header_bytes = serde_cbor::to_vec(&header).expect("cbor");
+        let mut header_bytes = Vec::new();
+        ciborium::into_writer(&header, &mut header_bytes).expect("cbor");
 
         let hk = self.hks.clone().ok_or(RatchetError::MissingHeaderKey)?;
         // Encrypt header
@@ -782,7 +811,8 @@ impl RatchetStateHE {
             pn: self.pn,
             n: self.ns,
         };
-        let hdr_bytes = serde_cbor::to_vec(&header).ok()?;
+        let mut hdr_bytes = Vec::new();
+        ciborium::into_writer(&header, &mut hdr_bytes).ok()?;
 
         let mut nonce_seq = NonceSeq::new();
         let nonce_bytes = nonce_seq.next();
@@ -1263,8 +1293,9 @@ mod tests {
         };
 
         // Serialize and deserialize
-        let serialized = serde_cbor::to_vec(&header).unwrap();
-        let deserialized: Header = serde_cbor::from_slice(&serialized).unwrap();
+        let mut serialized = Vec::new();
+        ciborium::into_writer(&header, &mut serialized).unwrap();
+        let deserialized: Header = ciborium::from_reader(serialized.as_slice()).unwrap();
 
         // Compare
         assert_eq!(header.pn, deserialized.pn);
