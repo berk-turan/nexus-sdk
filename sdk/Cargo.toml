@@ -193,6 +193,10 @@ version = "1.7"
 features = ["zeroize_derive"]
 optional = true
 
+[dependencies.ciborium]
+version = "0.2"
+optional = true
+
 # === Optional deps ===
 [dependencies.futures-util]
 version = "0.3"
@@ -288,11 +292,8 @@ assert_matches = "1.5.0"
 tokio = { workspace = true, features = ["full"] }
 serde_json = { workspace = true }
 mockito.workspace = true
+tempfile = "3"
 
 # === Build deps ===
 [build-dependencies]
 toml = "0.8.20"
-
-[dependencies.ciborium]
-version = "0.2"
-optional = true
