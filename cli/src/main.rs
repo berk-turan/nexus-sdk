@@ -6,9 +6,9 @@ mod error;
 mod gas;
 mod network;
 mod prelude;
-mod secrets;
 mod sui;
 mod tool;
+mod utils;
 
 use crate::prelude::*;
 
