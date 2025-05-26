@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(secret.id, 2);
     }
 
-    /// 4. Make sure the serialised representation really *is* base64.
+    /// 4. Make sure the serialised representation really is base64.
     #[test]
     fn serialisation_is_base64() {
         let secret = SecretFoo::new(Foo {
