@@ -27,6 +27,9 @@ crypto = [
     "serde_json", "heapless", "aes-siv", "serde_bytes", "keyring", "argon2", "hex", "directories",
 ]
 
+# Secret core feature provides a generic secret type
+secret_core = ["bincode", "base64", "rand", "thiserror"]
+
 # Sui Types feature gives access to the re-exported Sui types.
 sui_types = [
     "sui_sdk",
@@ -74,6 +77,7 @@ test_utils = [
 full = [
     "tool_fqn",
     "crypto",
+    "secret_core",
     "sui_types",
     "sui_idents",
     "types",
@@ -89,6 +93,11 @@ anyhow.workspace = true
 chrono.workspace = true
 dirs = "6.0.0"
 serde.workspace = true
+
+# === Optional deps for features ===
+[dependencies.base64]
+version = "0.21"
+optional = true
 
 # === Crypto deps ===
 [dependencies.aead]

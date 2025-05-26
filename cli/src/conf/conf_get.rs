@@ -57,7 +57,7 @@ mod tests {
             sui: sui_conf,
             nexus: Some(nexus_objects),
             tools,
-            crypto: Secret(crypto_conf),
+            crypto: Secret::new(crypto_conf),
         };
 
         // Write the configuration to the file.
