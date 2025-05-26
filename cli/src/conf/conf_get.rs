@@ -13,7 +13,10 @@ pub(crate) async fn get_nexus_conf(conf_path: PathBuf) -> AnyResult<CliConf, Nex
 
 #[cfg(test)]
 mod tests {
-    use {super::*, nexus_sdk::test_utils::sui_mocks};
+    use {
+        super::*,
+        nexus_sdk::{crypto::x3dh::PreKeyBundle, test_utils::sui_mocks},
+    };
 
     #[tokio::test]
     #[serial_test::serial(master_key_env)]
@@ -48,9 +51,35 @@ mod tests {
 
         let tools = HashMap::new();
 
+        // Create sessions for testing
+        let mut sessions = HashMap::new();
+
+        // Create sender and receiver identities
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
+
+        let spk_secret = {
+            use rand::{rngs::OsRng, RngCore};
+            let mut rng = OsRng;
+            let mut bytes = [0u8; 32];
+            rng.fill_bytes(&mut bytes);
+            nexus_sdk::crypto::x3dh::IdentityKey::generate()
+                .secret()
+                .clone()
+        };
+        let spk_id = 1;
+        let bundle = PreKeyBundle::new(&receiver_id, spk_id, &spk_secret, None, None);
+
+        // Initiate a session (sender side)
+        let (_, sender_session) = Session::initiate(&sender_id, &bundle, b"test session message")
+            .expect("Failed to initiate session");
+
+        // Store the sender session
+        sessions.insert(*sender_session.id(), sender_session);
+
         let crypto_conf = CryptoConf {
             identity_key: Some(IdentityKey::generate()),
-            sessions: HashMap::new(), // no sessions yet
+            sessions,
         };
 
         let conf = CliConf {
@@ -71,6 +100,23 @@ mod tests {
         let result = get_nexus_conf(path).await.expect("Failed to print config");
 
         assert_eq!(result, conf);
+
+        // Verify sessions field is properly handled during deserialization
+        assert_eq!(
+            result.crypto.sessions.len(),
+            1,
+            "Should have 1 session (shared between sender and receiver)"
+        );
+
+        // Verify we can recover the sessions from the configuration
+        for (session_id, session) in result.crypto.sessions.iter() {
+            // Verify session IDs are properly stored and retrieved
+            assert_eq!(
+                session.id(),
+                session_id,
+                "Session ID should match the map key"
+            );
+        }
 
         // Clean-up env vars
         std::env::remove_var("NEXUS_CLI_STORE_PASSPHRASE");
