@@ -287,8 +287,9 @@ impl Session {
             (Some(secret), Some(id)) => Some((secret, id)),
             _ => None,
         };
-        
-        let (plaintext, sk_raw) = receiver_receive(identity, spk_secret, bundle.spk_id, otpk_with_id, msg)?;
+
+        let (plaintext, sk_raw) =
+            receiver_receive(identity, spk_secret, bundle.spk_id, otpk_with_id, msg)?;
         let sk = Zeroizing::new(sk_raw);
 
         // 3. Derive HE keys (note send/recv reversed).
@@ -589,8 +590,9 @@ mod tests {
         let mut receiver_sessions = Vec::new();
         for message in &sender_messages {
             if let Message::Initial(msg) = message {
-                let (session, _plaintext) = Session::recv(&receiver_id, &spk_secret, &bundle, msg, None)
-                    .expect("Receiver respond failed");
+                let (session, _plaintext) =
+                    Session::recv(&receiver_id, &spk_secret, &bundle, msg, None)
+                        .expect("Receiver respond failed");
                 receiver_sessions.push(session);
             }
         }
@@ -742,7 +744,7 @@ mod tests {
                     Message::Initial(m) => m,
                     _ => unreachable!(),
                 },
-                None
+                None,
             )
             .expect("Receiver respond failed");
 
@@ -881,7 +883,7 @@ mod tests {
                     Message::Initial(m) => m,
                     _ => unreachable!(),
                 }, // leader doesnt actually respond this is local to the leader
-                None
+                None,
             )
             .expect("respond");
             leader_sessions[idx] = Some(sess);
@@ -967,11 +969,11 @@ mod tests {
 
         // Create bundle with OTK
         let bundle = PreKeyBundle::new(
-            &receiver_id, 
-            spk_id, 
-            &spk_secret, 
-            Some(otpk_id), 
-            Some(&otpk_secret)
+            &receiver_id,
+            spk_id,
+            &spk_secret,
+            Some(otpk_id),
+            Some(&otpk_secret),
         );
 
         let init_payload = b"hello with OTK";
@@ -985,7 +987,11 @@ mod tests {
         };
 
         // Verify that the initial message contains the OTK ID
-        assert_eq!(initial_msg.otpk_id, Some(otpk_id), "OTK ID should be included in initial message");
+        assert_eq!(
+            initial_msg.otpk_id,
+            Some(otpk_id),
+            "OTK ID should be included in initial message"
+        );
 
         // Receiver processes the initial message with the OTK secret
         let (mut receiver_sess, plaintext) = Session::recv(
@@ -993,9 +999,10 @@ mod tests {
             &spk_secret,
             &bundle,
             &initial_msg,
-            Some(&otpk_secret)
-        ).expect("Receiver respond failed");
-        
+            Some(&otpk_secret),
+        )
+        .expect("Receiver respond failed");
+
         assert_eq!(plaintext, init_payload, "Initial plaintext mismatch");
 
         // Verify session IDs match
