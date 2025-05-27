@@ -34,6 +34,7 @@
 //!         Message::Initial(m) => m,
 //!         _ => unreachable!("Sender always starts with Initial"),
 //!     },
+//!     None
 //! )?;
 //! assert_eq!(plaintext, b"Hi Receiver!");
 //!
@@ -266,11 +267,13 @@ impl Session {
     /// * `spk_secret` Receiver's Signed-Pre-Key secret.
     /// * `bundle` — Sender's advertised pre-key bundle.
     /// * `msg` — Initial message from Sender.
+    /// * `otpk_secret` — Optional OTPK secret
     pub fn recv(
         identity: &IdentityKey,
         spk_secret: &StaticSecret,
         bundle: &PreKeyBundle,
         msg: &InitialMessage,
+        otpk_secret: Option<&StaticSecret>,
     ) -> Result<(Self, Vec<u8>), SessionError> {
         // 1. Sanity-check our own bundle (defensive).
         if !bundle.verify_spk() {
@@ -280,7 +283,12 @@ impl Session {
         }
 
         // 2. Run X3DH (Receiver side).
-        let (plaintext, sk_raw) = receiver_receive(identity, spk_secret, bundle.spk_id, None, msg)?;
+        let otpk_with_id = match (otpk_secret, msg.otpk_id) {
+            (Some(secret), Some(id)) => Some((secret, id)),
+            _ => None,
+        };
+        
+        let (plaintext, sk_raw) = receiver_receive(identity, spk_secret, bundle.spk_id, otpk_with_id, msg)?;
         let sk = Zeroizing::new(sk_raw);
 
         // 3. Derive HE keys (note send/recv reversed).
@@ -454,7 +462,7 @@ mod tests {
         };
 
         let (mut receiver_sess, plaintext) =
-            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg)
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg, None)
                 .expect("Receiver respond failed");
         assert_eq!(plaintext, init_payload, "Initial plaintext mismatch");
 
@@ -495,7 +503,7 @@ mod tests {
         };
 
         let (mut receiver_sess, _) =
-            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg).unwrap();
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg, None).unwrap();
 
         // tamper ciphertext
         let mut msg = sender_sess.encrypt(b"data").expect("Sender encrypt failed");
@@ -524,7 +532,7 @@ mod tests {
         };
 
         let (mut receiver_sess, _) =
-            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg).unwrap();
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg, None).unwrap();
 
         // Sender sends 3 messages
         let msg1 = sender_sess
@@ -581,7 +589,7 @@ mod tests {
         let mut receiver_sessions = Vec::new();
         for message in &sender_messages {
             if let Message::Initial(msg) = message {
-                let (session, _plaintext) = Session::recv(&receiver_id, &spk_secret, &bundle, msg)
+                let (session, _plaintext) = Session::recv(&receiver_id, &spk_secret, &bundle, msg, None)
                     .expect("Receiver respond failed");
                 receiver_sessions.push(session);
             }
@@ -626,7 +634,7 @@ mod tests {
 
         // Initialize the receiver session
         let (mut receiver_sess, _) =
-            Session::recv(&receiver_id, &spk_secret, &bundle, initial_message).unwrap();
+            Session::recv(&receiver_id, &spk_secret, &bundle, initial_message, None).unwrap();
 
         // Do when you want to send that and the message can contain the data we want
         // Send a message in each direction to establish the ratchet
@@ -734,6 +742,7 @@ mod tests {
                     Message::Initial(m) => m,
                     _ => unreachable!(),
                 },
+                None
             )
             .expect("Receiver respond failed");
 
@@ -872,6 +881,7 @@ mod tests {
                     Message::Initial(m) => m,
                     _ => unreachable!(),
                 }, // leader doesnt actually respond this is local to the leader
+                None
             )
             .expect("respond");
             leader_sessions[idx] = Some(sess);
@@ -941,5 +951,73 @@ mod tests {
                 .expect("user decrypt final failed"); // user decrypt all the data the leader sent(even that in the edges and that intermidiate data), after reding advances the chain
             assert_eq!(out, ans, "final mismatch user {idx}");
         }
+    }
+
+    #[test]
+    fn test_session_with_otk() {
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
+
+        let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
+        let spk_id = 1;
+
+        // Generate an OTK for additional forward secrecy
+        let otpk_secret = StaticSecret::random_from_rng(&mut OsRng);
+        let otpk_id = 42; // Some unique ID for the OTK
+
+        // Create bundle with OTK
+        let bundle = PreKeyBundle::new(
+            &receiver_id, 
+            spk_id, 
+            &spk_secret, 
+            Some(otpk_id), 
+            Some(&otpk_secret)
+        );
+
+        let init_payload = b"hello with OTK";
+        let (message, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, init_payload).expect("Sender initiate failed");
+
+        // Verify message type
+        let initial_msg = match message {
+            Message::Initial(msg) => msg,
+            _ => panic!("Expected Initial message type"),
+        };
+
+        // Verify that the initial message contains the OTK ID
+        assert_eq!(initial_msg.otpk_id, Some(otpk_id), "OTK ID should be included in initial message");
+
+        // Receiver processes the initial message with the OTK secret
+        let (mut receiver_sess, plaintext) = Session::recv(
+            &receiver_id,
+            &spk_secret,
+            &bundle,
+            &initial_msg,
+            Some(&otpk_secret)
+        ).expect("Receiver respond failed");
+        
+        assert_eq!(plaintext, init_payload, "Initial plaintext mismatch");
+
+        // Verify session IDs match
+        assert_eq!(
+            sender_sess.id(),
+            receiver_sess.id(),
+            "Session IDs should match even with OTK"
+        );
+
+        // Test bidirectional messaging works with OTK-established session
+        let msg1 = sender_sess
+            .encrypt(b"message after OTK handshake")
+            .expect("Sender encrypt failed");
+        let pt1 = receiver_sess
+            .decrypt(&msg1)
+            .expect("Receiver decrypt failed");
+        assert_eq!(&pt1, b"message after OTK handshake");
+
+        let msg2 = receiver_sess
+            .encrypt(b"reply after OTK handshake")
+            .expect("Receiver encrypt failed");
+        let pt2 = sender_sess.decrypt(&msg2).expect("Sender decrypt failed");
+        assert_eq!(&pt2, b"reply after OTK handshake");
     }
 }
