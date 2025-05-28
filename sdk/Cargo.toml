@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["tool_fqn"]
+default = ["tool_fqn", "secret_core"]
 
 # Tool FQN feature enables the use of the `ToolFqn` struct and `fqn!` macro.
 # This feature is enabled by default.
@@ -28,7 +28,7 @@ crypto = [
 ]
 
 # Secret core feature provides a generic secret type
-secret_core = ["bincode", "base64", "rand", "thiserror"]
+secret_core = ["bincode", "base64", "rand", "thiserror", "chacha20poly1305", "zeroize"]
 
 # Sui Types feature gives access to the re-exported Sui types.
 sui_types = [
@@ -123,7 +123,7 @@ optional = true
 
 [dependencies.chacha20poly1305]
 version = "0.10"
-features = ["rand_core"]
+features = ["rand_core", "std"]
 optional = true
 
 [dependencies.hkdf]
