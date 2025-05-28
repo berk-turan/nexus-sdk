@@ -17,7 +17,6 @@ use {
         marker::PhantomData,
         ops::{Deref, DerefMut},
     },
-    zeroize::{Zeroize, Zeroizing},
 };
 
 // -- External Keyed Encryption --
@@ -130,16 +129,16 @@ where
 
 // -- Internal Keyed Encryption --
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct GenericSecretKeyed<
-    T: Zeroize,
+    T,
     A: KeyedEncryptionAlgo,
     C: PlaintextCodec,
     K: KeyProvider<Key = A::Key>,
 > {
     // Either ciphertext or plaintext is present – never both.
     cipher: Option<(Vec<u8>, Vec<u8>)>, // (nonce, ct)
-    plain: Option<Zeroizing<T>>,        // decrypted value
+    plain: Option<T>,                   // decrypted value
 
     provider: Option<K>, // key provider
 
@@ -149,7 +148,6 @@ pub struct GenericSecretKeyed<
 
 impl<T, A, C, K> GenericSecretKeyed<T, A, C, K>
 where
-    T: Zeroize,
     A: KeyedEncryptionAlgo,
     C: PlaintextCodec,
     K: KeyProvider<Key = A::Key>,
@@ -169,7 +167,7 @@ where
     pub fn with_provider(value: T, provider: K) -> Self {
         Self {
             cipher: None,
-            plain: Some(Zeroizing::new(value)),
+            plain: Some(value),
             provider: Some(provider),
             _algo: PhantomData,
             _codec: PhantomData,
@@ -185,7 +183,7 @@ where
     pub fn expose<F, R>(&mut self, f: F) -> Result<R, SecretStoreError>
     where
         F: FnOnce(&T) -> R,
-        T: DeserializeOwned + Zeroize,
+        T: DeserializeOwned,
     {
         // Decrypt on first access.
         if self.plain.is_none() {
@@ -202,10 +200,10 @@ where
             let pt_bytes = A::decrypt_with_key(&key, &nonce, &ct)?;
             let value = C::decode(&pt_bytes).map_err(|e| SecretStoreError::Codec(e.to_string()))?;
 
-            self.plain = Some(Zeroizing::new(value));
+            self.plain = Some(value);
         }
 
-        Ok(f(&**self.plain.as_ref().unwrap()))
+        Ok(f(self.plain.as_ref().unwrap()))
     }
 
     // Helper function to require a provider
@@ -220,7 +218,6 @@ where
 
 impl<T: Default, A, C, K> Default for GenericSecretKeyed<T, A, C, K>
 where
-    T: Zeroize,
     A: KeyedEncryptionAlgo,
     C: PlaintextCodec,
     K: KeyProvider<Key = A::Key>,
@@ -228,7 +225,7 @@ where
     fn default() -> Self {
         Self {
             cipher: None, // not encrypted yet
-            plain: Some(Zeroizing::new(T::default())),
+            plain: Some(T::default()),
             provider: None, // must be attached later
             _algo: PhantomData,
             _codec: PhantomData,
@@ -240,7 +237,7 @@ where
 
 impl<T, A, C, K> Serialize for GenericSecretKeyed<T, A, C, K>
 where
-    T: Serialize + Zeroize,
+    T: Serialize,
     A: KeyedEncryptionAlgo,
     C: PlaintextCodec,
     K: KeyProvider<Key = A::Key>,
@@ -254,9 +251,7 @@ where
         })?;
 
         // Encode plaintext -> bytes (buffer is zeroised on drop)
-        let pt_buf = Zeroizing::new(
-            C::encode(&**plain_ref).map_err(|e| serde::ser::Error::custom(e.to_string()))?,
-        );
+        let pt_buf = C::encode(plain_ref).map_err(|e| serde::ser::Error::custom(e.to_string()))?;
 
         // Fresh nonce
         let mut nonce = vec![0u8; A::NONCE_LEN];
@@ -286,7 +281,7 @@ where
 
 impl<'de, T, A, C, K> Deserialize<'de> for GenericSecretKeyed<T, A, C, K>
 where
-    T: DeserializeOwned + Zeroize,
+    T: DeserializeOwned,
     A: KeyedEncryptionAlgo,
     C: PlaintextCodec,
     K: KeyProvider<Key = A::Key>,
@@ -336,7 +331,7 @@ mod tests {
     }
 
     /// A simple payload type we can serialise with bincode/serde.
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Zeroize, Default)]
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
     struct Foo {
         id: u32,
         label: String,
