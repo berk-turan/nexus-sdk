@@ -553,6 +553,22 @@ impl DefaultGasExtension {
     };
 }
 
+// == `nexus_workflow::prekey_vault` ==
+
+pub struct PrekeyVault;
+
+const PREKEY_VAULT_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("prekey_vault");
+
+impl PrekeyVault {
+    /// PrekeyVault type for lookups.
+    ///
+    /// `nexus_workflow::prekey_vault::PrekeyVault`
+    pub const PREKEY_VAULT: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PREKEY_VAULT_MODULE,
+        name: sui::move_ident_str!("PrekeyVault"),
+    };
+}
+
 /// Helper to turn a `ModuleAndNameIdent` into a `sui::MoveTypeTag`. Useful for
 /// creating generic types.
 pub fn into_type_tag(

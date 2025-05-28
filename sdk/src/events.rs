@@ -46,6 +46,10 @@ pub enum NexusEventKind {
     FoundingLeaderCapCreated(FoundingLeaderCapCreatedEvent),
     #[serde(rename = "GasSettlementUpdateEvent")]
     GasSettlementUpdate(GasSettlementUpdateEvent),
+    #[serde(rename = "PrekeyVaultCreatedEvent")]
+    PrekeyVaultCreated(PrekeyVaultCreatedEvent),
+    #[serde(rename = "PrekeyClaimedEvent")]
+    PrekeyClaimed(PrekeyClaimedEvent),
     // These events are unused for now.
     #[serde(rename = "ToolRegistryCreatedEvent")]
     ToolRegistryCreated(serde_json::Value),
@@ -204,6 +208,30 @@ pub struct GasSettlementUpdateEvent {
     pub tool_fqn: ToolFqn,
     pub vertex: TypeName,
     pub was_settled: bool,
+}
+
+/// Fired by the Nexus Workflow when a new prekey vault is created. This happens
+/// on initial network setup.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PrekeyVaultCreatedEvent {
+    pub vault: sui::ObjectID,
+    pub crypto_cap: sui::ObjectID,
+}
+
+/// Fired by the Nexus Workflow when a prekey is claimed. Notifies about the
+/// remaining prekeys in the vault after the claim.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PrekeyClaimedEvent {
+    /// What is the internal ID of the prekey that was claimed.
+    pub prekey_id: u32,
+    /// Which address claimed the prekey.
+    pub claimed_by: sui::ObjectID,
+    /// How many prekeys are left in the vault after this claim.
+    #[serde(
+        deserialize_with = "deserialize_sui_u64",
+        serialize_with = "serialize_sui_u64"
+    )]
+    pub remaining: u64,
 }
 
 // == Parsing ==
