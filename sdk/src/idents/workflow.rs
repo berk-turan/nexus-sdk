@@ -560,12 +560,40 @@ pub struct PrekeyVault;
 const PREKEY_VAULT_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("prekey_vault");
 
 impl PrekeyVault {
+    /// Claim a prekey for the tx sender.
+    ///
+    /// `nexus_workflow::prekey_vault::claim_prekey_for_self`
+    pub const CLAIM_PREKEY_FOR_SELF: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PREKEY_VAULT_MODULE,
+        name: sui::move_ident_str!("claim_prekey_for_self"),
+    };
+    /// Prekey struct type. Mostly used for creating generic types.
+    ///
+    /// `nexus_workflow::prekey_vault::Prekey`
+    pub const PREKEY: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PREKEY_VAULT_MODULE,
+        name: sui::move_ident_str!("Prekey"),
+    };
+    /// Create a new prekey from bytes.
+    ///
+    /// `nexus_workflow::prekey_vault::prekey_from_bytes`
+    pub const PREKEY_FROM_BYTES: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PREKEY_VAULT_MODULE,
+        name: sui::move_ident_str!("prekey_from_bytes"),
+    };
     /// PrekeyVault type for lookups.
     ///
     /// `nexus_workflow::prekey_vault::PrekeyVault`
     pub const PREKEY_VAULT: ModuleAndNameIdent = ModuleAndNameIdent {
         module: PREKEY_VAULT_MODULE,
         name: sui::move_ident_str!("PrekeyVault"),
+    };
+    /// Replenish the prekey vault with public prekeys.
+    ///
+    /// `nexus_workflow::prekey_vault::replenish_prekeys`
+    pub const REPLENISH_PREKEYS: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PREKEY_VAULT_MODULE,
+        name: sui::move_ident_str!("replenish_prekeys"),
     };
 }
 
