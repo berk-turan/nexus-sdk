@@ -8,7 +8,7 @@ use crate::{
 pub fn replenish_prekeys(
     tx: &mut sui::ProgrammableTransactionBuilder,
     objects: &NexusObjects,
-    owner_cap: sui::ObjectRef,
+    owner_cap: &sui::ObjectRef,
     prekeys: &Vec<Prekey>,
 ) -> anyhow::Result<sui::Argument> {
     // `self: &mut PrekeyVault`
@@ -141,7 +141,7 @@ mod tests {
         ];
 
         let mut tx = sui::ProgrammableTransactionBuilder::new();
-        replenish_prekeys(&mut tx, &objects, owner_cap, &prekeys).unwrap();
+        replenish_prekeys(&mut tx, &objects, &owner_cap, &prekeys).unwrap();
         let tx = tx.finish();
 
         let sui::Command::MoveCall(call) = &tx.commands.last().unwrap() else {
@@ -197,7 +197,7 @@ mod tests {
         }];
 
         let mut tx = sui::ProgrammableTransactionBuilder::new();
-        let result = replenish_prekeys(&mut tx, &objects, owner_cap, &prekeys);
+        let result = replenish_prekeys(&mut tx, &objects, &owner_cap, &prekeys);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
