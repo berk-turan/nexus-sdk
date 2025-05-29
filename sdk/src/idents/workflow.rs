@@ -553,47 +553,47 @@ impl DefaultGasExtension {
     };
 }
 
-// == `nexus_workflow::prekey_vault` ==
+// == `nexus_workflow::pre_key_vault` ==
 
-pub struct PrekeyVault;
+pub struct PreKeyVault;
 
-const PREKEY_VAULT_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("prekey_vault");
+const PRE_KEY_VAULT_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("pre_key_vault");
 
-impl PrekeyVault {
-    /// Claim a prekey for the tx sender.
+impl PreKeyVault {
+    /// Claim a pre_key for the tx sender.
     ///
-    /// `nexus_workflow::prekey_vault::claim_prekey_for_self`
-    pub const CLAIM_PREKEY_FOR_SELF: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: PREKEY_VAULT_MODULE,
-        name: sui::move_ident_str!("claim_prekey_for_self"),
+    /// `nexus_workflow::pre_key_vault::claim_pre_key_for_self`
+    pub const CLAIM_PRE_KEY_FOR_SELF: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PRE_KEY_VAULT_MODULE,
+        name: sui::move_ident_str!("claim_pre_key_for_self"),
     };
-    /// Prekey struct type. Mostly used for creating generic types.
+    /// PreKey struct type. Mostly used for creating generic types.
     ///
-    /// `nexus_workflow::prekey_vault::Prekey`
-    pub const PREKEY: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: PREKEY_VAULT_MODULE,
-        name: sui::move_ident_str!("Prekey"),
+    /// `nexus_workflow::pre_key_vault::PreKey`
+    pub const PRE_KEY: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PRE_KEY_VAULT_MODULE,
+        name: sui::move_ident_str!("PreKey"),
     };
-    /// Create a new prekey from bytes.
+    /// Create a new pre_key from bytes.
     ///
-    /// `nexus_workflow::prekey_vault::prekey_from_bytes`
-    pub const PREKEY_FROM_BYTES: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: PREKEY_VAULT_MODULE,
-        name: sui::move_ident_str!("prekey_from_bytes"),
+    /// `nexus_workflow::pre_key_vault::pre_key_from_bytes`
+    pub const PRE_KEY_FROM_BYTES: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PRE_KEY_VAULT_MODULE,
+        name: sui::move_ident_str!("pre_key_from_bytes"),
     };
-    /// PrekeyVault type for lookups.
+    /// PreKeyVault type for lookups.
     ///
-    /// `nexus_workflow::prekey_vault::PrekeyVault`
-    pub const PREKEY_VAULT: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: PREKEY_VAULT_MODULE,
-        name: sui::move_ident_str!("PrekeyVault"),
+    /// `nexus_workflow::pre_key_vault::PreKeyVault`
+    pub const PRE_KEY_VAULT: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PRE_KEY_VAULT_MODULE,
+        name: sui::move_ident_str!("PreKeyVault"),
     };
-    /// Replenish the prekey vault with public prekeys.
+    /// Replenish the pre_key vault with public pre_keys.
     ///
-    /// `nexus_workflow::prekey_vault::replenish_prekeys`
-    pub const REPLENISH_PREKEYS: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: PREKEY_VAULT_MODULE,
-        name: sui::move_ident_str!("replenish_prekeys"),
+    /// `nexus_workflow::pre_key_vault::replenish_pre_keys`
+    pub const REPLENISH_PRE_KEYS: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PRE_KEY_VAULT_MODULE,
+        name: sui::move_ident_str!("replenish_pre_keys"),
     };
 }
 

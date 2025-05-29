@@ -99,7 +99,7 @@ mod tests {
             tool_registry: sui_mocks::mock_sui_object_ref(),
             default_sap: sui_mocks::mock_sui_object_ref(),
             gas_service: sui_mocks::mock_sui_object_ref(),
-            prekey_vault: sui_mocks::mock_sui_object_ref(),
+            pre_key_vault: sui_mocks::mock_sui_object_ref(),
         };
 
         // Serialize the NexusObjects instance to a TOML string.

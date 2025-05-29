@@ -47,9 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `session` in `crypto` that glues together X3DH + Double Ratchet for a complete e2d Secure Session Layer.
 - generic `secret` type interface for encrypting and decrypting wrapped values
 - `transactions::crypto` module containing PTB templates for crypto-related transactions
-- `idents::workflow::PrekeyVault` struct that contains prekey vault identifiers
-- `prekey_vault` key to `NexusObjects`
-- prekey vault related Nexus events and their definitions
+- `idents::workflow::PreKeyVault` struct that contains pre key vault identifiers
+- `pre_key_vault` key to `NexusObjects`
+- pre key vault related Nexus events and their definitions
 
 #### Changed
 

@@ -14,5 +14,5 @@ pub struct NexusObjects {
     pub tool_registry: sui::ObjectRef,
     pub default_sap: sui::ObjectRef,
     pub gas_service: sui::ObjectRef,
-    pub prekey_vault: sui::ObjectRef,
+    pub pre_key_vault: sui::ObjectRef,
 }
