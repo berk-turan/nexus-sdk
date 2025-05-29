@@ -85,7 +85,7 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", secret_home.path());
         std::env::set_var("XDG_DATA_HOME", secret_home.path());
 
-        let tempdir = tempfile::tempdir().unwrap().into_path();
+        let tempdir = tempfile::tempdir().unwrap().keep();
         let path = tempdir.join("conf.toml");
         let objects_path = tempdir.join("objects.toml");
 
