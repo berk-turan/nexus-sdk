@@ -1052,4 +1052,97 @@ mod tests {
         // Ciphertexts should be different even with same plaintext due to different nonces
         assert_ne!(msg1.0.ciphertext, msg2.0.ciphertext);
     }
+
+    #[test]
+    fn test_serialization_deserialization() {
+        // Test IdentityKey serialization/deserialization
+        let identity = IdentityKey::generate();
+        let original_dh_public_bytes = *identity.dh_public.as_bytes();
+        let original_verify_bytes = *identity.verify.as_bytes();
+
+        // Serialize IdentityKey to binary format using bincode
+        let identity_bytes =
+            bincode::serialize(&identity).expect("Failed to serialize IdentityKey");
+
+        // Deserialize IdentityKey from binary format
+        let deserialized_identity: IdentityKey =
+            bincode::deserialize(&identity_bytes).expect("Failed to deserialize IdentityKey");
+
+        // Verify that the deserialized identity key matches the original
+        assert_eq!(
+            original_dh_public_bytes,
+            *deserialized_identity.dh_public.as_bytes()
+        );
+        assert_eq!(
+            original_verify_bytes,
+            *deserialized_identity.verify.as_bytes()
+        );
+
+        // Test PreKeyBundle serialization/deserialization
+        let receiver = IdentityKey::generate();
+        let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
+        let spk_id = 42u32;
+        let otpk_secret = StaticSecret::random_from_rng(&mut OsRng);
+        let otpk_id = 123u32;
+
+        // Create bundle with OTPK
+        let original_bundle = PreKeyBundle::new(
+            &receiver,
+            spk_id,
+            &spk_secret,
+            Some(otpk_id),
+            Some(&otpk_secret),
+        );
+
+        // Serialize PreKeyBundle to binary format using bincode
+        let bundle_bytes =
+            bincode::serialize(&original_bundle).expect("Failed to serialize PreKeyBundle");
+
+        // Deserialize PreKeyBundle from binary format
+        let deserialized_bundle: PreKeyBundle =
+            bincode::deserialize(&bundle_bytes).expect("Failed to deserialize PreKeyBundle");
+
+        // Verify that all fields match
+        assert_eq!(original_bundle.spk_id, deserialized_bundle.spk_id);
+        assert_eq!(
+            original_bundle.spk_pub.as_bytes(),
+            deserialized_bundle.spk_pub.as_bytes()
+        );
+        assert_eq!(original_bundle.spk_sig, deserialized_bundle.spk_sig);
+        assert_eq!(
+            original_bundle.identity_verify_bytes,
+            deserialized_bundle.identity_verify_bytes
+        );
+        assert_eq!(
+            original_bundle.identity_pk.as_bytes(),
+            deserialized_bundle.identity_pk.as_bytes()
+        );
+        assert_eq!(original_bundle.otpk_id, deserialized_bundle.otpk_id);
+
+        // Check OTPK public key
+        match (original_bundle.otpk_pub, deserialized_bundle.otpk_pub) {
+            (Some(orig), Some(deser)) => assert_eq!(orig.as_bytes(), deser.as_bytes()),
+            (None, None) => {}
+            _ => panic!("OTPK public key mismatch between original and deserialized"),
+        }
+
+        // Verify that the deserialized bundle still passes signature verification
+        assert!(deserialized_bundle.verify_spk());
+
+        // Test that we can use the deserialized bundle in a full X3DH exchange
+        let sender = IdentityKey::generate();
+        let plaintext = b"test with deserialized bundle";
+
+        let msg = sender_init(&sender, &deserialized_bundle, plaintext).unwrap();
+        let out = receiver_receive(
+            &receiver,
+            &spk_secret,
+            spk_id,
+            Some((&otpk_secret, otpk_id)),
+            &msg.0,
+        )
+        .unwrap();
+
+        assert_eq!(plaintext, &out.0[..]);
+    }
 }
