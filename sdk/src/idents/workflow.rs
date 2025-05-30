@@ -560,7 +560,14 @@ pub struct PreKeyVault;
 const PRE_KEY_VAULT_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("pre_key_vault");
 
 impl PreKeyVault {
-    /// Claim a pre_key for the tx sender.
+    /// Associate a pre key with the sender and fire an initial message.
+    ///
+    /// `nexus_workflow::pre_key_vault::associate_pre_key`
+    pub const ASSOCIATE_PRE_KEY: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: PRE_KEY_VAULT_MODULE,
+        name: sui::move_ident_str!("associate_pre_key"),
+    };
+    /// Claim a pre key for the tx sender.
     ///
     /// `nexus_workflow::pre_key_vault::claim_pre_key_for_self`
     pub const CLAIM_PRE_KEY_FOR_SELF: ModuleAndNameIdent = ModuleAndNameIdent {
@@ -574,7 +581,7 @@ impl PreKeyVault {
         module: PRE_KEY_VAULT_MODULE,
         name: sui::move_ident_str!("PreKey"),
     };
-    /// Create a new pre_key from bytes.
+    /// Create a new pre key from bytes.
     ///
     /// `nexus_workflow::pre_key_vault::pre_key_from_bytes`
     pub const PRE_KEY_FROM_BYTES: ModuleAndNameIdent = ModuleAndNameIdent {
@@ -588,7 +595,7 @@ impl PreKeyVault {
         module: PRE_KEY_VAULT_MODULE,
         name: sui::move_ident_str!("PreKeyVault"),
     };
-    /// Replenish the pre_key vault with public pre_keys.
+    /// Replenish the pre key vault with public pre_keys.
     ///
     /// `nexus_workflow::pre_key_vault::replenish_pre_keys`
     pub const REPLENISH_PRE_KEYS: ModuleAndNameIdent = ModuleAndNameIdent {
