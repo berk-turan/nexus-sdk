@@ -181,3 +181,226 @@ fn encrypt_entry_ports_once(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        nexus_sdk::crypto::{
+            session::{Message, Session},
+            x3dh::{IdentityKey, PreKeyBundle},
+        },
+        serde_json::json,
+    };
+
+    /// Helper to create a mock session for testing
+    fn create_mock_session() -> Session {
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
+        let spk_secret = IdentityKey::generate().secret().clone();
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
+
+        let (message, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, b"test").expect("Failed to initiate session");
+
+        let initial_msg = match message {
+            Message::Initial(msg) => msg,
+            _ => panic!("Expected Initial message type"),
+        };
+
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, &initial_msg, None)
+                .expect("Failed to receive session");
+
+        // Exchange messages to establish the ratchet properly
+        let setup_msg = sender_sess
+            .encrypt(b"setup")
+            .expect("Failed to encrypt setup message");
+        let _ = receiver_sess
+            .decrypt(&setup_msg)
+            .expect("Failed to decrypt setup message");
+
+        sender_sess
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_empty_targets() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "test_value"
+            }
+        });
+        let targets: Vec<String> = vec![];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_ok());
+        // Input should remain unchanged when no targets are specified
+        assert_eq!(input["vertex1"]["port1"], "test_value");
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_single_target() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "test_value",
+                "port2": "other_value"
+            }
+        });
+        let targets = vec!["vertex1.port1".to_string()];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_ok());
+
+        // port1 should be encrypted (no longer the original string)
+        assert_ne!(input["vertex1"]["port1"], "test_value");
+        // port2 should remain unchanged
+        assert_eq!(input["vertex1"]["port2"], "other_value");
+
+        // The encrypted value should be a JSON object with ciphertext fields
+        assert!(input["vertex1"]["port1"].is_object());
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_multiple_targets() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "value1",
+                "port2": "value2"
+            },
+            "vertex2": {
+                "port3": "value3"
+            }
+        });
+        let targets = vec![
+            "vertex1.port1".to_string(),
+            "vertex1.port2".to_string(),
+            "vertex2.port3".to_string(),
+        ];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_ok());
+
+        // All targeted ports should be encrypted
+        assert!(input["vertex1"]["port1"].is_object());
+        assert!(input["vertex1"]["port2"].is_object());
+        assert!(input["vertex2"]["port3"].is_object());
+
+        // Original values should no longer be present
+        assert_ne!(input["vertex1"]["port1"], "value1");
+        assert_ne!(input["vertex1"]["port2"], "value2");
+        assert_ne!(input["vertex2"]["port3"], "value3");
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_bad_handle_format() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "test_value"
+            }
+        });
+        let targets = vec!["invalid_handle_format".to_string()];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Bad --encrypt handle"));
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_nonexistent_vertex() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "test_value"
+            }
+        });
+        let targets = vec!["nonexistent_vertex.port1".to_string()];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Input JSON has no nonexistent_vertex.port1"));
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_nonexistent_port() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "test_value"
+            }
+        });
+        let targets = vec!["vertex1.nonexistent_port".to_string()];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Input JSON has no vertex1.nonexistent_port"));
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_complex_data_types() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": {
+                    "nested": {
+                        "data": [1, 2, 3],
+                        "string": "test"
+                    }
+                }
+            }
+        });
+        let targets = vec!["vertex1.port1".to_string()];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_ok());
+
+        // The complex JSON should be encrypted
+        assert!(input["vertex1"]["port1"].is_object());
+        // It should no longer contain the original nested structure
+        assert!(!input["vertex1"]["port1"].get("nested").is_some());
+    }
+
+    #[test]
+    fn test_encrypt_entry_ports_once_ratchet_advancement() {
+        let mut session = create_mock_session();
+        let mut input = json!({
+            "vertex1": {
+                "port1": "value1",
+                "port2": "value2"
+            }
+        });
+        let targets = vec!["vertex1.port1".to_string(), "vertex1.port2".to_string()];
+
+        let result = encrypt_entry_ports_once(&mut session, &mut input, &targets);
+
+        assert!(result.is_ok());
+
+        // Both values should be encrypted, but since we advance the ratchet only once,
+        // subsequent encryptions should use static encryption
+        assert!(input["vertex1"]["port1"].is_object());
+        assert!(input["vertex1"]["port2"].is_object());
+
+        // The encrypted values should be different even for the same session
+        // (due to nonces), but we can't easily test the ratchet state directly
+        // without access to session internals
+    }
+}
