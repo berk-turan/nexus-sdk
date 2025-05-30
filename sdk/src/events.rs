@@ -222,8 +222,6 @@ pub struct PreKeyVaultCreatedEvent {
 /// remaining pre_keys in the vault after the claim.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PreKeyClaimedEvent {
-    /// What is the internal ID of the pre_key that was claimed.
-    pub pre_key_id: u32,
     /// Which address claimed the pre_key.
     pub claimed_by: sui::ObjectID,
     /// How many pre_keys are left in the vault after this claim.
