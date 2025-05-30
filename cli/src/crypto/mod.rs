@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
-mod auth;
-use auth::auth;
+mod crypto_auth;
+use crypto_auth::crypto_auth;
 
 #[derive(clap::Args, Clone, Debug)]
 pub(crate) struct AuthArgs {
@@ -17,6 +17,6 @@ pub(crate) enum CryptoCommand {
 
 pub(crate) async fn handle(cmd: CryptoCommand) -> AnyResult<(), NexusCliError> {
     match cmd {
-        CryptoCommand::Auth(args) => auth(args).await,
+        CryptoCommand::Auth(args) => crypto_auth(args).await,
     }
 }

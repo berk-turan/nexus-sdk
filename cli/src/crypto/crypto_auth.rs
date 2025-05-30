@@ -5,28 +5,24 @@ use {
         display::json_output,
         loading,
         prelude::*,
-        sui::{
-            build_sui_client,
-            create_wallet_context,
-            fetch_gas_coin,
-            fetch_reference_gas_price,
-            get_nexus_objects,
-            sign_and_execute_transaction,
-        },
+        sui::*,
     },
-    anyhow::anyhow,
     nexus_sdk::{
-        crypto::{session::Session, x3dh::IdentityKey},
+        crypto::{session::Session, x3dh::{IdentityKey, PreKeyBundle}},
         idents::workflow,
         object_crawler::fetch_one,
         sui,
-        transactions::crypto::claim_pre_key_for_self,
-        types::Prekey,
+        transactions::crypto::*,
     },
-    serde_json::json,
 };
 
-pub(crate) async fn auth(args: AuthArgs) -> AnyResult<(), NexusCliError> {
+// Temporary struct for fetching raw prekey data
+#[derive(serde::Deserialize)]
+struct RawPreKey {
+    bytes: Vec<u8>,
+}
+
+pub(crate) async fn crypto_auth(args: AuthArgs) -> AnyResult<(), NexusCliError> {
     command_title!("`crypto auth` - establish a secure session with a peer");
 
     // 1. Load config & objects
@@ -98,10 +94,11 @@ pub(crate) async fn auth(args: AuthArgs) -> AnyResult<(), NexusCliError> {
         .ok_or_else(|| NexusCliError::Any(anyhow!("No Prekey object transferred to caller")))?;
 
     // Fetch full object
-    let prekey_resp = fetch_one::<Prekey>(&sui, prekey_obj_id)
+    let prekey_resp = fetch_one::<RawPreKey>(&sui, prekey_obj_id)
         .await
         .map_err(NexusCliError::Any)?;
-    let peer_bundle = prekey_resp.data.bundle;
+    let peer_bundle = bincode::deserialize::<PreKeyBundle>(&prekey_resp.data.bytes)
+        .map_err(|e| NexusCliError::Any(anyhow!("Failed to deserialize PreKeyBundle: {:?}", e)))?;
 
     // 6. Ensure IdentityKey
     let identity_key = match conf.crypto.identity_key.as_ref() {

@@ -9,13 +9,16 @@ use {
         sui::*,
     },
     nexus_sdk::{idents::workflow, transactions::dag},
+    anyhow::{anyhow, bail, Result},
+    serde_json::Value,
+    nexus_sdk::crypto::session::{Message, Session},
 };
 
 /// Execute a Nexus DAG based on the provided object ID and initial input data.
 pub(crate) async fn execute_dag(
     dag_id: sui::ObjectID,
     entry_group: String,
-    input_json: serde_json::Value,
+    mut input_json: serde_json::Value,
     encrypt: Vec<String>,
     inspect: bool,
     sui_gas_coin: Option<sui::ObjectID>,
@@ -24,7 +27,31 @@ pub(crate) async fn execute_dag(
     command_title!("Executing Nexus DAG '{dag_id}'");
 
     // Load CLI configuration.
-    let conf = CliConf::load().await.unwrap_or_default();
+    let mut conf = CliConf::load().await.unwrap_or_default();
+
+    if !encrypt.is_empty() {
+        // Check for an active session and get its ID
+        let session_id = {
+            let session_ref = conf.crypto
+                .sessions
+                .values()
+                .next()
+                .ok_or_else(|| NexusCliError::Any(
+                    anyhow::anyhow!("No active crypto session — run `nexus crypto auth` first")
+                ))?;
+            *session_ref.id()
+        };
+        
+        // Get mutable reference to the session and modify it (this advances the ratchet state)
+        let session = conf.crypto.sessions.get_mut(&session_id)
+            .ok_or_else(|| NexusCliError::Any(anyhow!("Session not found in config")))?;
+        
+        encrypt_entry_ports_once(session, &mut input_json, &encrypt)
+            .map_err(NexusCliError::Any)?;
+        
+        // Save the updated config
+        conf.save().await.map_err(NexusCliError::Any)?;
+    }
 
     // Nexus objects must be present in the configuration.
     let objects = get_nexus_objects(&conf)?;
@@ -101,6 +128,52 @@ pub(crate) async fn execute_dag(
         inspect_dag_execution(object_id, response.digest).await?;
     } else {
         json_output(&json!({ "digest": response.digest, "execution_id": object_id }))?;
+    }
+
+    Ok(())
+}
+
+fn encrypt_entry_ports_once(
+    session: &mut Session,
+    input: &mut Value,
+    targets: &[String],
+) -> Result<(), anyhow::Error> {
+    if targets.is_empty() {
+        return Ok(());                 // nothing to do, avoid ratchet advance
+    }
+    let mut first = true;
+
+    for handle in targets {
+        let (vertex, port) = handle
+            .split_once('.')
+            .ok_or_else(|| anyhow!("Bad --encrypt handle: {handle}"))?;
+
+        // Take the plaintext for ownership
+        let slot = input
+            .get_mut(vertex)
+            .and_then(|v| v.get_mut(port))
+            .ok_or_else(|| anyhow!("Input JSON has no {vertex}.{port}"))?;
+
+        let plaintext = slot.take();
+        let bytes = serde_json::to_vec(&plaintext)?;
+
+        // Encrypt: first call moves the ratchet, others keep it static
+        let msg = if first {
+            first = false;
+            session.encrypt(&bytes)?
+        } else {
+            session
+                .encrypt_without_advancing(&bytes)
+                .ok_or_else(|| anyhow!("static encryption failed"))?
+        };
+
+        // Session must always return a Standard packet here
+        let Message::Standard(pkt) = msg else {
+            bail!("Session returned non-standard packet");
+        };
+
+        // Serialise the StandardMessage with base64-encoded fields
+        *slot = serde_json::to_value(&pkt)?;
     }
 
     Ok(())
