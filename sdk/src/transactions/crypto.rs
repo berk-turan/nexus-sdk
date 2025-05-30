@@ -1,5 +1,5 @@
 use crate::{
-    crypto::x3dh::PreKeyBundle,
+    crypto::x3dh::{InitialMessage, PreKeyBundle},
     idents::{move_std, workflow},
     sui,
     types::NexusObjects,
@@ -102,9 +102,33 @@ pub fn claim_pre_key_for_self(
     ))
 }
 
+/// PTB template to associate a claimed pre key with the sender address while
+/// sending an initial message.
+pub fn associate_pre_key_with_sender(
+    tx: &mut sui::ProgrammableTransactionBuilder,
+    objects: &NexusObjects,
+    pre_key: &sui::ObjectRef,
+    initial_message: InitialMessage,
+) -> anyhow::Result<sui::Argument> {
+    // `pre_key: PreKey`
+    let pre_key = tx.obj(sui::ObjectArg::ImmOrOwnedObject(pre_key.to_object_ref()))?;
+
+    // `initial_message: vector<u8>`
+    let initial_message = tx.pure(bincode::serialize(&initial_message)?)?;
+
+    // `nexus_workflow::pre_key_vault::associate_pre_key`
+    Ok(tx.programmable_move_call(
+        objects.workflow_pkg_id,
+        workflow::PreKeyVault::ASSOCIATE_PRE_KEY.module.into(),
+        workflow::PreKeyVault::ASSOCIATE_PRE_KEY.name.into(),
+        vec![],
+        vec![pre_key, initial_message],
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::test_utils::sui_mocks};
+    use {super::*, crate::test_utils::sui_mocks, x25519_dalek::PublicKey};
 
     #[test]
     fn test_replenish_pre_keys() {
@@ -154,6 +178,38 @@ mod tests {
             workflow::PreKeyVault::CLAIM_PRE_KEY_FOR_SELF
                 .name
                 .to_string()
+        );
+    }
+
+    #[test]
+    fn test_associate_pre_key_with_sender() {
+        let objects = sui_mocks::mock_nexus_objects();
+        let pre_key = sui_mocks::mock_sui_object_ref();
+        let initial_message = InitialMessage {
+            ika_pub: PublicKey::from([0; 32]),
+            ek_pub: PublicKey::from([0; 32]),
+            spk_id: 1,
+            otpk_id: Some(1),
+            nonce: [0; 24],
+            ciphertext: vec![0; 32],
+        };
+
+        let mut tx = sui::ProgrammableTransactionBuilder::new();
+        associate_pre_key_with_sender(&mut tx, &objects, &pre_key, initial_message).unwrap();
+        let tx = tx.finish();
+
+        let sui::Command::MoveCall(call) = &tx.commands.last().unwrap() else {
+            panic!("Expected last command to be a MoveCall to associate pre_key with sender");
+        };
+
+        assert_eq!(call.package, objects.workflow_pkg_id);
+        assert_eq!(
+            call.module,
+            workflow::PreKeyVault::ASSOCIATE_PRE_KEY.module.to_string(),
+        );
+        assert_eq!(
+            call.function,
+            workflow::PreKeyVault::ASSOCIATE_PRE_KEY.name.to_string()
         );
     }
 }
