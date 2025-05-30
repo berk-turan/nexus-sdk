@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--crypto.generate-identity-key` flag to `nexus conf set` command to generate and store a fresh identity key
 - Added a `secrets` module that provides a wrapper to encrypt and decrypt its inner values
 - `crypto` section to the CLI configuration to save the current state of the `crypto`
+- `crypto` command to the CLI that managers crypto related operations
 
 #### Changed
 
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nexus conf` changed to have `set` and `get` subcommands
 - `nexus dag execute` now takes `--encrypt` argument that accepts `vertex.port` pairs to encrypt before sending data on-chain
 - JSON DAG now accepts `encrypted` field on `edges.[].from`
+- `nexus dag execute` now encrypt any  `vertex.port` mentioned in the arguments 
 
 ### `nexus-sdk`
 
