@@ -8,10 +8,13 @@ use {
         prelude::*,
         sui::*,
     },
-    nexus_sdk::{idents::workflow, transactions::dag},
     anyhow::{anyhow, bail, Result},
+    nexus_sdk::{
+        crypto::session::{Message, Session},
+        idents::workflow,
+        transactions::dag,
+    },
     serde_json::Value,
-    nexus_sdk::crypto::session::{Message, Session},
 };
 
 /// Execute a Nexus DAG based on the provided object ID and initial input data.
@@ -32,23 +35,23 @@ pub(crate) async fn execute_dag(
     if !encrypt.is_empty() {
         // Check for an active session and get its ID
         let session_id = {
-            let session_ref = conf.crypto
-                .sessions
-                .values()
-                .next()
-                .ok_or_else(|| NexusCliError::Any(
-                    anyhow::anyhow!("No active crypto session — run `nexus crypto auth` first")
-                ))?;
+            let session_ref = conf.crypto.sessions.values().next().ok_or_else(|| {
+                NexusCliError::Any(anyhow::anyhow!(
+                    "No active crypto session — run `nexus crypto auth` first"
+                ))
+            })?;
             *session_ref.id()
         };
-        
+
         // Get mutable reference to the session and modify it (this advances the ratchet state)
-        let session = conf.crypto.sessions.get_mut(&session_id)
+        let session = conf
+            .crypto
+            .sessions
+            .get_mut(&session_id)
             .ok_or_else(|| NexusCliError::Any(anyhow!("Session not found in config")))?;
-        
-        encrypt_entry_ports_once(session, &mut input_json, &encrypt)
-            .map_err(NexusCliError::Any)?;
-        
+
+        encrypt_entry_ports_once(session, &mut input_json, &encrypt).map_err(NexusCliError::Any)?;
+
         // Save the updated config
         conf.save().await.map_err(NexusCliError::Any)?;
     }
@@ -139,7 +142,7 @@ fn encrypt_entry_ports_once(
     targets: &[String],
 ) -> Result<(), anyhow::Error> {
     if targets.is_empty() {
-        return Ok(());                 // nothing to do, avoid ratchet advance
+        return Ok(()); // nothing to do, avoid ratchet advance
     }
     let mut first = true;
 

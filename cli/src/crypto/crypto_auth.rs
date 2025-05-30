@@ -1,14 +1,11 @@
 use {
     super::AuthArgs,
-    crate::{
-        command_title,
-        display::json_output,
-        loading,
-        prelude::*,
-        sui::*,
-    },
+    crate::{command_title, display::json_output, loading, prelude::*, sui::*},
     nexus_sdk::{
-        crypto::{session::Session, x3dh::{IdentityKey, PreKeyBundle}},
+        crypto::{
+            session::Session,
+            x3dh::{IdentityKey, PreKeyBundle},
+        },
         idents::workflow,
         object_crawler::fetch_one,
         sui,
@@ -23,7 +20,7 @@ struct RawPreKey {
 }
 
 pub(crate) async fn crypto_auth(args: AuthArgs) -> AnyResult<(), NexusCliError> {
-    command_title!("`crypto auth` - establish a secure session with a peer");
+    command_title!("crypto auth - establish a secure session with a peer");
 
     // 1. Load config & objects
     let mut conf = CliConf::load().await.unwrap_or_default();
@@ -101,26 +98,64 @@ pub(crate) async fn crypto_auth(args: AuthArgs) -> AnyResult<(), NexusCliError> 
         .map_err(|e| NexusCliError::Any(anyhow!("Failed to deserialize PreKeyBundle: {:?}", e)))?;
 
     // 6. Ensure IdentityKey
-    let identity_key = match conf.crypto.identity_key.as_ref() {
-        Some(key) => key,
-        None => {
-            let k = IdentityKey::generate();
-            conf.crypto.identity_key = Some(k);
-            conf.crypto.identity_key.as_ref().unwrap()
-        }
-    };
+    if conf.crypto.identity_key.is_none() {
+        conf.crypto.identity_key = Some(IdentityKey::generate());
+    }
 
     // 7. Run X3DH & store session
     let first_message = b"nexus auth";
-    let (initial_msg, session) = Session::initiate(identity_key, &peer_bundle, first_message)
-        .map_err(|e| NexusCliError::Any(anyhow!("Session initiation failed: {:?}", e)))?;
-    conf.crypto.sessions.insert(*session.id(), session);
+    let (initial_msg, session) = {
+        let identity_key = conf.crypto.identity_key.as_ref().unwrap();
+        Session::initiate(&identity_key, &peer_bundle, first_message)
+            .map_err(|e| NexusCliError::Any(anyhow!("Session initiation failed: {:?}", e)))?
+    };
+
+    // Extract InitialMessage from Message enum
+    let initial_message = match initial_msg {
+        nexus_sdk::crypto::session::Message::Initial(msg) => msg,
+        _ => {
+            return Err(NexusCliError::Any(anyhow!(
+                "Expected Initial message from session initiation"
+            )))
+        }
+    };
+
+    // Store session and save config
+    let session_id = *session.id();
+    conf.crypto.sessions.insert(session_id, session);
     conf.save().await.map_err(NexusCliError::Any)?;
 
-    // 8. Output digest + initial message
+    // Make borrow checker happy
+    let objects = get_nexus_objects(&conf)?;
+
+    // 8. Build and execute associate_pre_key_with_sender PTB
+    let mut tx_builder = sui::ProgrammableTransactionBuilder::new();
+    let _associate_cmd = associate_pre_key_with_sender(
+        &mut tx_builder,
+        &objects,
+        &prekey_resp.object_ref(),
+        initial_message.clone(),
+    )
+    .map_err(NexusCliError::Any)?;
+    let ptb = tx_builder.finish();
+
+    let tx_data = sui::TransactionData::new_programmable(
+        address,
+        vec![gas_coin.object_ref()],
+        ptb,
+        args.gas.sui_gas_budget,
+        reference_gas_price,
+    );
+
+    let load = loading!("Executing associate_pre_key_with_sender…");
+    let associate_tx_resp = sign_and_execute_transaction(&sui, &wallet, tx_data).await?;
+    load.success();
+
+    // Output both transaction digests
     json_output(&json!({
         "claim_digest": tx_resp.digest,
-        "initial_message": initial_msg,
+        "associate_digest": associate_tx_resp.digest,
+        "initial_message": initial_message,
     }))?;
 
     Ok(())
