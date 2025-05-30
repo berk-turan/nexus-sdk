@@ -400,8 +400,7 @@ pub mod x25519_serde {
 /// Serializes as an optional raw 32‑byte string.
 pub mod option_x25519_serde {
     use {
-        super::x25519_serde,
-        serde::{Deserializer, Serializer},
+        serde::{Deserialize, Deserializer, Serialize, Serializer},
         x25519_dalek::PublicKey as X25519PublicKey,
     };
 
@@ -409,38 +408,15 @@ pub mod option_x25519_serde {
     where
         S: Serializer,
     {
-        match maybe {
-            Some(pk) => x25519_serde::serialize(pk, ser),
-            None => ser.serialize_none(),
-        }
+        maybe.as_ref().map(|pk| pk.as_bytes()).serialize(ser)
     }
 
     pub fn deserialize<'de, D>(de: D) -> Result<Option<X25519PublicKey>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        // Try to peek – if we see null return None, otherwise parse a PK
-        struct OptVisitor;
-        impl<'de> serde::de::Visitor<'de> for OptVisitor {
-            type Value = Option<X25519PublicKey>;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("null or a 32-byte X25519 public key")
-            }
-
-            fn visit_none<E>(self) -> Result<Self::Value, E> {
-                Ok(None)
-            }
-
-            fn visit_some<D>(self, de: D) -> Result<Self::Value, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                x25519_serde::deserialize(de).map(Some)
-            }
-        }
-
-        de.deserialize_option(OptVisitor)
+        let maybe_bytes: Option<[u8; 32]> = Option::deserialize(de)?;
+        Ok(maybe_bytes.map(X25519PublicKey::from))
     }
 }
 
