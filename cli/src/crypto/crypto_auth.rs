@@ -19,7 +19,7 @@ struct RawPreKey {
 }
 
 pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
-    command_title!("crypto auth - establish a secure session with the network");
+    command_title!("Establishing a secure session with the network");
 
     // 1. Load config & objects
     let mut conf = CliConf::load().await.unwrap_or_default();
