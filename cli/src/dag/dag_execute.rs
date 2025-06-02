@@ -9,6 +9,7 @@ use {
         sui::*,
     },
     anyhow::{anyhow, bail, Result},
+    bincode,
     nexus_sdk::{
         crypto::session::{Message, Session},
         idents::workflow,
@@ -172,8 +173,9 @@ fn encrypt_entry_ports_once(
             bail!("Session returned non-standard packet");
         };
 
-        // Serialise the StandardMessage with base64-encoded fields
-        *slot = serde_json::to_value(&pkt)?;
+        // Serialize the StandardMessage with bincode
+        let serialized = bincode::serialize(&pkt)?;
+        *slot = serde_json::to_value(&serialized)?;
     }
 
     Ok(())
@@ -267,8 +269,8 @@ mod tests {
         // port2 should remain unchanged
         assert_eq!(input["vertex1"]["port2"], "other_value");
 
-        // The encrypted value should be a JSON object with ciphertext fields
-        assert!(input["vertex1"]["port1"].is_object());
+        // The encrypted value should be a JSON array of bytes
+        assert!(input["vertex1"]["port1"].is_array());
     }
 
     #[test]
@@ -294,9 +296,9 @@ mod tests {
         assert!(result.is_ok());
 
         // All targeted ports should be encrypted
-        assert!(input["vertex1"]["port1"].is_object());
-        assert!(input["vertex1"]["port2"].is_object());
-        assert!(input["vertex2"]["port3"].is_object());
+        assert!(input["vertex1"]["port1"].is_array());
+        assert!(input["vertex1"]["port2"].is_array());
+        assert!(input["vertex2"]["port3"].is_array());
 
         // Original values should no longer be present
         assert_ne!(input["vertex1"]["port1"], "value1");
@@ -381,7 +383,7 @@ mod tests {
         assert!(result.is_ok());
 
         // The complex JSON should be encrypted
-        assert!(input["vertex1"]["port1"].is_object());
+        assert!(input["vertex1"]["port1"].is_array());
         // It should no longer contain the original nested structure
         assert!(!input["vertex1"]["port1"].get("nested").is_some());
     }
@@ -403,8 +405,8 @@ mod tests {
 
         // Both values should be encrypted, but since we advance the ratchet only once,
         // subsequent encryptions should use static encryption
-        assert!(input["vertex1"]["port1"].is_object());
-        assert!(input["vertex1"]["port2"].is_object());
+        assert!(input["vertex1"]["port1"].is_array());
+        assert!(input["vertex1"]["port2"].is_array());
 
         // The encrypted values should be different even for the same session
         // (due to nonces), but we can't easily test the ratchet state directly

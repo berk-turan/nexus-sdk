@@ -108,8 +108,10 @@ pub struct StandardMessage {
     /// Protocol version tag — currently `1`.
     pub version: u8,
     /// Encrypted ratchet header returned by `ratchet_encrypt_he`.
+    #[serde(with = "serde_bytes")]
     pub header: Vec<u8>,
     /// AEAD-protected application payload.
+    #[serde(with = "serde_bytes")]
     pub ciphertext: Vec<u8>,
 }
 
