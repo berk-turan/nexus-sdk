@@ -32,16 +32,13 @@ pub(crate) async fn execute_dag(
     // Load CLI configuration.
     let mut conf = CliConf::load().await.unwrap_or_default();
 
+    // Always validate authentication before proceeding
+    // This validation is still required even if we dont encrypt anything at input ports
+    validate_authentication(&conf)?;
+
     if !encrypt.is_empty() {
-        // Check for an active session and get its ID
-        let session_id = {
-            let session_ref = conf.crypto.sessions.values().next().ok_or_else(|| {
-                NexusCliError::Any(anyhow::anyhow!(
-                    "No active crypto session — run `nexus crypto auth` first"
-                ))
-            })?;
-            *session_ref.id()
-        };
+        // Get the active session (we know it exists from validation above)
+        let session_id = *conf.crypto.sessions.values().next().unwrap().id();
 
         // Get mutable reference to the session and modify it (this advances the ratchet state)
         let session = conf
@@ -179,6 +176,16 @@ fn encrypt_entry_ports_once(
         *slot = serde_json::to_value(&pkt)?;
     }
 
+    Ok(())
+}
+
+/// Validates that the user has an active authentication session
+fn validate_authentication(conf: &CliConf) -> Result<(), NexusCliError> {
+    if conf.crypto.sessions.is_empty() {
+        return Err(NexusCliError::Any(anyhow::anyhow!(
+            "Authentication required — run `nexus crypto auth` first"
+        )));
+    }
     Ok(())
 }
 
