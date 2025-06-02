@@ -48,14 +48,18 @@ use {
     },
     hkdf::Hkdf,
     hmac::{Hmac, Mac},
+    lru::LruCache,
     rand::{rngs::OsRng, RngCore},
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     sha2::Sha256,
-    std::collections::HashMap,
+    std::{
+        collections::{HashMap, VecDeque},
+        num::NonZeroUsize,
+    },
     subtle::ConstantTimeEq,
     thiserror::Error,
     x25519_dalek::{PublicKey, StaticSecret},
-    zeroize::Zeroize,
+    zeroize::{Zeroize, Zeroizing},
 };
 
 /// Maximum number of skipped message keys to derive per chain before rejecting incoming traffic,
@@ -65,7 +69,8 @@ const MAX_SKIP_PER_CHAIN: usize = 1_000;
 /// a defence‑in‑depth limit to avoid unbounded growth of
 /// [`mkskipped`](RatchetStateHE::mkskipped).
 const MAX_SKIP_GLOBAL: usize = 2 * MAX_SKIP_PER_CHAIN;
-
+/// Maximum cached outgoing drafts (bounded LRU).
+const MAX_OUTGOING: usize = 512;
 /// Each AES‑SIV nonce is 128‑bit.  We concatenate an 8‑byte random prefix with
 /// an 8‑byte big‑endian counter to get a unique value for every encryption.
 const NONCE_LEN: usize = 16;
@@ -199,9 +204,8 @@ impl<'de> Deserialize<'de> for Header {
 /// * [`ratchet_encrypt_he`](RatchetStateHE::ratchet_encrypt_he) → send message.
 /// * [`ratchet_decrypt_he`](RatchetStateHE::ratchet_decrypt_he) → receive.
 ///
-/// Additional static helpers (`encrypt_static_he`, `decrypt_static_he`, …)
-/// allow the sender to work on a reply before the previous ciphertext has
-/// been delivered.
+/// The public API provides encryption and decryption methods that advance
+/// the ratchet state as messages are sent and received.
 #[derive(Serialize, Deserialize)]
 pub struct RatchetStateHE {
     /// Own private key
@@ -236,6 +240,11 @@ pub struct RatchetStateHE {
     /// Map keyed by `(header_key, n)` → message key, maintained while the state
     /// is alive.
     mkskipped: HashMap<([u8; 32], u32), [u8; 32]>,
+    /// Local cache so the *sender* can reopen its own drafts.
+    #[serde(with = "lru_cache_serde")]
+    outgoing_cache: LruCache<([u8; 16], u32), Zeroizing<[u8; 32]>>,
+    /// Keep two previous HK_s so drafts survive one DH step overlap.
+    prev_hks: VecDeque<[u8; 32]>,
     /// Nonce sequence for payload encryption
     #[serde(with = "nonce_seq_serde")]
     nonce_seq_msg: NonceSeq,
@@ -333,6 +342,39 @@ mod nonce_seq_serde {
     }
 }
 
+mod lru_cache_serde {
+    use {
+        super::{LruCache, NonZeroUsize, Zeroizing, MAX_OUTGOING},
+        serde::{Deserialize, Deserializer, Serialize, Serializer},
+    };
+
+    pub fn serialize<S>(
+        cache: &LruCache<([u8; 16], u32), Zeroizing<[u8; 32]>>,
+        s: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let items: Vec<(([u8; 16], u32), [u8; 32])> =
+            cache.iter().map(|(k, v)| (*k, **v)).collect();
+        items.serialize(s)
+    }
+
+    pub fn deserialize<'de, D>(
+        d: D,
+    ) -> Result<LruCache<([u8; 16], u32), Zeroizing<[u8; 32]>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let items: Vec<(([u8; 16], u32), [u8; 32])> = Deserialize::deserialize(d)?;
+        let mut cache = LruCache::new(NonZeroUsize::new(MAX_OUTGOING).unwrap());
+        for (k, v) in items {
+            cache.put(k, Zeroizing::new(v));
+        }
+        Ok(cache)
+    }
+}
+
 // Scrub everything on drop.
 impl Zeroize for RatchetStateHE {
     fn zeroize(&mut self) {
@@ -350,6 +392,7 @@ impl Zeroize for RatchetStateHE {
         if let Some(ref mut k) = self.hkr {
             k.zeroize();
         }
+        self.prev_hks.iter_mut().for_each(|k| k.zeroize());
         self.nhks.zeroize();
         self.nhkr.zeroize();
         self.mkskipped.clear();
@@ -488,6 +531,8 @@ impl RatchetStateHE {
             nr: 0,
             pn: 0,
             mkskipped: HashMap::new(),
+            outgoing_cache: LruCache::new(NonZeroUsize::new(MAX_OUTGOING).unwrap()),
+            prev_hks: VecDeque::with_capacity(2),
             nonce_seq_msg: NonceSeq::new(),
             nonce_seq_header: NonceSeq::new(),
         }
@@ -595,6 +640,13 @@ impl RatchetStateHE {
         // Encrypt header
         let enc_header = self.hencrypt(&hk, &header_bytes)?;
 
+        // Cache the outgoing message key now that `enc_header` exists
+        let digest: [u8; 16] = blake3::hash(&enc_header).as_bytes()[..16]
+            .try_into()
+            .unwrap();
+        self.outgoing_cache
+            .put((digest, self.ns), Zeroizing::new(mk));
+
         // 2⃣ Encrypt payload where AAD = user AD || enc_header(see specs)
         let mut full_ad = ad.to_vec();
         full_ad.extend_from_slice(&enc_header);
@@ -679,36 +731,11 @@ impl RatchetStateHE {
         ciphertext: &[u8],
         ad: &[u8],
     ) -> Result<Option<Vec<u8>>, RatchetError> {
-        for ((hk_bytes, idx), mk) in &self.mkskipped {
-            if ciphertext.len() < NONCE_LEN {
-                continue;
-            }
-
-            // Avoid timing side‑channels by checking header keys in constant time.
-            if hk_bytes.ct_eq(&self.nhkr).unwrap_u8() == 0
-                && hk_bytes.ct_eq(&self.hkr.unwrap_or([0u8; 32])).unwrap_u8() == 0
-            {
-                continue;
-            }
-
-            if let Ok(hdr) = Self::hdecrypt(hk_bytes, enc_header) {
-                if hdr.n == *idx {
-                    let (nonce_bytes, ct) = ciphertext.split_at(NONCE_LEN);
-                    let cipher =
-                        Aes128SivAead::new_from_slice(mk).map_err(|_| RatchetError::CryptoError)?;
-                    let nonce = Nonce::from_slice(nonce_bytes);
-                    let mut full_ad = ad.to_vec();
-                    full_ad.extend_from_slice(enc_header);
-                    if let Ok(pt) = cipher.decrypt(
-                        nonce,
-                        Payload {
-                            msg: ct,
-                            aad: &full_ad,
-                        },
-                    ) {
-                        self.mkskipped.remove(&(*hk_bytes, *idx));
-                        return Ok(Some(pt));
-                    }
+        // we only ever need to attempt with the two valid header keys
+        for hk in [self.hkr.as_ref(), Some(&self.nhkr)].into_iter().flatten() {
+            if let Ok(hdr) = Self::hdecrypt(hk, enc_header) {
+                if let Some(mk) = self.mkskipped.remove(&(hk.clone(), hdr.n)) {
+                    return Self::decrypt_with_mk(ciphertext, ad, enc_header, &mk);
                 }
             }
         }
@@ -756,10 +783,16 @@ impl RatchetStateHE {
         self.ns = 0;
         self.nr = 0;
 
-        self.hks = Some(self.nhks.clone());
+        if let Some(h) = self.hks.take() {
+            if self.prev_hks.len() == 2 {
+                self.prev_hks.pop_front();
+            }
+            self.prev_hks.push_back(h);
+        }
+        self.hks = Some(self.nhks);
         self.hkr = Some(self.nhkr.clone());
 
-        // 1⃣ Receiving chain (dhs ‖ header.dh)
+        // 1. Receiving chain (dhs ‖ header.dh)
         Self::validate_pk(&header.dh)?;
         self.dhr = Some(header.dh);
 
@@ -769,7 +802,7 @@ impl RatchetStateHE {
         self.ckr = Some(ck_r);
         self.nhkr = nhk_r;
 
-        // 2⃣ Generate *new* sending key‑pair and chain.
+        // 2. Generate *new* sending key‑pair and chain.
         let (dhs_sk, dhs_pk) = Self::generate_dh();
         self.dhs = dhs_sk;
         self.dhs_pub = dhs_pk;
@@ -785,6 +818,108 @@ impl RatchetStateHE {
         Ok(())
     }
 
+    /// Cache an outgoing draft message key; bounded LRU with zeroisation.
+    fn cache_outgoing_header(&mut self, enc_header: &[u8], mk: &[u8; 32]) {
+        let digest: [u8; 16] = blake3::hash(enc_header).as_bytes()[..16]
+            .try_into()
+            .unwrap();
+        self.outgoing_cache
+            .put((digest, self.ns), Zeroizing::new(*mk));
+    }
+
+    pub fn commit_sender(&mut self, max_n: Option<u32>) {
+        if let Some(bound) = max_n {
+            // LruCache doesn't have retain, so we collect keys to remove
+            let keys_to_remove: Vec<_> = self
+                .outgoing_cache
+                .iter()
+                .filter_map(|(k, _)| if k.1 <= bound { Some(*k) } else { None })
+                .collect();
+            for key in keys_to_remove {
+                self.outgoing_cache.pop(&key);
+            }
+        } else {
+            self.outgoing_cache.clear(); // drop every cached MK
+        }
+    }
+
+    /// Decrypt a ciphertext we previously produced with `encrypt`.
+    pub fn decrypt_outgoing(
+        &mut self,
+        header: &[u8],
+        ciphertext: &[u8],
+        ad: &[u8],
+    ) -> Option<Vec<u8>> {
+        // 1. try with current HK_s, else fallback to prev_hks.
+        let hdr = self
+            .hks
+            .as_ref()
+            .and_then(|hk| Self::hdecrypt(hk, header).ok())
+            .or_else(|| {
+                self.prev_hks
+                    .iter()
+                    .find_map(|hk| Self::hdecrypt(hk, header).ok())
+            })?;
+        // 2. look up the cached MK with exact (digest,n) key.
+        let digest: [u8; 16] = blake3::hash(header).as_bytes()[..16].try_into().unwrap();
+        let key = **self.outgoing_cache.get(&(digest, hdr.n))?;
+
+        // 3. decrypt with the cached message key
+        Self::decrypt_with_mk(ciphertext, ad, header, &key)
+            .ok()
+            .flatten()
+    }
+
+    /// Permanently forget skipped‑message keys that are no longer required.
+    ///
+    /// * `header_key` – if `Some(hk)`, only keys bound to that HK are considered.
+    /// * `n_max`      – if `Some(m)`, forget indices ≤ *m*; `None` ⇒ forget all.
+    pub fn commit_receiver(&mut self, header_key: Option<[u8; 32]>, n_max: Option<u32>) {
+        self.mkskipped.retain(|(hk, n), _| {
+            let hk_ok = header_key.map_or(true, |h| hk != &h);
+            let n_ok = n_max.map_or(true, |m| *n > m);
+            hk_ok || n_ok
+        });
+    }
+
+    /// Rotate HK_s, retaining previous two for draft decryption.
+    fn rotate_header_keys(&mut self) {
+        if let Some(curr) = self.hks.take() {
+            if self.prev_hks.len() == 2 {
+                self.prev_hks.pop_front();
+            }
+            self.prev_hks.push_back(curr);
+        }
+        self.hks = Some(self.nhks);
+        self.hkr = Some(self.nhkr.clone());
+    }
+
+    fn decrypt_with_mk(
+        ciphertext: &[u8],
+        ad: &[u8],
+        enc_header: &[u8],
+        mk: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, RatchetError> {
+        if ciphertext.len() < NONCE_LEN {
+            return Ok(None);
+        }
+        let (nonce_bytes, ct) = ciphertext.split_at(NONCE_LEN);
+        let cipher = Aes128SivAead::new_from_slice(mk).map_err(|_| RatchetError::CryptoError)?;
+        let nonce = Nonce::from_slice(nonce_bytes);
+        let mut full_ad = ad.to_vec();
+        full_ad.extend_from_slice(enc_header);
+        cipher
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: ct,
+                    aad: &full_ad,
+                },
+            )
+            .map(Some)
+            .map_err(Into::into)
+    }
+
     // Convenience: derive *message key* directly from a chain key.
     fn mk_from_ck(ck: &[u8; 32]) -> [u8; 32] {
         let mut mac = <HmacSha256 as Mac>::new_from_slice(ck).unwrap();
@@ -793,133 +928,6 @@ impl RatchetStateHE {
         let mut mk = [0u8; 32];
         mk.copy_from_slice(&tag);
         mk
-    }
-
-    // === Optional helpers for asynchronous senders ("static HE") ===
-
-    /// Derive `enc_header` and `ciphertext` without mutating the state.
-    /// The caller must ensure that the real call to
-    /// [`ratchet_encrypt_he`](Self::ratchet_encrypt_he) follows immediately;
-    /// otherwise the chain and header keys will diverge.
-    pub fn encrypt_static_he(&self, plaintext: &[u8], ad: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
-        let ck_s = self.cks.as_ref()?;
-        let hk_s = self.hks.as_ref()?;
-        let mk = Self::mk_from_ck(ck_s);
-
-        let header = Header {
-            dh: self.dhs_pub,
-            pn: self.pn,
-            n: self.ns,
-        };
-        let mut hdr_bytes = Vec::new();
-        ciborium::into_writer(&header, &mut hdr_bytes).ok()?;
-
-        let mut nonce_seq = NonceSeq::new();
-        let nonce_bytes = nonce_seq.next();
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let cipher = Aes128SivAead::new_from_slice(hk_s).ok()?;
-        let mut header_ct = cipher
-            .encrypt(
-                nonce,
-                Payload {
-                    msg: &hdr_bytes,
-                    aad: &[],
-                },
-            )
-            .ok()?;
-        let mut enc_header = nonce_bytes.to_vec();
-        enc_header.append(&mut header_ct);
-
-        let mut full_ad = ad.to_vec();
-        full_ad.extend_from_slice(&enc_header);
-
-        let nonce_bytes2 = nonce_seq.next();
-        let nonce2 = Nonce::from_slice(&nonce_bytes2);
-        let cipher = Aes128SivAead::new_from_slice(&mk).ok()?;
-        let mut ct = cipher
-            .encrypt(
-                nonce2,
-                Payload {
-                    msg: plaintext,
-                    aad: &full_ad,
-                },
-            )
-            .ok()?;
-        let mut payload = nonce_bytes2.to_vec();
-        payload.append(&mut ct);
-        Some((enc_header, payload))
-    }
-
-    /// Decrypt receiver side using immutable state. Useful for "peek" or stateless workers.
-    pub fn decrypt_static_he(
-        &self,
-        enc_header: &[u8],
-        ciphertext: &[u8],
-        ad: &[u8],
-    ) -> Option<Vec<u8>> {
-        let _header = self
-            .hkr
-            .and_then(|ref hk| Self::hdecrypt(hk, enc_header).ok())
-            .or_else(|| Self::hdecrypt(&self.nhkr, enc_header).ok())?;
-        let ck_r = self.ckr.as_ref()?;
-        let mk = Self::mk_from_ck(ck_r);
-
-        if ciphertext.len() < NONCE_LEN {
-            return None;
-        }
-        let (nonce_bytes, ct) = ciphertext.split_at(NONCE_LEN);
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let mut full_ad = ad.to_vec();
-        full_ad.extend_from_slice(enc_header);
-        let cipher = Aes128SivAead::new_from_slice(&mk).ok()?;
-        cipher
-            .decrypt(
-                nonce,
-                Payload {
-                    msg: ct,
-                    aad: &full_ad,
-                },
-            )
-            .ok()
-    }
-
-    /// Symmetric to [`decrypt_static_he`] but runs on the sender to inspect its own in‑flight message.
-    /// We sent this message to the receiver. But we want to inspect it before sending a final message.
-    /// Returns the decrypted payload.
-    pub fn decrypt_own_static_he(
-        &self,
-        enc_header: &[u8],
-        ciphertext: &[u8],
-        ad: &[u8],
-    ) -> Option<Vec<u8>> {
-        let hk_s = self.hks.as_ref()?;
-        let _header = Self::hdecrypt(hk_s, enc_header).ok()?;
-        let ck_s = self.cks.as_ref()?;
-        let mk = Self::mk_from_ck(ck_s);
-
-        if ciphertext.len() < NONCE_LEN {
-            return None;
-        }
-        let (nonce_bytes, ct) = ciphertext.split_at(NONCE_LEN);
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let mut full_ad = ad.to_vec();
-        full_ad.extend_from_slice(enc_header);
-        let cipher = Aes128SivAead::new_from_slice(&mk).ok()?;
-        cipher
-            .decrypt(
-                nonce,
-                Payload {
-                    msg: ct,
-                    aad: &full_ad,
-                },
-            )
-            .ok()
-    }
-
-    /// Get a reference to the root key
-    pub fn root_key(&self) -> &[u8; 32] {
-        &self.rk
     }
 }
 

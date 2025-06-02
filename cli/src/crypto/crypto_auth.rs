@@ -5,7 +5,6 @@ use {
             session::Session,
             x3dh::{IdentityKey, PreKeyBundle},
         },
-        idents::workflow,
         object_crawler::fetch_one,
         sui,
         transactions::crypto::*,
@@ -56,54 +55,37 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let tx_resp = sign_and_execute_transaction(&sui, &wallet, tx_data).await?;
 
     // 5. Locate the newly‑created Prekey object in effects
-    let prekey_struct_tag =
-        match workflow::into_type_tag(objects.workflow_pkg_id, workflow::PreKeyVault::PRE_KEY) {
-            sui::MoveTypeTag::Struct(struct_tag) => *struct_tag,
-            _ => {
-                return Err(NexusCliError::Any(anyhow!(
-                    "Expected struct type tag for PreKey"
-                )))
-            }
-        };
+    let effects = tx_resp.effects.expect("No effects found in response");
 
-    let prekey_obj_id = tx_resp
-        .object_changes
-        .unwrap_or_default()
-        .into_iter()
-        .find_map(|chg| match chg {
-            sui::ObjectChange::Transferred {
-                object_type,
-                object_id,
-                recipient,
-                ..
-            } if object_type == prekey_struct_tag
-                && recipient == sui::Owner::AddressOwner(address) =>
-            {
-                Some(object_id)
+    let prekey_obj_id = effects
+        .unwrapped()
+        .iter()
+        .find_map(|object| {
+            if object.owner.get_owner_address() == Ok(address) {
+                return Some(object.object_id());
             }
-            // optional: still catch Created for forward-compat
-            sui::ObjectChange::Created {
-                object_type,
-                object_id,
-                ..
-            } if object_type == prekey_struct_tag => Some(object_id),
-            _ => None,
+            None
         })
-        .ok_or_else(|| NexusCliError::Any(anyhow!("No Prekey object transferred to caller")))?;
+        .expect("PreKey object ID not found");
 
     // Fetch full object
     let fetch_handle = loading!("Fetching prekey object...");
-    let prekey_resp = match fetch_one::<RawPreKey>(&sui, prekey_obj_id).await {
-        Ok(response) => {
-            fetch_handle.success();
-            response
-        }
-        Err(e) => {
-            fetch_handle.error();
-            return Err(NexusCliError::Any(e));
-        }
-    };
-    let peer_bundle = bincode::deserialize::<PreKeyBundle>(&prekey_resp.data.bytes)
+    let prekey_resp =
+        match fetch_one::<nexus_sdk::object_crawler::Structure<RawPreKey>>(&sui, prekey_obj_id)
+            .await
+        {
+            Ok(response) => {
+                fetch_handle.success();
+                response
+            }
+            Err(e) => {
+                fetch_handle.error();
+                return Err(NexusCliError::Any(e));
+            }
+        };
+    // Extract object reference before moving data
+    let prekey_object_ref = prekey_resp.object_ref();
+    let peer_bundle = bincode::deserialize::<PreKeyBundle>(&prekey_resp.data.into_inner().bytes)
         .map_err(|e| NexusCliError::Any(anyhow!("Failed to deserialize PreKeyBundle: {:?}", e)))?;
 
     // 6. Ensure IdentityKey
@@ -153,7 +135,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     if let Err(e) = associate_pre_key_with_sender(
         &mut tx_builder,
         &objects,
-        &prekey_resp.object_ref(),
+        &prekey_object_ref,
         initial_message.clone(),
     ) {
         tx_handle.error();

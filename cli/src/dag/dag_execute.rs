@@ -142,7 +142,6 @@ fn encrypt_entry_ports_once(
     if targets.is_empty() {
         return Ok(()); // nothing to do, avoid ratchet advance
     }
-    let mut first = true;
 
     for handle in targets {
         let (vertex, port) = handle
@@ -158,15 +157,8 @@ fn encrypt_entry_ports_once(
         let plaintext = slot.take();
         let bytes = serde_json::to_vec(&plaintext)?;
 
-        // Encrypt: first call moves the ratchet, others keep it static
-        let msg = if first {
-            first = false;
-            session.encrypt(&bytes)?
-        } else {
-            session
-                .encrypt_without_advancing(&bytes)
-                .ok_or_else(|| anyhow!("static encryption failed"))?
-        };
+        // Encrypt
+        let msg = session.encrypt(&bytes)?;
 
         // Session must always return a Standard packet here
         let Message::Standard(pkt) = msg else {
