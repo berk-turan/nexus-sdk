@@ -55,7 +55,9 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let tx_resp = sign_and_execute_transaction(&sui, &wallet, tx_data).await?;
 
     // 5. Locate the newly‑created Prekey object in effects
-    let effects = tx_resp.effects.expect("No effects found in response");
+    let effects = tx_resp
+        .effects
+        .ok_or_else(|| NexusCliError::Any(anyhow!("No effects found in response")))?;
 
     let prekey_obj_id = effects
         .unwrapped()
@@ -66,7 +68,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
             }
             None
         })
-        .expect("PreKey object ID not found");
+        .ok_or_else(|| NexusCliError::Any(anyhow!("PreKey object ID not found")))?;
 
     // Fetch full object
     let fetch_handle = loading!("Fetching prekey object...");
@@ -86,7 +88,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     // Extract object reference before moving data
     let prekey_object_ref = prekey_resp.object_ref();
     let peer_bundle = bincode::deserialize::<PreKeyBundle>(&prekey_resp.data.into_inner().bytes)
-        .map_err(|e| NexusCliError::Any(anyhow!("Failed to deserialize PreKeyBundle: {:?}", e)))?;
+        .map_err(|e| NexusCliError::Any(e.into()))?;
 
     // 6. Ensure IdentityKey
     if conf.crypto.identity_key.is_none() {
@@ -98,7 +100,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let (initial_msg, session) = {
         let identity_key = conf.crypto.identity_key.as_ref().unwrap();
         Session::initiate(&identity_key, &peer_bundle, first_message)
-            .map_err(|e| NexusCliError::Any(anyhow!("Session initiation failed: {:?}", e)))?
+            .map_err(|e| NexusCliError::Any(e.into()))?
     };
 
     // Extract InitialMessage from Message enum

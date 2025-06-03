@@ -8,7 +8,7 @@ use {
         prelude::*,
         sui::*,
     },
-    anyhow::{anyhow, bail, Result},
+    anyhow::anyhow,
     bincode,
     nexus_sdk::{
         crypto::session::{Message, Session},
@@ -48,7 +48,7 @@ pub(crate) async fn execute_dag(
             .get_mut(&session_id)
             .ok_or_else(|| NexusCliError::Any(anyhow!("Session not found in config")))?;
 
-        encrypt_entry_ports_once(session, &mut input_json, &encrypt).map_err(NexusCliError::Any)?;
+        encrypt_entry_ports_once(session, &mut input_json, &encrypt)?;
 
         // Save the updated config
         conf.save().await.map_err(NexusCliError::Any)?;
@@ -138,7 +138,7 @@ fn encrypt_entry_ports_once(
     session: &mut Session,
     input: &mut Value,
     targets: &[String],
-) -> Result<(), anyhow::Error> {
+) -> Result<(), NexusCliError> {
     if targets.is_empty() {
         return Ok(()); // nothing to do, avoid ratchet advance
     }
@@ -146,29 +146,36 @@ fn encrypt_entry_ports_once(
     for handle in targets {
         let (vertex, port) = handle
             .split_once('.')
-            .ok_or_else(|| anyhow!("Bad --encrypt handle: {handle}"))?;
+            .ok_or_else(|| NexusCliError::Any(anyhow!("Bad --encrypt handle: {handle}")))?;
 
         // Take the plaintext for ownership
         let slot = input
             .get_mut(vertex)
             .and_then(|v| v.get_mut(port))
-            .ok_or_else(|| anyhow!("Input JSON has no {vertex}.{port}"))?;
+            .ok_or_else(|| NexusCliError::Any(anyhow!("Input JSON has no {vertex}.{port}")))?;
 
         let plaintext = slot.take();
-        let bytes = serde_json::to_vec(&plaintext)?;
+        let bytes = serde_json::to_vec(&plaintext).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
 
         // Encrypt
-        let msg = session.encrypt(&bytes)?;
+        let msg = session
+            .encrypt(&bytes)
+            .map_err(|e| NexusCliError::Any(anyhow!(e)))?;
 
         // Session must always return a Standard packet here
         let Message::Standard(pkt) = msg else {
-            bail!("Session returned non-standard packet");
+            return Err(NexusCliError::Any(anyhow!(
+                "Session returned non-standard packet"
+            )));
         };
 
         // Serialize the StandardMessage with bincode
-        let serialized = bincode::serialize(&pkt)?;
-        *slot = serde_json::to_value(&serialized)?;
+        let serialized = bincode::serialize(&pkt).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+        *slot = serde_json::to_value(&serialized).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
     }
+
+    // commit the session state
+    session.commit_sender(None);
 
     Ok(())
 }
@@ -176,7 +183,7 @@ fn encrypt_entry_ports_once(
 /// Validates that the user has an active authentication session
 fn validate_authentication(conf: &CliConf) -> Result<(), NexusCliError> {
     if conf.crypto.sessions.is_empty() {
-        return Err(NexusCliError::Any(anyhow::anyhow!(
+        return Err(NexusCliError::Any(anyhow!(
             "Authentication required — run `nexus crypto auth` first"
         )));
     }

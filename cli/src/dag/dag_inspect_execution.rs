@@ -8,7 +8,9 @@ use {
         prelude::*,
         sui::*,
     },
+    bincode,
     nexus_sdk::{
+        crypto::session::{Message, StandardMessage},
         events::{NexusEvent, NexusEventKind},
         idents::primitives,
         types::{NexusData, TypeName},
@@ -25,15 +27,24 @@ pub(crate) async fn inspect_dag_execution(
     command_title!("Inspecting Nexus DAG Execution '{dag_execution_id}'");
 
     // Load CLI configuration.
-    let conf = CliConf::load().await.unwrap_or_default();
+    let mut conf = CliConf::load().await.unwrap_or_default();
+
+    validate_authentication(&conf)?;
 
     // Nexus objects must be present in the configuration.
-    let NexusObjects {
-        primitives_pkg_id, ..
-    } = get_nexus_objects(&conf)?;
+    let primitives_pkg_id = {
+        let NexusObjects {
+            primitives_pkg_id, ..
+        } = get_nexus_objects(&conf)?;
+        *primitives_pkg_id // ObjectID is Copy
+    };
 
     // Build Sui client.
-    let sui = build_sui_client(&conf.sui).await?;
+    let sui_conf = conf.sui.clone();
+    let sui = build_sui_client(&sui_conf).await?;
+
+    // Check if we have authentication for potential decryption
+    let has_session = !conf.crypto.sessions.is_empty();
 
     let limit = None;
     let descending_order = false;
@@ -49,7 +60,7 @@ pub(crate) async fn inspect_dag_execution(
     // Loop until we find an `ExecutionFinished` event.
     'query: loop {
         let query = sui::EventFilter::MoveEventModule {
-            package: *primitives_pkg_id,
+            package: primitives_pkg_id,
             module: primitives::Event::EVENT_WRAPPER.module.into(),
         };
 
@@ -104,31 +115,16 @@ pub(crate) async fn inspect_dag_execution(
                     let mut json_data = Vec::new();
 
                     for (port, data) in variant_ports_to_data.values {
+                        let (display_data, json_data_value) =
+                            process_port_data(&port, &data, &mut conf);
+
                         item!(
                             "Port '{port}' produced data: {data}",
                             port = port.name.truecolor(100, 100, 100),
-                            data = format!("{data:?}").truecolor(100, 100, 100),
+                            data = display_data.truecolor(100, 100, 100),
                         );
 
-                        match data {
-                            NexusData::Inline { data, encrypted } if !encrypted => {
-                                json_data.push(json!({
-                                    "port": port.name,
-                                    "data": data,
-                                }));
-                            }
-                            NexusData::Inline { data, .. } => {
-                                // TODO: <https://github.com/Talus-Network/nexus-next/issues/300>
-                                json_data.push(json!({
-                                    "port": port.name,
-                                    "data": data,
-                                }));
-                            }
-                            _ => json_data.push(json!({
-                                "port": port.name,
-                                "data": data,
-                            })),
-                        }
+                        json_data.push(json_data_value);
                     }
 
                     json_trace.push(json!({
@@ -162,31 +158,16 @@ pub(crate) async fn inspect_dag_execution(
                     let mut json_data = Vec::new();
 
                     for (port, data) in variant_ports_to_data.values {
+                        let (display_data, json_data_value) =
+                            process_port_data(&port, &data, &mut conf);
+
                         item!(
                             "Port '{port}' produced data: {data}",
                             port = port.name.truecolor(100, 100, 100),
-                            data = format!("{data:?}").truecolor(100, 100, 100),
+                            data = display_data.truecolor(100, 100, 100),
                         );
 
-                        match data {
-                            NexusData::Inline { data, encrypted } if !encrypted => {
-                                json_data.push(json!({
-                                    "port": port.name,
-                                    "data": data,
-                                }));
-                            }
-                            NexusData::Inline { data, .. } => {
-                                // TODO: <https://github.com/Talus-Network/nexus-next/issues/300>
-                                json_data.push(json!({
-                                    "port": port.name,
-                                    "data": data,
-                                }));
-                            }
-                            _ => json_data.push(json!({
-                                "port": port.name,
-                                "data": data,
-                            })),
-                        }
+                        json_data.push(json_data_value);
                     }
 
                     json_trace.push(json!({
@@ -214,8 +195,101 @@ pub(crate) async fn inspect_dag_execution(
         }
     }
 
+    // Save the updated config if session was modified
+    if has_session {
+        conf.save().await.map_err(NexusCliError::Any)?;
+    }
+
     json_output(&json_trace)?;
 
+    Ok(())
+}
+
+/// Process port data, handling decryption if needed
+fn process_port_data(
+    port: &TypeName,
+    data: &NexusData,
+    conf: &mut CliConf,
+) -> (String, serde_json::Value) {
+    match data {
+        NexusData::Inline { data, encrypted } if !encrypted => (
+            format!("{data:?}"),
+            json!({
+                "port": port.name,
+                "data": data,
+            }),
+        ),
+        NexusData::Inline { data, encrypted } if *encrypted => match try_decrypt_data(data, conf) {
+            Ok(decrypted_data) => (
+                format!("{decrypted_data:?}"),
+                json!({
+                    "port": port.name,
+                    "data": decrypted_data,
+                    "was_encrypted": true,
+                }),
+            ),
+            Err(e) => {
+                eprintln!("Failed to decrypt data for port '{}': {}", port.name, e);
+                (
+                    format!("{data:?} [ENCRYPTED - FAILED TO DECRYPT]"),
+                    json!({
+                        "port": port.name,
+                        "data": data,
+                        "encrypted": true,
+                        "decrypt_error": e.to_string(),
+                    }),
+                )
+            }
+        },
+        _ => (
+            format!("{data:?}"),
+            json!({
+                "port": port.name,
+                "data": data,
+            }),
+        ),
+    }
+}
+
+/// Attempt to decrypt encrypted data using the provided session
+fn try_decrypt_data(
+    encrypted_data: &serde_json::Value,
+    conf: &mut CliConf,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    if conf.crypto.sessions.is_empty() {
+        return Err("No active session available for decryption".into());
+    }
+
+    let session_id = *conf.crypto.sessions.values().next().unwrap().id();
+    let session = conf
+        .crypto
+        .sessions
+        .get_mut(&session_id)
+        .ok_or("Session not found in config")?;
+
+    // Deserialize the encrypted data back to bytes
+    let serialized_packet: Vec<u8> = serde_json::from_value(encrypted_data.clone())?;
+
+    // Deserialize with bincode to get the StandardMessage
+    let packet: StandardMessage = bincode::deserialize(&serialized_packet)?;
+
+    // Create Message::Standard and decrypt
+    let message = Message::Standard(packet);
+    let decrypted_bytes = session.decrypt(&message)?;
+
+    // Deserialize the decrypted bytes back to JSON
+    let decrypted_value: serde_json::Value = serde_json::from_slice(&decrypted_bytes)?;
+
+    Ok(decrypted_value)
+}
+
+/// Validates that the user has an active authentication session
+fn validate_authentication(conf: &CliConf) -> Result<(), NexusCliError> {
+    if conf.crypto.sessions.is_empty() {
+        return Err(NexusCliError::Any(anyhow!(
+            "Authentication required — run `nexus crypto auth` first"
+        )));
+    }
     Ok(())
 }
 

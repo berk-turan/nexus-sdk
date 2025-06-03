@@ -371,6 +371,44 @@ impl Session {
         }
     }
 
+    /// Try to **re-open a message we ourselves sent** while its message-key is
+    /// still cached locally (useful for drafts, "edit" or resend workflows).
+    ///
+    /// * `header` and `ciphertext` are the exact bytes we put on the wire.
+    /// * Returns `Some(plaintext)` on success, or `None` if the key was
+    ///   already forgotten or the header does not belong to this session.
+    pub fn read_own_msg(&mut self, msg: &Message) -> Option<Vec<u8>> {
+        match msg {
+            Message::Standard(sm) => {
+                let ad = self.make_associated_data();
+                self.ratchet
+                    .decrypt_outgoing(&sm.header, &sm.ciphertext, &ad)
+            }
+            _ => None, // Initial message or wrong variant
+        }
+    }
+
+    /// **Sender-side "commit":** irrevocably forget cached **outgoing** message-keys.
+    ///
+    /// * Pass `Some(n)` to forget everything ≤ `n` in the current sending
+    ///   chain;  
+    /// * Pass `None` to wipe the entire cache.
+    pub fn commit_sender(&mut self, max_n: Option<u32>) {
+        self.ratchet.commit_sender(max_n);
+    }
+
+    /// **Receiver-side "commit":** forget **skipped** message-keys we no longer
+    /// need to keep around.
+    ///
+    /// * `header_key` — set to `Some(hk)` to affect only keys derived from a
+    ///   specific header-key (e.g. after a DH ratchet step has fully caught
+    ///   up); use `None` to match all header-keys.
+    /// * `n_max` — drop everything with index ≤ `n_max`; use `None` to drop
+    ///   everything for the selected `header_key`.
+    pub fn commit_receiver(&mut self, header_key: Option<[u8; 32]>, n_max: Option<u32>) {
+        self.ratchet.commit_receiver(header_key, n_max);
+    }
+
     /// Creates a Session from storage data
     pub fn from_storage(
         session_id: [u8; 32],
@@ -755,8 +793,8 @@ mod tests {
             // Receiver later decrypts them in *another* random order
             snapshots.shuffle(&mut rng);
 
-            for (idx, data, pkt) in &snapshots {
-                let s = receiver_sessions[*idx].as_mut().unwrap();
+            for (idx, _, pkt) in &snapshots {
+                let _s = receiver_sessions[*idx].as_mut().unwrap();
                 if let Message::Standard(_standard_msg) = pkt {
                     // Decrypt own without advancing not yet implemented
                     // Just verify data matches for now
@@ -880,8 +918,8 @@ mod tests {
         }
         static_pkts.shuffle(&mut rng); // shuffle the work to randomize the order
 
-        for (idx, data, pkt) in &static_pkts {
-            let s = leader_sessions[*idx].as_mut().unwrap();
+        for (idx, _data, pkt) in &static_pkts {
+            let _s = leader_sessions[*idx].as_mut().unwrap();
             // read from on-chain or somewhere else, the encrypted data and decryption happens one after another here just for testing
             if let Message::Standard(_standard_msg) = pkt {
                 // Decrypt own without advancing not yet implemented
@@ -981,5 +1019,160 @@ mod tests {
             .expect("Receiver encrypt failed");
         let pt2 = sender_sess.decrypt(&msg2).expect("Sender decrypt failed");
         assert_eq!(&pt2, b"reply after OTK handshake");
+    }
+
+    #[test]
+    fn test_read_own_msg_functionality() {
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
+        let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
+
+        // Setup session
+        let (init_msg, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, b"handshake").unwrap();
+        let initial_message = match &init_msg {
+            Message::Initial(m) => m,
+            _ => unreachable!(),
+        };
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, initial_message, None).unwrap();
+
+        // Send a setup message to establish the ratchet
+        let setup_msg = sender_sess.encrypt(b"setup").unwrap();
+        let _ = receiver_sess.decrypt(&setup_msg).unwrap();
+
+        // Test sender can read their own messages immediately after encryption
+        let msg1 = sender_sess.encrypt(b"message 1").unwrap();
+        let msg2 = sender_sess.encrypt(b"message 2").unwrap();
+        let msg3 = sender_sess.encrypt(b"message 3").unwrap();
+
+        // Sender should be able to read their own messages
+        let own_pt1 = sender_sess
+            .read_own_msg(&msg1)
+            .expect("Should be able to read own message 1");
+        assert_eq!(own_pt1, b"message 1");
+
+        let own_pt2 = sender_sess
+            .read_own_msg(&msg2)
+            .expect("Should be able to read own message 2");
+        assert_eq!(own_pt2, b"message 2");
+
+        let own_pt3 = sender_sess
+            .read_own_msg(&msg3)
+            .expect("Should be able to read own message 3");
+        assert_eq!(own_pt3, b"message 3");
+
+        // Reading own messages consumes the key (expected behavior)
+        // After reading once, the key is evicted and no longer available
+        assert!(
+            sender_sess.read_own_msg(&msg1).is_none(),
+            "Message key should be evicted after first read"
+        );
+
+        // Receiver should still be able to decrypt all messages normally
+        let receiver_pt1 = receiver_sess.decrypt(&msg1).unwrap();
+        assert_eq!(receiver_pt1, b"message 1");
+
+        let receiver_pt2 = receiver_sess.decrypt(&msg2).unwrap();
+        assert_eq!(receiver_pt2, b"message 2");
+
+        let receiver_pt3 = receiver_sess.decrypt(&msg3).unwrap();
+        assert_eq!(receiver_pt3, b"message 3");
+
+        // Test that initial messages cannot be read as own messages
+        assert!(
+            sender_sess.read_own_msg(&init_msg).is_none(),
+            "Should not be able to read initial message as own message"
+        );
+    }
+
+    #[test]
+    fn test_commit_operations() {
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
+        let spk_secret = StaticSecret::random_from_rng(&mut OsRng);
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
+
+        // Setup session
+        let (init_msg, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, b"handshake").unwrap();
+        let initial_message = match &init_msg {
+            Message::Initial(m) => m,
+            _ => unreachable!(),
+        };
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, initial_message, None).unwrap();
+
+        // Send setup message to establish ratchet
+        let setup_msg = sender_sess.encrypt(b"setup").unwrap();
+        let _ = receiver_sess.decrypt(&setup_msg).unwrap();
+
+        // Test that sender can read their own message before committing
+        let msg1 = sender_sess.encrypt(b"test message 1").unwrap();
+        let own_pt1 = sender_sess
+            .read_own_msg(&msg1)
+            .expect("Should be able to read own message");
+        assert_eq!(own_pt1, b"test message 1");
+
+        // After reading, the key should be evicted
+        assert!(
+            sender_sess.read_own_msg(&msg1).is_none(),
+            "Key should be evicted after reading"
+        );
+
+        // Create multiple messages to test commit functionality
+        let msg2 = sender_sess.encrypt(b"test message 2").unwrap();
+        let msg3 = sender_sess.encrypt(b"test message 3").unwrap();
+        let msg4 = sender_sess.encrypt(b"test message 4").unwrap();
+
+        // Verify we can read message 3 before committing
+        let own_pt3 = sender_sess
+            .read_own_msg(&msg3)
+            .expect("Should read message 3");
+        assert_eq!(own_pt3, b"test message 3");
+
+        // Commit all remaining keys
+        sender_sess.commit_sender(None);
+
+        // After full commit, remaining messages should not be readable
+        assert!(
+            sender_sess.read_own_msg(&msg2).is_none(),
+            "Message 2 should be committed"
+        );
+        assert!(
+            sender_sess.read_own_msg(&msg4).is_none(),
+            "Message 4 should be committed"
+        );
+
+        // Receiver should still be able to decrypt all messages normally
+        let receiver_pt1 = receiver_sess.decrypt(&msg1).unwrap();
+        assert_eq!(receiver_pt1, b"test message 1");
+
+        let receiver_pt2 = receiver_sess.decrypt(&msg2).unwrap();
+        assert_eq!(receiver_pt2, b"test message 2");
+
+        let receiver_pt3 = receiver_sess.decrypt(&msg3).unwrap();
+        assert_eq!(receiver_pt3, b"test message 3");
+
+        let receiver_pt4 = receiver_sess.decrypt(&msg4).unwrap();
+        assert_eq!(receiver_pt4, b"test message 4");
+
+        // Test receiver commit operations with out-of-order messages
+        let msg_a = sender_sess.encrypt(b"message A").unwrap();
+        let msg_b = sender_sess.encrypt(b"message B").unwrap();
+        let msg_c = sender_sess.encrypt(b"message C").unwrap();
+
+        // Receiver gets messages out of order (B, C, A) to create skipped keys
+        let _ = receiver_sess.decrypt(&msg_b).unwrap();
+        let _ = receiver_sess.decrypt(&msg_c).unwrap();
+        // At this point, message A is skipped and cached
+
+        // Message A should still be decryptable since it was cached
+        let pt_a = receiver_sess.decrypt(&msg_a).unwrap();
+        assert_eq!(pt_a, b"message A");
+
+        // Test receiver commit for future use cases
+        receiver_sess.commit_receiver(None, Some(100)); // This should be a no-op for current state
     }
 }
