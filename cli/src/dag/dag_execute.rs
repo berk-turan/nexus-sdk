@@ -38,15 +38,8 @@ pub(crate) async fn execute_dag(
     validate_authentication(&conf)?;
 
     if !encrypt.is_empty() {
-        // Get the active session (we know it exists from validation above)
-        let session_id = *conf.crypto.sessions.values().next().unwrap().id();
-
-        // Get mutable reference to the session and modify it (this advances the ratchet state)
-        let session = conf
-            .crypto
-            .sessions
-            .get_mut(&session_id)
-            .ok_or_else(|| NexusCliError::Any(anyhow!("Session not found in config")))?;
+        // Get the active session and modify it (this advances the ratchet state)
+        let session = get_active_session(&mut conf)?;
 
         encrypt_entry_ports_once(session, &mut input_json, &encrypt)?;
 
@@ -188,6 +181,23 @@ fn validate_authentication(conf: &CliConf) -> Result<(), NexusCliError> {
         )));
     }
     Ok(())
+}
+
+/// Gets the active session for encryption/decryption
+fn get_active_session(
+    conf: &mut CliConf,
+) -> Result<&mut nexus_sdk::crypto::session::Session, NexusCliError> {
+    if conf.crypto.sessions.is_empty() {
+        return Err(NexusCliError::Any(anyhow!(
+            "Authentication required — run `nexus crypto auth` first"
+        )));
+    }
+
+    let session_id = *conf.crypto.sessions.values().next().unwrap().id();
+    conf.crypto
+        .sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| NexusCliError::Any(anyhow!("Session not found in config")))
 }
 
 #[cfg(test)]
