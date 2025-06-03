@@ -30,7 +30,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let address = wallet.active_address().map_err(NexusCliError::Any)?;
 
     // 3. Gas coin selection
-    let gas_coin = fetch_gas_coin(&sui, conf.sui.net, address, gas.sui_gas_coin).await?;
+    let gas_coin = fetch_gas_coin(&sui, address, gas.sui_gas_coin).await?;
     let reference_gas_price = fetch_reference_gas_price(&sui).await?;
 
     // 4. Craft claim transaction

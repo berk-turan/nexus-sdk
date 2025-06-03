@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON DAG now accepts `encrypted` field on `edges.[].from`
 - `nexus dag execute` now encrypts any  `vertex.port` mentioned in the arguments
 
+#### Removed
+
+- automated faucet calls for gas and collateral coins
+
 ### `nexus-sdk`
 
 #### Added
