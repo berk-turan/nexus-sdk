@@ -43,76 +43,61 @@ pub enum MasterKeyError {
     ProjectDirNotFound,
     #[error("argon2 failure: {0}")]
     Argon2(String),
+    #[error(
+        "no persistent master key found; \
+            run `nexus-cli crypto init-key` or `set-passphrase`"
+    )]
+    NoPersistentKey,
+    #[error(
+        "a different persistent key already exists; \
+            re-run with --force if you really want to replace it"
+    )]
+    KeyAlreadyExists,
 }
 
 /// Obtain the process-wide master key.
 ///
-/// First tries the OS key-ring. If not present, derives a key from
-/// `NEXUS_CLI_STORE_PASSPHRASE` using Argon2id and an application-scoped
-/// salt. If neither exists, generates a
-/// random key and stores it in the key-ring.
+/// Resolution order (abort if none succeed):
+/// 1. `NEXUS_CLI_STORE_PASSPHRASE` env-var -> Argon2id(pass, salt)
+/// 2. key-ring entry  {service=SERVICE, user="passphrase"} -> Argon2id(pass, salt)
+/// 3. key-ring entry  {service=SERVICE, user=USER} -> raw 32-byte key
 pub fn get_master_key() -> Result<Zeroizing<[u8; KEY_LEN]>, MasterKeyError> {
-    // Try to get key from key-ring
-    // Only try keyring if no passphrase is set
-    // This ensures passphrase-derived keys are always re-derived
-    // rather than potentially getting a stale cached key
-    if env::var("NEXUS_CLI_STORE_PASSPHRASE").is_err() {
-        match Entry::new(SERVICE, USER) {
-            Ok(entry) => {
-                if let Ok(stored_hex) = entry.get_password() {
-                    let bytes = hex::decode(&stored_hex)?;
-                    if bytes.len() == KEY_LEN {
-                        let key_array: [u8; KEY_LEN] = bytes.try_into().unwrap();
-                        return Ok(Zeroizing::new(key_array));
-                    }
-                    // Invalid key in keyring, delete it
-                    let _ = entry.delete_credential();
-                }
-            }
-            Err(e) => {
-                // Keyring not available, continue without it
-                eprintln!("Warning: Keyring not available: {}", e);
-            }
-        }
-    }
-
-    // Try to derive key from passphrase
+    // 1. ENV-VAR branch (highest priority)
     if let Ok(passphrase) = env::var("NEXUS_CLI_STORE_PASSPHRASE") {
-        let (_, salt) = get_or_create_salt()?;
-
-        // Derive 256-bit key from passphrase + salt.
-        let params = Params::new(ARGON2_MEMORY_KIB, ARGON2_ITERATIONS, 1, Some(KEY_LEN))
-            .map_err(|e| MasterKeyError::Argon2(e.to_string()))?;
-        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-
-        let mut key = Zeroizing::new([0u8; KEY_LEN]);
-        argon2
-            .hash_password_into(passphrase.as_bytes(), &salt, &mut *key)
-            .map_err(|e| MasterKeyError::Argon2(e.to_string()))?;
-
-        // Don't cache passphrase-derived keys in keyring to avoid confusion
-        // The passphrase + salt should always produce the same key
-        return Ok(key);
+        return derive_from_passphrase(&passphrase);
     }
 
-    // Generate new random key
-    let mut key = Zeroizing::new([0u8; KEY_LEN]);
-    OsRng.fill_bytes(&mut *key);
+    // 2. Key-ring pass-phrase branch
+    if let Ok(passphrase) = Entry::new(SERVICE, "passphrase").and_then(|e| e.get_password()) {
+        return derive_from_passphrase(&passphrase);
+    }
 
-    // Try to save to keyring, but don't fail if it doesn't work
-    match Entry::new(SERVICE, USER) {
-        Ok(entry) => match entry.set_password(&hex::encode(&*key)) {
-            Ok(_) => Ok(key),
-            Err(e) => {
-                eprintln!("Warning: Failed to save key to keyring: {}", e);
-                Ok(key)
-            }
-        },
-        Err(e) => {
-            eprintln!("Warning: Keyring not available: {}", e);
-            Ok(key)
+    // 3. Raw 32-byte key stored in key-ring
+    if let Ok(hex_key) = Entry::new(SERVICE, USER).and_then(|e| e.get_password()) {
+        let bytes = hex::decode(&hex_key)?;
+        if bytes.len() == KEY_LEN {
+            let key_array: [u8; KEY_LEN] = bytes.try_into().unwrap();
+            return Ok(Zeroizing::new(key_array));
         }
+        // Corrupt entry – clean up to avoid surprises next run
+        let _ = Entry::new(SERVICE, USER).and_then(|e| e.delete_credential());
     }
+
+    // 4. Nothing worked -> hard error
+    Err(MasterKeyError::NoPersistentKey)
+}
+
+fn derive_from_passphrase(passphrase: &str) -> Result<Zeroizing<[u8; KEY_LEN]>, MasterKeyError> {
+    let (_, salt) = get_or_create_salt()?;
+    let params = Params::new(ARGON2_MEMORY_KIB, ARGON2_ITERATIONS, 1, Some(KEY_LEN))
+        .map_err(|e| MasterKeyError::Argon2(e.to_string()))?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
+    argon2
+        .hash_password_into(passphrase.as_bytes(), &salt, &mut *key)
+        .map_err(|e| MasterKeyError::Argon2(e.to_string()))?;
+    Ok(key)
 }
 
 /// Locate `$XDG_CONFIG_HOME/nexus-cli/salt.bin` or platform-specific config dir,
