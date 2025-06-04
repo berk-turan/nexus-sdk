@@ -7,7 +7,6 @@ pub(crate) async fn set_nexus_conf(
     sui_auth_user: Option<String>,
     sui_auth_password: Option<String>,
     nexus_objects_path: Option<PathBuf>,
-    generate_identity_key: bool,
     conf_path: PathBuf,
 ) -> AnyResult<(), NexusCliError> {
     let mut conf = CliConf::load_from_path(&conf_path)
@@ -49,14 +48,6 @@ pub(crate) async fn set_nexus_conf(
     conf.sui.wallet_path = resolve_wallet_path(sui_wallet_path, &conf.sui)?;
     conf.sui.auth_user = sui_auth_user.or(conf.sui.auth_user);
     conf.sui.auth_password = sui_auth_password.or(conf.sui.auth_password);
-
-    // Optionally generate a fresh identity key.
-    if generate_identity_key {
-        conf.crypto.identity_key = Some(IdentityKey::generate());
-        // wipe all sessions
-        // TODO: think of something better than this
-        conf.crypto.sessions.clear();
-    }
 
     json_output(&serde_json::to_value(&conf).unwrap())?;
 
@@ -118,7 +109,6 @@ mod tests {
             Some("user".to_string()),
             Some("pass".to_string()),
             Some(tempdir.join("objects.toml")),
-            true,
             path.clone(),
         )
         .await;
@@ -136,16 +126,8 @@ mod tests {
         assert_eq!(objects, nexus_objects_instance);
 
         // Overriding one value will save that one value and leave other values intact.
-        let result = set_nexus_conf(
-            Some(SuiNet::Testnet),
-            None,
-            None,
-            None,
-            None,
-            true,
-            path.clone(),
-        )
-        .await;
+        let result =
+            set_nexus_conf(Some(SuiNet::Testnet), None, None, None, None, path.clone()).await;
 
         assert_matches!(result, Ok(()));
 

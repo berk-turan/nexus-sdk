@@ -87,7 +87,7 @@ mod tests {
             sui: sui_conf,
             nexus: Some(nexus_objects),
             tools,
-            crypto: Secret::new(crypto_conf),
+            crypto: Some(Secret::new(crypto_conf)),
         };
 
         // Write the configuration to the file.
@@ -104,13 +104,13 @@ mod tests {
 
         // Verify sessions field is properly handled during deserialization
         assert_eq!(
-            result.crypto.sessions.len(),
+            result.crypto.as_ref().unwrap().sessions.len(),
             1,
             "Should have 1 session (shared between sender and receiver)"
         );
 
         // Verify we can recover the sessions from the configuration
-        for (session_id, session) in result.crypto.sessions.iter() {
+        for (session_id, session) in result.crypto.as_ref().unwrap().sessions.iter() {
             // Verify session IDs are properly stored and retrieved
             assert_eq!(
                 session.id(),
