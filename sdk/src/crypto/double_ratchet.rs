@@ -289,13 +289,13 @@ pub struct RatchetStateHE {
     nr: u32,
     /// Length of previous sending chain
     pn: u32,
-    /// Map keyed by `(header_key, n)` → message key, maintained while the state
+    /// Map keyed by `(header_key, n)` -> message key, maintained while the state
     /// is alive.
     mkskipped: HashMap<([u8; 32], u32), [u8; 32]>,
-    /// Local cache so the *sender* can reopen its own drafts.
+    /// Local cache so the sender can reopen its own drafts.
     #[serde(with = "lru_cache_serde")]
     outgoing_cache: LruCache<([u8; 16], u32), Zeroizing<[u8; 32]>>,
-    /// Keep two previous HK_s so drafts survive one DH step overlap.
+    /// Keep previous HK_s so drafts survive one DH step overlap.
     prev_hks: VecDeque<[u8; 32]>,
     /// Nonce sequence for payload encryption
     #[serde(with = "nonce_seq_serde")]
@@ -668,12 +668,12 @@ impl RatchetStateHE {
         plaintext: &[u8],
         ad: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), RatchetError> {
-        // --- Message‑key derivation as before ---
+        // Message‑key derivation as before
         let cks = self.cks.ok_or(RatchetError::MissingSendingChain)?;
         let (new_cks, mk) = Self::kdf_ck(&cks);
         self.cks = Some(new_cks);
 
-        // 1⃣ build + encrypt header with current HK_s
+        // 1. build + encrypt header with current HK_s
         let header = Header {
             dh: self.dhs_pub,
             pn: self.pn,
@@ -684,7 +684,7 @@ impl RatchetStateHE {
         let hk_current = self.hks.clone().ok_or(RatchetError::MissingHeaderKey)?;
         let enc_header = self.hencrypt(&hk_current, &hdr_bytes)?;
 
-        // 2⃣ advance header key *after* successful encryption
+        // 2. advance header key *after* successful encryption
         let hk_next = Self::kdf_hk(&hk_current);
         if self.prev_hks.len() == MAX_PREV_HKS {
             self.prev_hks.pop_front();
@@ -695,7 +695,7 @@ impl RatchetStateHE {
         // Cache draft MK for self‑decryption
         self.cache_outgoing_header(&enc_header, &mk);
 
-        // 3⃣ encrypt payload (AAD = user AD || enc_header)
+        // 3. encrypt payload (AAD = user AD || enc_header)
         let mut full_ad = ad.to_vec();
         full_ad.extend_from_slice(&enc_header);
         let cipher = Aes128SivAead::new_from_slice(&mk).unwrap();
@@ -738,14 +738,14 @@ impl RatchetStateHE {
 
         // If we used NHK_r, we need to do a DH ratchet and then handle skipped messages
         if used_nhk {
-            // ① deal with the previous chain (PN)
+            // 1. deal with the previous chain (PN)
             self.skip_message_keys_he(header.pn, None)?;
             self.dh_ratchet_he(&header)?;
 
-            // ② derive and cache keys for indices 0‥(N-1) with the *current* HK_r
+            // 2. derive and cache keys for indices 0‥(N-1) with the *current* HK_r
             self.skip_message_keys_he(header.n, self.hkr.clone())?;
 
-            // ③ *now* step HK_r so it points at the next expected header
+            // 3. *now* step HK_r so it points at the next expected header
             if let Some(ref hk) = self.hkr {
                 self.hkr = Some(Self::kdf_hk(hk));
             }
@@ -888,9 +888,8 @@ impl RatchetStateHE {
     }
 
     /// Derive all skipped keys up to `until`, but keep at most
-    /// `MAX_SKIP_STORE` *newest* (hk,n)→mk entries.
+    /// `MAX_SKIP_STORE` *newest* (hk,n)->mk entries.
     /// Older keys are thrown away deterministically.
-    ///
     /// If the *gap length itself* exceeds the 1 000-step limit that every
     /// Signal-family client enforces, we abort with `MaxSkipExceeded`.
     fn skip_message_keys_he(
@@ -898,7 +897,7 @@ impl RatchetStateHE {
         until: u32,
         mut hk_opt: Option<[u8; 32]>,
     ) -> Result<(), RatchetError> {
-        // --- 0. Sanity check against spec-violating peers -----------------
+        // 0. Sanity check against spec-violating peers
         if until.wrapping_sub(self.nr) as usize > MAX_SKIP_PER_CHAIN {
             return Err(RatchetError::MaxSkipExceeded);
         }
@@ -912,7 +911,7 @@ impl RatchetStateHE {
             }
         };
 
-        // --- 1. Walk the hash ratchet ------------------------------------
+        // 1. Walk the hash ratchet
         while self.nr < until {
             let (new_ck, mk) = Self::kdf_ck(&ck_r);
             ck_r = new_ck;
@@ -930,7 +929,7 @@ impl RatchetStateHE {
         }
         self.ckr = Some(ck_r);
 
-        // --- 2. FIFO eviction (defence-in-depth) --------------------------
+        // 2. FIFO eviction (defence-in-depth)
         while self.mkskipped.len() > MAX_SKIP_GLOBAL {
             if let Some(oldest) = self.mkskipped.keys().min_by_key(|(_, n)| *n).copied() {
                 self.mkskipped.remove(&oldest);
@@ -945,7 +944,7 @@ impl RatchetStateHE {
         self.ns = 0;
         self.nr = 0;
 
-        // Promote NHKs → HKs and keep the last two HKs for self-decryption.
+        // Promote NHKs -> HKs and keep the last two HKs for self-decryption.
         self.rotate_header_keys();
 
         // 1. Receiving chain (dhs ‖ header.dh)
@@ -1026,8 +1025,8 @@ impl RatchetStateHE {
             .ok()
             .flatten()
         {
-            // 🔑 NEW: evict the draft MK once it has been used successfully
-            self.outgoing_cache.pop(&(digest, hdr.n));
+            // Mark the draft as used
+            self.outgoing_cache.get(&(digest, hdr.n));
             return Some(pt);
         }
         None
@@ -1916,12 +1915,12 @@ mod tests {
                 Ok(decrypted) => {
                     assert_eq!(&decrypted, expected_msg);
                     successfully_decrypted += 1;
-                    println!("✓ Successfully decrypted message {}", idx);
+                    println!(" Successfully decrypted message {}", idx);
                 }
                 Err(RatchetError::MaxSkipExceeded) => {
                     skip_limit_hits += 1;
                     println!(
-                        "✗ Hit skip limit for message {} (expected for large gaps)",
+                        " Hit skip limit for message {} (expected for large gaps)",
                         idx
                     );
                 }
@@ -1954,7 +1953,7 @@ mod tests {
             assert_eq!(&decrypted, expected_msg);
         }
 
-        println!("✓ Sender can still decrypt its own drafts despite receiver's message loss");
+        println!(" Sender can still decrypt its own drafts despite receiver's message loss");
 
         // Test receiver cleanup
         receiver.commit_receiver(None, Some(50));
@@ -1984,7 +1983,7 @@ mod tests {
             "Late draft should still be available"
         );
 
-        println!("✓ Cleanup operations work correctly");
+        println!(" Cleanup operations work correctly");
     }
 
     #[test]
@@ -2063,7 +2062,7 @@ mod tests {
                 .expect(&format!("Sender should decrypt own draft {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
-        println!("Phase 4: ✓ Sender can decrypt all its own drafts regardless of receiver state");
+        println!("Phase 4: Sender can decrypt all its own drafts regardless of receiver state");
 
         // PHASE 5: Receiver commit operations - cleanup old skipped keys
         let skipped_before_commit = receiver.mkskipped.len();
@@ -2161,9 +2160,7 @@ mod tests {
             .expect("New draft should still be available");
         assert_eq!(&decrypted_new, expected_msg_new);
 
-        println!(
-            "Phase 8b: ✓ Sender commit works correctly - old drafts removed, new ones retained"
-        );
+        println!("Phase 8b: Sender commit works correctly - old drafts removed, new ones retained");
 
         // PHASE 9: Final cleanup and verification
         println!("Phase 9: Final cleanup operations");
@@ -2185,30 +2182,30 @@ mod tests {
             );
         }
 
-        println!("Phase 9: ✓ Complete cleanup successful");
+        println!("Phase 9:  Complete cleanup successful");
 
         // PHASE 10: Summary
         println!("\n=== Test Summary ===");
         println!(
-            "✓ Sender created {} drafts but only sent {}% due to packet loss",
+            " Sender created {} drafts but only sent {}% due to packet loss",
             total_drafts,
             (100 * sent_indices.len()) / total_drafts
         );
         println!(
-            "✓ Receiver successfully handled {} messages before hitting skip limits",
+            " Receiver successfully handled {} messages before hitting skip limits",
             successfully_received
         );
         if let Some(limit_idx) = first_skip_limit_hit {
             println!(
-                "✓ Skip limit correctly triggered at message index {}",
+                " Skip limit correctly triggered at message index {}",
                 limit_idx
             );
         }
-        println!("✓ Sender could decrypt all its own drafts throughout the process");
-        println!("✓ receiver.commit_receiver() successfully cleaned up stale skipped keys");
-        println!("✓ sender.commit_sender() successfully managed draft cache memory");
-        println!("✓ Header-key-specific cleanup worked across DH ratchet boundaries");
-        println!("✓ Complete cleanup restored both sides to clean state");
+        println!(" Sender could decrypt all its own drafts throughout the process");
+        println!(" receiver.commit_receiver() successfully cleaned up stale skipped keys");
+        println!(" sender.commit_sender() successfully managed draft cache memory");
+        println!(" Header-key-specific cleanup worked across DH ratchet boundaries");
+        println!(" Complete cleanup restored both sides to clean state");
 
         println!("\nThis test demonstrates the real-world scenario where:");
         println!("- Sender encrypts many messages (drafts) but network drops most of them");
@@ -2217,5 +2214,42 @@ mod tests {
         println!(
             "- System gracefully handles severe packet loss while maintaining forward secrecy"
         );
+    }
+
+    #[test]
+    fn test_multiple_outgoing_decrypt_same_message() {
+        let (mut sender, mut _receiver) = setup_ratchet_pair();
+        let ad = b"associated data";
+
+        // Sender encrypts a message (creates a draft)
+        let msg = b"test message for multiple decryption";
+        let (enc_hdr, payload) = sender
+            .ratchet_encrypt_he(msg, ad)
+            .expect("encryption failed");
+
+        // Decrypt the same draft multiple times
+        for i in 1..=5 {
+            let decrypted = sender
+                .decrypt_outgoing(&enc_hdr, &payload, ad)
+                .expect(&format!("Failed to decrypt draft on attempt {}", i));
+            assert_eq!(&decrypted, msg, "Decryption {} should match original", i);
+        }
+
+        println!("Successfully decrypted the same draft message 5 times");
+
+        // Verify the key is still in the cache after multiple decryptions
+        let digest: [u8; 16] = blake3::hash(&enc_hdr).as_bytes()[..16].try_into().unwrap();
+        assert!(
+            sender.outgoing_cache.get(&(digest, 0)).is_some(),
+            "Draft key should still be in cache after multiple decryptions"
+        );
+
+        // One more decryption to be sure
+        let final_decrypt = sender
+            .decrypt_outgoing(&enc_hdr, &payload, ad)
+            .expect("Final decryption should still work");
+        assert_eq!(&final_decrypt, msg);
+
+        println!(" Draft key persists in cache, allowing unlimited re-decryption");
     }
 }

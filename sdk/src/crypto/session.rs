@@ -277,7 +277,7 @@ impl Session {
         msg: &InitialMessage,
         otpk_secret: Option<&StaticSecret>,
     ) -> Result<(Self, Vec<u8>), SessionError> {
-        // 1. Sanity-check our own bundle (defensive).
+        // 1. Sanity-check our own bundle.
         if !bundle.verify_spk() {
             return Err(SessionError::InvalidState(
                 "Local SPK signature invalid".into(),
@@ -296,8 +296,8 @@ impl Session {
 
         // 3. Derive HE keys (note send/recv reversed).
         let hkdf = Hkdf::<Sha256>::new(Some(&HKDF_SALT), &sk[..]);
-        let mut k_s = [0u8; 32]; // decrypt incoming (Sender→Receiver)
-        let mut k_r = [0u8; 32]; // encrypt outgoing (Receiver→Sender)
+        let mut k_s = [0u8; 32]; // decrypt incoming (Sender -> Receiver)
+        let mut k_r = [0u8; 32]; // encrypt outgoing (Receiver -> Sender)
         hkdf.expand(b"header-encrypt-sending", &mut k_s)?;
         hkdf.expand(b"header-encrypt-receiving", &mut k_r)?;
 
@@ -703,7 +703,7 @@ mod tests {
         // deterministic RNG → test is repeatable
         let mut rng = StdRng::seed_from_u64(0xdada_beef);
 
-        // ── 1. Receiver prepares ONE distinct pre-key bundle (SPK) per Sender
+        // 1. Receiver prepares ONE distinct pre-key bundle (SPK) per Sender
         let receiver_id = IdentityKey::generate();
         let mut receiver_spk_secrets = Vec::with_capacity(N_USERS);
         let mut receiver_bundles = Vec::with_capacity(N_USERS);
@@ -715,7 +715,7 @@ mod tests {
             receiver_bundles.push(bundle);
         }
 
-        // ── 2.  Every Sender carries out the X3DH handshake (empty payload)
+        // 2. Every Sender carries out the X3DH handshake (empty payload)
         let mut sender_sessions = Vec::with_capacity(N_USERS);
         let mut init_msgs = Vec::<(usize, Message)>::with_capacity(N_USERS);
 
@@ -751,7 +751,7 @@ mod tests {
             receiver_sessions[idx] = Some(sess);
         }
 
-        // ── 3.  Each Sender now sends her *work* as the FIRST Double-Ratchet message
+        // 3. Each Sender now sends her *work* as the FIRST Double-Ratchet message
         let mut work_packets: Vec<(usize, Vec<u8>, Message)> = Vec::new();
 
         for (idx, sender_sess) in sender_sessions.iter_mut().enumerate() {
@@ -777,7 +777,7 @@ mod tests {
             assert_eq!(pt, *work, "work mismatch for user {idx}");
         }
 
-        // ── 4.  Receiver has sending-chain keys now → create N_STEPS snapshots per job
+        // 4. Receiver has sending-chain keys now → create N_STEPS snapshots per job
         {
             let mut snapshots: Vec<(usize, Vec<u8>, Message)> = Vec::new();
 
@@ -804,7 +804,7 @@ mod tests {
             }
         }
 
-        // ── 5.  Receiver sends a final reply to every Sender (again shuffled)
+        // 5. Receiver sends a final reply to every Sender (again shuffled)
         let mut finals: Vec<(usize, Vec<u8>, Message)> = Vec::new();
         for (idx, sess) in receiver_sessions.iter_mut().enumerate() {
             let s = sess.as_mut().unwrap();
@@ -838,7 +838,7 @@ mod tests {
         const N_USERS: usize = 4; // concurrent users and one leader
         const N_STATIC: usize = 4; // size of the DAG(just for testing can be anything)
 
-        // deterministic RNG → repeatable test
+        // deterministic RNG -> repeatable test
         let mut rng = StdRng::seed_from_u64(0xface_feed);
 
         // 1.  Leader publishes one SPK bundle per user
@@ -1063,11 +1063,13 @@ mod tests {
             .expect("Should be able to read own message 3");
         assert_eq!(own_pt3, b"message 3");
 
-        // Reading own messages consumes the key (expected behavior)
-        // After reading once, the key is evicted and no longer available
-        assert!(
-            sender_sess.read_own_msg(&msg1).is_none(),
-            "Message key should be evicted after first read"
+        // After reading once, the key remains available for multiple reads
+        let own_pt1_again = sender_sess
+            .read_own_msg(&msg1)
+            .expect("Should be able to read own message multiple times");
+        assert_eq!(
+            own_pt1_again, b"message 1",
+            "Should get same result on re-read"
         );
 
         // Receiver should still be able to decrypt all messages normally
@@ -1115,10 +1117,13 @@ mod tests {
             .expect("Should be able to read own message");
         assert_eq!(own_pt1, b"test message 1");
 
-        // After reading, the key should be evicted
-        assert!(
-            sender_sess.read_own_msg(&msg1).is_none(),
-            "Key should be evicted after reading"
+        // After reading, the key should still be available
+        let own_pt1_again = sender_sess
+            .read_own_msg(&msg1)
+            .expect("Should be able to read own message multiple times");
+        assert_eq!(
+            own_pt1_again, b"test message 1",
+            "Should get same result on re-read"
         );
 
         // Create multiple messages to test commit functionality

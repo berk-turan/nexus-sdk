@@ -98,13 +98,13 @@ pub enum X3dhError {
     #[error("decryption failed")]
     DecryptFailed,
     /// Receiver attempted to decrypt a message that references an OTPK he no longer possesses.
-    #[error("OTPK secret missing – refuse to process one‑time pre‑key message")]
+    #[error("OTPK secret missing - refuse to process one-time pre-key message")]
     MissingOneTimeSecret,
     /// The SPK identifier in the message does not match Receiver's current SPK.
-    #[error("signed pre‑key id mismatch")]
+    #[error("signed pre-key id mismatch")]
     SpkIdMismatch,
     /// The OTPK identifier in the message does not match the supplied OTPK secret.
-    #[error("one‑time pre‑key id mismatch")]
+    #[error("one-time pre-key id mismatch")]
     OtpkIdMismatch,
     /// Receiver's X25519 and XEdDSA public keys are not the Edwards–Montgomery map of each other.
     #[error("identity DH and Ed keys do not match")]
