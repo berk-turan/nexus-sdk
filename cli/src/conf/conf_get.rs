@@ -84,9 +84,9 @@ mod tests {
         };
 
         let conf = CliConf {
-            sui: sui_conf,
-            nexus: Some(nexus_objects),
-            tools,
+            sui: sui_conf.clone(),
+            nexus: Some(nexus_objects.clone()),
+            tools: tools.clone(),
             crypto: Some(Secret::new(crypto_conf)),
         };
 
@@ -118,6 +118,24 @@ mod tests {
                 "Session ID should match the map key"
             );
         }
+
+        // Test loading config without crypto field
+        let conf_without_crypto = CliConf {
+            sui: sui_conf.clone(),
+            nexus: Some(nexus_objects.clone()),
+            tools: tools.clone(),
+            crypto: None,
+        };
+
+        let path_no_crypto = tempdir.join("conf_no_crypto.toml");
+        let toml_str_no_crypto = toml::to_string(&conf_without_crypto).expect("Failed to serialize config without crypto to TOML");
+        tokio::fs::write(&path_no_crypto, toml_str_no_crypto)
+            .await
+            .expect("Failed to write conf_no_crypto.toml");
+
+        let result_no_crypto = get_nexus_conf(path_no_crypto).await.expect("Failed to load config without crypto");
+        assert_eq!(result_no_crypto, conf_without_crypto);
+        assert!(result_no_crypto.crypto.is_none(), "Crypto field should be None");
 
         // Clean-up env vars
         std::env::remove_var("NEXUS_CLI_STORE_PASSPHRASE");

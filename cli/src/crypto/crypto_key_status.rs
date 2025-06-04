@@ -6,6 +6,7 @@ use {
     keyring::Entry,
 };
 
+/// Show where the key was loaded from.
 pub fn crypto_key_status() -> AnyResult<()> {
     if let Ok(_) = std::env::var("NEXUS_CLI_STORE_PASSPHRASE") {
         println!("source: ENV var");

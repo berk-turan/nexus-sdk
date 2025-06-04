@@ -7,6 +7,7 @@ use {
     keyring::Entry,
 };
 
+/// Prompt for a pass-phrase and store it securely in the key-ring.
 pub async fn crypto_set_passphrase(stdin: bool, force: bool) -> AnyResult<()> {
     // Guard against overwriting unless --force(are you really sure you want to do this?)
     // Will lose all existing sessions

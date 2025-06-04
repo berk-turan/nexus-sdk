@@ -169,23 +169,6 @@ fn encrypt_entry_ports_once(
     Ok(())
 }
 
-/// Validates that the user has an active authentication session
-fn validate_authentication(conf: &CliConf) -> Result<(), NexusCliError> {
-    match &conf.crypto {
-        Some(crypto_secret) => {
-            if crypto_secret.sessions.is_empty() {
-                return Err(NexusCliError::Any(anyhow!(
-                    "Authentication required — run `nexus crypto auth` first"
-                )));
-            }
-            Ok(())
-        }
-        None => Err(NexusCliError::Any(anyhow!(
-            "Authentication required — run `nexus crypto auth` first"
-        ))),
-    }
-}
-
 /// Gets the active session for encryption/decryption
 fn get_active_session(
     conf: &mut CliConf,

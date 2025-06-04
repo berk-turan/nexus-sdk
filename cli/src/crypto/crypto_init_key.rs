@@ -8,6 +8,7 @@ use {
     rand::{rngs::OsRng, RngCore},
 };
 
+/// Generate and store a new 32-byte key in the OS key-ring.
 pub async fn crypto_init_key(force: bool) -> AnyResult<()> {
     // 1. Abort if any persistent key already exists (unless --force)
     if Entry::new(SERVICE, "passphrase")?.get_password().is_ok()
