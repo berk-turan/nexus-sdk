@@ -397,25 +397,23 @@ mod lru_cache_serde {
         serde::{Deserialize, Deserializer, Serialize, Serializer},
     };
 
-    pub fn serialize<S>(
-        cache: &LruCache<([u8; 16], u32), Zeroizing<[u8; 32]>>,
-        s: S,
-    ) -> Result<S::Ok, S::Error>
+    type CacheKey = ([u8; 16], u32);
+    type CacheValue = Zeroizing<[u8; 32]>;
+    type SerializedItem = (([u8; 16], u32), [u8; 32]);
+
+    pub fn serialize<S>(cache: &LruCache<CacheKey, CacheValue>, s: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let items: Vec<(([u8; 16], u32), [u8; 32])> =
-            cache.iter().map(|(k, v)| (*k, **v)).collect();
+        let items: Vec<SerializedItem> = cache.iter().map(|(k, v)| (*k, **v)).collect();
         items.serialize(s)
     }
 
-    pub fn deserialize<'de, D>(
-        d: D,
-    ) -> Result<LruCache<([u8; 16], u32), Zeroizing<[u8; 32]>>, D::Error>
+    pub fn deserialize<'de, D>(d: D) -> Result<LruCache<CacheKey, CacheValue>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let items: Vec<(([u8; 16], u32), [u8; 32])> = Deserialize::deserialize(d)?;
+        let items: Vec<SerializedItem> = Deserialize::deserialize(d)?;
         let mut cache = LruCache::new(NonZeroUsize::new(MAX_OUTGOING).unwrap());
         for (k, v) in items {
             cache.put(k, Zeroizing::new(v));
@@ -681,7 +679,7 @@ impl RatchetStateHE {
         };
         let mut hdr_bytes = Vec::new();
         ciborium::into_writer(&header, &mut hdr_bytes).unwrap();
-        let hk_current = self.hks.clone().ok_or(RatchetError::MissingHeaderKey)?;
+        let hk_current = self.hks.ok_or(RatchetError::MissingHeaderKey)?;
         let enc_header = self.hencrypt(&hk_current, &hdr_bytes)?;
 
         // 2. advance header key *after* successful encryption
@@ -743,30 +741,28 @@ impl RatchetStateHE {
             self.dh_ratchet_he(&header)?;
 
             // 2. derive and cache keys for indices 0‥(N-1) with the *current* HK_r
-            self.skip_message_keys_he(header.n, self.hkr.clone())?;
+            self.skip_message_keys_he(header.n, self.hkr)?;
 
             // 3. *now* step HK_r so it points at the next expected header
             if let Some(ref hk) = self.hkr {
                 self.hkr = Some(Self::kdf_hk(hk));
             }
-        } else {
-            if self.ckr.is_none() {
-                // We have never derived a receiving chain: perform a DH-ratchet now.
-                self.skip_message_keys_he(header.pn, None)?;
-                self.dh_ratchet_he(&header)?;
-                self.skip_message_keys_he(header.n, self.hkr.clone())?;
-                if let Some(hk_used) = hk_used {
-                    self.hkr = Some(Self::kdf_hk(&hk_used));
-                } else {
-                    return Err(RatchetError::MissingHeaderKey);
-                }
+        } else if self.ckr.is_none() {
+            // We have never derived a receiving chain: perform a DH-ratchet now.
+            self.skip_message_keys_he(header.pn, None)?;
+            self.dh_ratchet_he(&header)?;
+            self.skip_message_keys_he(header.n, self.hkr)?;
+            if let Some(hk_used) = hk_used {
+                self.hkr = Some(Self::kdf_hk(&hk_used));
             } else {
-                self.skip_message_keys_he(header.n, self.hkr.clone())?;
-                if let Some(hk_used) = hk_used {
-                    self.hkr = Some(Self::kdf_hk(&hk_used));
-                } else {
-                    return Err(RatchetError::MissingHeaderKey);
-                }
+                return Err(RatchetError::MissingHeaderKey);
+            }
+        } else {
+            self.skip_message_keys_he(header.n, self.hkr)?;
+            if let Some(hk_used) = hk_used {
+                self.hkr = Some(Self::kdf_hk(&hk_used));
+            } else {
+                return Err(RatchetError::MissingHeaderKey);
             }
         }
 
@@ -795,7 +791,7 @@ impl RatchetStateHE {
             .map_err(Into::into);
 
         // 4. Remove any matching key from skipped messages to prevent replay
-        if let Ok(_) = &result {
+        if result.is_ok() {
             if let Some(hk_used) = hk_used {
                 self.mkskipped.remove(&(hk_used, header.n));
             }
@@ -820,12 +816,10 @@ impl RatchetStateHE {
                 if hdr.n == n {
                     if let Some(mk) = self.mkskipped.get(&(hk, n)) {
                         // Try decrypting with the skipped key, ignore errors and only succeed on valid decryption.
-                        match Self::decrypt_with_mk(ciphertext, ad, enc_header, mk) {
-                            Ok(Some(pt)) => {
-                                self.mkskipped.remove(&(hk, n));
-                                return Ok(Some(pt));
-                            }
-                            Ok(None) | Err(_) => {}
+                        if let Ok(Some(pt)) = Self::decrypt_with_mk(ciphertext, ad, enc_header, mk)
+                        {
+                            self.mkskipped.remove(&(hk, n));
+                            return Ok(Some(pt));
                         }
                     }
                 }
@@ -839,7 +833,7 @@ impl RatchetStateHE {
         enc_header: &[u8],
     ) -> Result<(Header, bool, Option<[u8; 32]>), RatchetError> {
         // First try current HK_r if available
-        if let Some(mut hk) = self.hkr.clone() {
+        if let Some(mut hk) = self.hkr {
             for _steps in 0..=MAX_SKIP_PER_CHAIN {
                 if let Ok(hdr) = Self::hdecrypt(&hk, enc_header) {
                     // Return the actual HK that succeeded
@@ -1038,8 +1032,8 @@ impl RatchetStateHE {
     /// * `n_max`      – if `Some(m)`, forget indices ≤ *m*; `None` ⇒ forget all.
     pub fn commit_receiver(&mut self, header_key: Option<[u8; 32]>, n_max: Option<u32>) {
         self.mkskipped.retain(|(hk, n), _| {
-            let hk_ok = header_key.map_or(true, |h| hk != &h);
-            let n_ok = n_max.map_or(false, |m| *n > m);
+            let hk_ok = header_key.is_none_or(|h| hk != &h);
+            let n_ok = n_max.is_some_and(|m| *n > m);
             hk_ok && n_ok
         });
     }
@@ -1053,7 +1047,7 @@ impl RatchetStateHE {
             self.prev_hks.push_back(curr);
         }
         self.hks = Some(self.nhks);
-        self.hkr = Some(self.nhkr.clone());
+        self.hkr = Some(self.nhkr);
     }
 
     fn decrypt_with_mk(
@@ -1101,12 +1095,12 @@ mod tests {
         let mut sender = RatchetStateHE::new();
         let mut receiver = RatchetStateHE::new();
         sender
-            .init_sender_he(&initial_root, receiver_pk.clone(), shared_hka, shared_nhkb)
+            .init_sender_he(&initial_root, receiver_pk, shared_hka, shared_nhkb)
             .unwrap();
         receiver
             .init_receiver_he(
                 &initial_root,
-                (receiver_sk, receiver_pk.clone()),
+                (receiver_sk, receiver_pk),
                 shared_hka,
                 shared_nhkb,
             )
@@ -1138,13 +1132,13 @@ mod tests {
         let mut sender = RatchetStateHE::new();
         let mut receiver = RatchetStateHE::new();
         sender
-            .init_sender_he(&initial_root, receiver_pk.clone(), shared_hka, shared_nhkb)
+            .init_sender_he(&initial_root, receiver_pk, shared_hka, shared_nhkb)
             .unwrap();
         // Receiver with wrong header keys
         receiver
             .init_receiver_he(
                 &initial_root,
-                (receiver_sk, receiver_pk.clone()),
+                (receiver_sk, receiver_pk),
                 shared_hka.map(|_| 0),
                 shared_nhkb.map(|_| 0),
             )
@@ -1173,7 +1167,7 @@ mod tests {
         let mut sender = RatchetStateHE::new();
         let mut receiver = RatchetStateHE::new();
         sender
-            .init_sender_he(&initial_root, receiver_pk.clone(), shared_hka, shared_nhkb)
+            .init_sender_he(&initial_root, receiver_pk, shared_hka, shared_nhkb)
             .unwrap();
         receiver
             .init_receiver_he(
@@ -1431,7 +1425,7 @@ mod tests {
             .unwrap();
 
         // Now sender encrypts MAX_SKIP_PER_CHAIN + 2 more messages
-        let skip_plus_2 = MAX_SKIP_PER_CHAIN as usize + 2;
+        let skip_plus_2 = MAX_SKIP_PER_CHAIN + 2;
         let messages = (0..skip_plus_2)
             .map(|i| {
                 let msg = format!("message {}", i).into_bytes();
@@ -2096,7 +2090,7 @@ mod tests {
         println!("Phase 6a: Triggered DH ratchet with receiver message");
 
         // Store the header key from before the ratchet for selective cleanup
-        let pre_ratchet_hk = receiver.hkr.clone();
+        let pre_ratchet_hk = receiver.hkr;
 
         // Sender sends more messages in new chain
         let mut new_chain_messages = Vec::new();
