@@ -92,87 +92,81 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
 
     // 6. Ensure IdentityKey
     // Ensure crypto config exists, initialize if needed
-    if conf.crypto.is_none() {
-        conf.crypto = Some(Secret::new(CryptoConf::default()));
-    }
+    let crypto_secret = conf
+        .crypto
+        .get_or_insert_with(|| Secret::new(CryptoConf::default()));
 
-    if let Some(ref mut crypto_secret) = conf.crypto {
-        if crypto_secret.identity_key.is_none() {
-            crypto_secret.identity_key = Some(IdentityKey::generate());
+    crypto_secret
+        .identity_key
+        .get_or_insert_with(IdentityKey::generate);
+
+    // 7. Run X3DH & store session
+    let first_message = b"nexus auth";
+    let (initial_msg, session) = {
+        let identity_key = crypto_secret.identity_key.as_ref().unwrap();
+        Session::initiate(&identity_key, &peer_bundle, first_message)
+            .map_err(|e| NexusCliError::Any(e.into()))?
+    };
+
+    // Extract InitialMessage from Message enum
+    let initial_message = match initial_msg {
+        nexus_sdk::crypto::session::Message::Initial(msg) => msg,
+        _ => {
+            return Err(NexusCliError::Any(anyhow!(
+                "Expected Initial message from session initiation"
+            )))
         }
+    };
 
-        // 7. Run X3DH & store session
-        let first_message = b"nexus auth";
-        let (initial_msg, session) = {
-            let identity_key = crypto_secret.identity_key.as_ref().unwrap();
-            Session::initiate(&identity_key, &peer_bundle, first_message)
-                .map_err(|e| NexusCliError::Any(e.into()))?
-        };
+    // Store session and save config
+    let session_id = *session.id();
+    crypto_secret.sessions.insert(session_id, session);
 
-        // Extract InitialMessage from Message enum
-        let initial_message = match initial_msg {
-            nexus_sdk::crypto::session::Message::Initial(msg) => msg,
-            _ => {
-                return Err(NexusCliError::Any(anyhow!(
-                    "Expected Initial message from session initiation"
-                )))
-            }
-        };
-
-        // Store session and save config
-        let session_id = *session.id();
-        crypto_secret.sessions.insert(session_id, session);
-
-        let save_handle = loading!("Saving session to configuration...");
-        match conf.save().await {
-            Ok(()) => {
-                save_handle.success();
-            }
-            Err(e) => {
-                save_handle.error();
-                return Err(NexusCliError::Any(e));
-            }
+    let save_handle = loading!("Saving session to configuration...");
+    match conf.save().await {
+        Ok(()) => {
+            save_handle.success();
         }
-
-        // Make borrow checker happy
-        let objects = get_nexus_objects(&conf)?;
-
-        // 8. Craft associate transaction
-        let tx_handle = loading!("Crafting transaction...");
-        let mut tx_builder = sui::ProgrammableTransactionBuilder::new();
-        if let Err(e) = associate_pre_key_with_sender(
-            &mut tx_builder,
-            &objects,
-            &prekey_object_ref,
-            initial_message.clone(),
-        ) {
-            tx_handle.error();
+        Err(e) => {
+            save_handle.error();
             return Err(NexusCliError::Any(e));
         }
-        let ptb = tx_builder.finish();
-        tx_handle.success();
-
-        let tx_data = sui::TransactionData::new_programmable(
-            address,
-            vec![gas_coin.object_ref()],
-            ptb,
-            gas.sui_gas_budget,
-            reference_gas_price,
-        );
-
-        let associate_tx_resp = sign_and_execute_transaction(&sui, &wallet, tx_data).await?;
-
-        // Output both transaction digests
-        json_output(&json!({
-            "claim_digest": tx_resp.digest,
-            "associate_digest": associate_tx_resp.digest,
-            "initial_message": initial_message,
-        }))?;
-
-        Ok(())
-    } else {
-        Err(NexusCliError::Any(anyhow!(
-            "Failed to initialize crypto configuration"
-        )))
     }
+
+    // Make borrow checker happy
+    let objects = get_nexus_objects(&conf)?;
+
+    // 8. Craft associate transaction
+    let tx_handle = loading!("Crafting transaction...");
+    let mut tx_builder = sui::ProgrammableTransactionBuilder::new();
+    if let Err(e) = associate_pre_key_with_sender(
+        &mut tx_builder,
+        &objects,
+        &prekey_object_ref,
+        initial_message.clone(),
+    ) {
+        tx_handle.error();
+        return Err(NexusCliError::Any(e));
+    }
+    let ptb = tx_builder.finish();
+    tx_handle.success();
+
+    let tx_data = sui::TransactionData::new_programmable(
+        address,
+        vec![gas_coin.object_ref()],
+        ptb,
+        gas.sui_gas_budget,
+        reference_gas_price,
+    );
+
+    let associate_tx_resp = sign_and_execute_transaction(&sui, &wallet, tx_data).await?;
+
+    // Output both transaction digests
+    json_output(&json!({
+        "claim_digest": tx_resp.digest,
+        "associate_digest": associate_tx_resp.digest,
+        "initial_message": initial_message,
+    }))?;
+
+    Ok(())
 }

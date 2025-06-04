@@ -67,12 +67,8 @@ pub async fn handle(cmd: CryptoCommand) -> AnyResult<(), NexusCliError> {
         CryptoCommand::GenerateIdentityKey { conf_path } => {
             crypto_generate_identity_key(conf_path).await
         }
-        CryptoCommand::InitKey { force } => {
-            crypto_init_key(force).await.map_err(NexusCliError::Any)
-        }
-        CryptoCommand::SetPassphrase { stdin, force } => crypto_set_passphrase(stdin, force)
-            .await
-            .map_err(NexusCliError::Any),
-        CryptoCommand::KeyStatus => crypto_key_status().map_err(NexusCliError::Any),
+        CryptoCommand::InitKey { force } => crypto_init_key(force).await,
+        CryptoCommand::SetPassphrase { stdin, force } => crypto_set_passphrase(stdin, force).await,
+        CryptoCommand::KeyStatus => crypto_key_status(),
     }
 }

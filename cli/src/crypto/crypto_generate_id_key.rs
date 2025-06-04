@@ -1,4 +1,4 @@
-use crate::{command_title, display::json_output, loading, prelude::*};
+use crate::{command_title, display::json_output, loading, notify_success, prelude::*};
 
 /// Generate and store a fresh identity key in the Nexus CLI configuration.
 /// WARNING: This will invalidate all existing sessions!
@@ -31,8 +31,8 @@ pub(crate) async fn crypto_generate_identity_key(
     match conf.save_to_path(&conf_path).await {
         Ok(()) => {
             conf_handle.success();
-            println!(" Identity key generated successfully");
-            println!(" All existing sessions have been invalidated");
+            notify_success!("Identity key generated successfully");
+            notify_success!("All existing sessions have been invalidated");
             Ok(())
         }
         Err(e) => {

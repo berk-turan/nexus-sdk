@@ -159,52 +159,111 @@ fn write_salt_securely(path: &PathBuf, salt: &[u8; SALT_LEN]) -> io::Result<()> 
 mod tests {
     use {
         super::*,
-        std::{env, fs, sync::Mutex},
+        keyring::{mock, set_default_credential_builder, Entry},
+        std::{
+            env,
+            fs,
+            sync::{Mutex, Once},
+        },
         tempfile::TempDir,
     };
 
-    /// Serialise env-var mutations to avoid cross-test interference.
+    /// Serialise env‑var mutations to avoid cross‑test interference.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+    /// Ensure the mock key‑ring is installed exactly once for the whole test run.
+    static INIT_KEYRING: Once = Once::new();
 
+    fn init_mock_keyring() {
+        INIT_KEYRING.call_once(|| {
+            // Replace the default credential store with the in‑memory mock.
+            set_default_credential_builder(mock::default_credential_builder());
+        });
+    }
+
+    /// Helper that acquires the env‑lock, cleans up key‑ring state, executes the
+    /// test closure, and finally cleans up again. This keeps individual tests
+    /// run in order.
     fn with_env<F: FnOnce() -> R, R>(f: F) -> R {
+        init_mock_keyring();
+
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-        // Clean up any existing keyring entries before test
+        // Pre‑test clean‑up.
         let _ = Entry::new(SERVICE, USER).and_then(|e| e.delete_credential());
+        let _ = Entry::new(SERVICE, "passphrase").and_then(|e| e.delete_credential());
 
+        // Execute the actual test body.
         let result = f();
 
-        // Clean up after test
+        // Post‑test clean‑up.
         let _ = Entry::new(SERVICE, USER).and_then(|e| e.delete_credential());
+        let _ = Entry::new(SERVICE, "passphrase").and_then(|e| e.delete_credential());
 
         result
     }
 
     #[test]
     #[serial_test::serial(master_key_env)]
+    fn no_key_available_fails_with_hard_error() {
+        with_env(|| {
+            env::remove_var("NEXUS_CLI_STORE_PASSPHRASE");
+
+            // Should fail with NoPersistentKey error
+            let result = get_master_key();
+            assert!(result.is_err(), "should fail when no key is available");
+            match result.unwrap_err() {
+                MasterKeyError::NoPersistentKey => {}
+                other => panic!("expected NoPersistentKey error, got: {:?}", other),
+            }
+        });
+    }
+
+    #[test]
+    #[serial_test::serial(master_key_env)]
+    fn env_var_passphrase_is_used_when_provided() {
+        with_env(|| {
+            let tmp = TempDir::new().unwrap();
+            let xdg_path = tmp.path().join("xdg_config");
+            let original_xdg = env::var("XDG_CONFIG_HOME").ok();
+            env::set_var("XDG_CONFIG_HOME", &xdg_path);
+
+            env::set_var("NEXUS_CLI_STORE_PASSPHRASE", "my secret passphrase");
+
+            let key = get_master_key().expect("should derive key from env var");
+            assert_eq!(key.len(), KEY_LEN);
+
+            let key2 = get_master_key().expect("second call should work");
+            assert_eq!(&*key, &*key2);
+
+            // Cleanup
+            if let Some(old) = original_xdg {
+                env::set_var("XDG_CONFIG_HOME", old);
+            } else {
+                env::remove_var("XDG_CONFIG_HOME");
+            }
+            env::remove_var("NEXUS_CLI_STORE_PASSPHRASE");
+        });
+    }
+
+    #[test]
+    #[serial_test::serial(master_key_env)]
     fn passphrase_key_is_stable_and_salt_persists() {
         with_env(|| {
-            // Isolate XDG paths in a temp tree.
             let tmp = TempDir::new().unwrap();
             let xdg_path = tmp.path().join("xdg_config");
             let original_xdg = env::var("XDG_CONFIG_HOME").ok();
             env::set_var("XDG_CONFIG_HOME", &xdg_path);
             env::set_var("NEXUS_CLI_STORE_PASSPHRASE", "correct horse battery staple");
 
-            // Same passphrase → identical keys.
             let k1 = get_master_key().expect("first derivation");
             let k2 = get_master_key().expect("second derivation");
-            assert_eq!(&*k1, &*k2, "key must be deterministic");
+            assert_eq!(&*k1, &*k2);
 
-            // A salt must have been created.
             let salt_path = xdg_path.join("nexus-cli").join("salt.bin");
-            assert!(salt_path.exists(), "salt file missing");
-
-            // Verify salt content is correct size
+            assert!(salt_path.exists());
             let salt_content = fs::read(&salt_path).unwrap();
-            assert_eq!(salt_content.len(), SALT_LEN, "salt file has wrong size");
+            assert_eq!(salt_content.len(), SALT_LEN);
 
-            // On Unix, salt must be 0o600.
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -212,7 +271,6 @@ mod tests {
                 assert_eq!(mode, 0o600, "salt file not private");
             }
 
-            // Cleanup
             if let Some(old) = original_xdg {
                 env::set_var("XDG_CONFIG_HOME", old);
             } else {
@@ -237,54 +295,14 @@ mod tests {
             env::set_var("NEXUS_CLI_STORE_PASSPHRASE", "bravo");
             let k2 = get_master_key().unwrap();
 
-            assert_ne!(&*k1, &*k2, "distinct passphrases must yield distinct keys");
+            assert_ne!(&*k1, &*k2);
 
-            // Cleanup
             if let Some(old) = original_xdg {
                 env::set_var("XDG_CONFIG_HOME", old);
             } else {
                 env::remove_var("XDG_CONFIG_HOME");
             }
             env::remove_var("NEXUS_CLI_STORE_PASSPHRASE");
-        });
-    }
-
-    #[test]
-    #[serial_test::serial(master_key_env)]
-    fn random_key_is_persisted_in_keyring() {
-        with_env(|| {
-            // Ensure the passphrase path is disabled.
-            env::remove_var("NEXUS_CLI_STORE_PASSPHRASE");
-
-            let first = get_master_key().expect("random key generated");
-
-            // For random keys, we try to use the keyring
-            // If keyring works, keys should match
-            // If keyring fails, we can't guarantee persistence
-            let second = get_master_key().expect("second call");
-
-            // Try to check if keyring is working by attempting to use it directly
-            match Entry::new(SERVICE, USER) {
-                Ok(entry) => {
-                    match entry.get_password() {
-                        Ok(_) => {
-                            // Keyring is working, keys should match
-                            assert_eq!(
-                                &*first, &*second,
-                                "subsequent calls should return cached key from key-ring"
-                            );
-                        }
-                        Err(_) => {
-                            // Keyring not working, skip assertion
-                            eprintln!("Note: Keyring not available, skipping persistence check");
-                        }
-                    }
-                }
-                Err(_) => {
-                    // Keyring not available at all
-                    eprintln!("Note: Keyring service not available, skipping persistence check");
-                }
-            }
         });
     }
 
@@ -298,21 +316,16 @@ mod tests {
             env::set_var("XDG_CONFIG_HOME", &xdg_path);
             env::set_var("NEXUS_CLI_STORE_PASSPHRASE", "test passphrase");
 
-            // Get key and force salt creation
             let k1 = get_master_key().unwrap();
 
-            // Read the salt that was created
             let salt_path = xdg_path.join("nexus-cli").join("salt.bin");
             let salt1 = fs::read(&salt_path).unwrap();
 
-            // Simulate new process by getting key again
             let k2 = get_master_key().unwrap();
             let salt2 = fs::read(&salt_path).unwrap();
-
-            // Salt should not change
-            assert_eq!(salt1, salt2, "salt should persist across calls");
-            assert_eq!(&*k1, &*k2, "keys should be identical with same salt");
-
+            // Check that the salt is the same across processes
+            assert_eq!(salt1, salt2);
+            assert_eq!(&*k1, &*k2);
             // Cleanup
             if let Some(old) = original_xdg {
                 env::set_var("XDG_CONFIG_HOME", old);
