@@ -12,17 +12,15 @@ use {
         idents::{primitives, workflow},
         transactions::tool,
     },
-    nexus_toolkit::{compute_key_hash, tls::reqwest_with_pin},
+    nexus_toolkit::tls::reqwest_with_pin,
 };
 
 /// Validate and then register a new Tool.
 pub(crate) async fn register_tool(
     ident: ToolIdent,
-    key_path: Option<PathBuf>,
     collateral_coin: Option<sui::ObjectID>,
     invocation_cost: u64,
     batch: bool,
-    pub_key_hash: String,
     sui_gas_coin: Option<sui::ObjectID>,
     sui_gas_budget: u64,
 ) -> AnyResult<(), NexusCliError> {
@@ -31,7 +29,7 @@ pub(crate) async fn register_tool(
     // Validate either a single tool or a batch of tools if the `batch` flag is
     // provided.
     let idents = if batch {
-        let Some(url) = &ident.off_chain else {
+        let Some((url, pub_key_hash)) = ident.off_chain() else {
             todo!("TODO: <https://github.com/Talus-Network/nexus-next/issues/96>");
         };
 
@@ -52,8 +50,9 @@ pub(crate) async fn register_tool(
             .iter()
             .filter_map(|s| match url.join(s) {
                 Ok(url) => Some(ToolIdent {
-                    off_chain: Some(url),
+                    off_chain_url: Some(url),
                     on_chain: None,
+                    pub_key_hash: Some(pub_key_hash.clone()),
                 }),
                 Err(_) => None,
             })
@@ -65,7 +64,17 @@ pub(crate) async fn register_tool(
     let mut registration_results = Vec::with_capacity(idents.len());
 
     for ident in idents {
-        let meta = validate_tool(ident).await?;
+        let meta = validate_tool(ident.clone()).await?;
+
+        // Get pub_key_hash for off-chain tools
+        let pub_key_hash = match ident.off_chain() {
+            Some((_, hash)) => hash,
+            None => {
+                todo!(
+                    "TODO: On-chain tools <https://github.com/Talus-Network/nexus-next/issues/96>"
+                );
+            }
+        };
 
         command_title!(
             "Registering Tool '{fqn}' at '{url}'",
@@ -109,23 +118,11 @@ pub(crate) async fn register_tool(
 
         let mut tx = sui::ProgrammableTransactionBuilder::new();
 
-        // Compute TLS key hash from existing key - key_path is required for secure operation
-        let Some(ref path) = key_path else {
-            return Err(NexusCliError::Any(anyhow!(
-                "TLS key path is required to register the tool securely on-chain"
-            )));
-        };
-        let tls_key_hash = compute_key_hash(path).map_err(|e| NexusCliError::Any(e))?;
-
-        // Convert hex string to bytes
-        let bytes = hex::decode(&tls_key_hash).map_err(|e| NexusCliError::Any(e.into()))?;
-        if bytes.len() != 32 {
-            return Err(NexusCliError::Any(anyhow::anyhow!(
-                "TLS key hash must be 32 bytes"
-            )));
-        }
-        let mut tls_key_hash_bytes = [0u8; 32];
-        tls_key_hash_bytes.copy_from_slice(&bytes);
+        // Convert hex string to byte array
+        let pub_key_hash_bytes: [u8; 32] = hex::decode(&pub_key_hash)
+            .map_err(|e| NexusCliError::Any(anyhow!("Invalid hex string: {}", e)))?
+            .try_into()
+            .map_err(|_| NexusCliError::Any(anyhow!("Hash must be exactly 32 bytes")))?;
 
         if let Err(e) = tool::register_off_chain_for_self(
             &mut tx,
@@ -134,7 +131,7 @@ pub(crate) async fn register_tool(
             address.into(),
             &collateral_coin,
             invocation_cost,
-            Some(&tls_key_hash_bytes),
+            &pub_key_hash_bytes,
         ) {
             tx_handle.error();
 
@@ -245,16 +242,12 @@ pub(crate) async fn register_tool(
 
         save_handle.success();
 
-        let mut result = json!({
+        let result = json!({
             "digest": response.digest,
             "tool_fqn": meta.fqn,
             "owner_cap_over_tool_id": over_tool_id,
             "owner_cap_over_gas_id": over_gas_id,
         });
-
-        // Add TLS key information
-        result["tls_key_path"] = json!(path);
-        result["tls_key_hash"] = json!(tls_key_hash);
 
         registration_results.push(result);
     }
