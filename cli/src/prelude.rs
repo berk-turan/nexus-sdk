@@ -48,7 +48,6 @@ pub(crate) struct CliConf {
     pub(crate) nexus: Option<NexusObjects>,
     #[serde(default)]
     pub(crate) tools: HashMap<ToolFqn, ToolOwnerCaps>,
-    #[serde(skip_serializing_if = "Option::is_none")] // backwards compatibility
     pub(crate) crypto: Option<Secret<CryptoConf>>,
 }
 
