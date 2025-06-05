@@ -22,8 +22,26 @@ serde_path_to_error.workspace = true
 warp.workspace = true
 env_logger.workspace = true
 log.workspace = true
+hyper-rustls.workspace = true
+# TLS dependencies
+rustls.workspace = true
+ring.workspace = true
+hex.workspace = true
+ed25519-dalek.workspace = true
+pkcs8.workspace = true
+rand_core.workspace = true
+rand.workspace = true
+sha2.workspace = true
+subtle.workspace = true
 # === Nexus deps ===
 nexus-sdk.workspace = true
+
+# Additional async dependencies not in workspace
+tokio = { version = "1.0", features = ["full"] }
+tokio-rustls.workspace = true
+tokio-stream = { version = "0.1", features = ["net"] }
+futures-util = { version = "0.3", features = ["sink", "std"] }
+
 
 [dev-dependencies]
 reqwest = { version = "0.12.14", features = ["json"] }

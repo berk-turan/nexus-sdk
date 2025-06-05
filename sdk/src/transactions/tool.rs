@@ -13,6 +13,7 @@ pub fn register_off_chain_for_self(
     address: sui::ObjectID,
     collateral_coin: &sui::Coin,
     invocation_cost: u64,
+    public_key_hash: Option<&[u8; 32]>,
 ) -> anyhow::Result<sui::Argument> {
     // `self: &mut ToolRegistry`
     let tool_registry = tx.obj(sui::ObjectArg::SharedObject {
@@ -35,6 +36,11 @@ pub fn register_off_chain_for_self(
 
     // `output_schema: vector<u8>`
     let output_schema = tx.pure(meta.output_schema.to_string().as_bytes())?;
+
+    // `public_key_hash: vector<u8>`
+    let public_key_hash = tx.pure(
+        public_key_hash.map(|hash| hash.as_slice()).unwrap_or(&[]), // Empty hash if none provided
+    )?;
 
     // `pay_with: Coin<SUI>`
     let pay_with = tx.obj(sui::ObjectArg::ImmOrOwnedObject(
@@ -59,6 +65,7 @@ pub fn register_off_chain_for_self(
             description,
             input_schema,
             output_schema,
+            public_key_hash,
             pay_with,
             clock,
         ],
@@ -297,6 +304,7 @@ mod tests {
             address,
             &collateral_coin,
             invocation_cost,
+            None,
         )
         .expect("Failed to build PTB for registering a tool.");
         let tx = tx.finish();
@@ -321,7 +329,7 @@ mod tests {
                 .to_string()
         );
 
-        assert_eq!(call.arguments.len(), 8);
+        assert_eq!(call.arguments.len(), 9);
     }
 
     #[test]

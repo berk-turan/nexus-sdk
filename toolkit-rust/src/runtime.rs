@@ -70,6 +70,32 @@ macro_rules! bootstrap {
             .parse::<std::net::SocketAddr>()
             .expect("Invalid socket address in BIND_ADDR")
     }};
+    (@start_server $routes:expr, $addr:expr) => {{
+        let key_path = std::env::var("TLS_KEY").unwrap_or_else(|_| "tool.key".into());
+
+        if std::path::Path::new(&key_path).exists() {
+            match $crate::server_cfg(&key_path) {
+                Ok(tls_cfg) => {
+                    use $crate::tokio_rustls::TlsAcceptor;
+                    use std::sync::Arc;
+
+                    let acceptor = TlsAcceptor::from(Arc::new(tls_cfg));
+                    if let Err(e) = $crate::spawn_tls_server($routes.clone(), $addr, acceptor).await {
+                        eprintln!("TLS server failed: {}, falling back to HTTP", e);
+                        $crate::warp::serve($routes).run($addr).await;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to load TLS config: {}, serving HTTP instead", e);
+                    $crate::warp::serve($routes).run($addr).await;
+                }
+            }
+        } else {
+            // TODO: Needs a better indicator that TLS is not enabled.
+            eprintln!("TLS key file not found, serving HTTP instead");
+            $crate::warp::serve($routes).run($addr).await;
+        }
+    }};
     ($addr:expr, [$tool:ty $(, $next_tool:ty)* $(,)?]) => {{
         let _ = $crate::env_logger::try_init();
         use {
@@ -98,7 +124,7 @@ macro_rules! bootstrap {
 
         let routes = routes.or(default_health_route).or(default_tools_route);
         // Serve the routes.
-        $crate::warp::serve(routes).run($addr).await
+        bootstrap!(@start_server routes.clone(), $addr)
     }};
     // Default address.
     ([$($tool:ty),+ $(,)?]) => {{

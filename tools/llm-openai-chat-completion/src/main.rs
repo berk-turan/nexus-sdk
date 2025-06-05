@@ -451,7 +451,7 @@ mod tests {
         // Start a mockito server.
         let mut server = Server::new_async().await;
         let free_port = pick_unused_port().expect("No free port available");
-        let addr = ([127, 0, 0, 1], free_port);
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], free_port));
 
         // Build a response with the test case indicator.
         let response_body = format!(

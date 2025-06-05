@@ -76,6 +76,21 @@ pub(crate) enum ToolCommand {
             help = "Should all tools on a webserver be registered at once?"
         )]
         batch: bool,
+        /// Optional path to generate a TLS key for the tool
+        #[arg(
+            long = "key-path",
+            short = 'k',
+            help = "Generate a TLS key at the specified path during registration",
+            value_name = "PATH"
+        )]
+        key_path: Option<PathBuf>,
+        /// Server certificate hash for TLS pinning (hex-encoded SHA-256)
+        #[arg(
+            long = "server-cert-hash",
+            help = "Server certificate hash for TLS pinning (hex-encoded SHA-256)",
+            value_name = "HASH"
+        )]
+        server_cert_hash: Option<String>,
         /// The ident of the Tool to register.
         #[command(flatten)]
         ident: ToolIdent,
@@ -202,13 +217,17 @@ pub(crate) async fn handle(command: ToolCommand) -> AnyResult<(), NexusCliError>
             collateral_coin,
             invocation_cost,
             batch,
+            key_path,
+            server_cert_hash,
             gas,
         } => {
             register_tool(
                 ident,
+                key_path,
                 collateral_coin,
                 invocation_cost,
                 batch,
+                server_cert_hash,
                 gas.sui_gas_coin,
                 gas.sui_gas_budget,
             )

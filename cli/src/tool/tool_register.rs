@@ -12,14 +12,17 @@ use {
         idents::{primitives, workflow},
         transactions::tool,
     },
+    nexus_toolkit::tls::{generate_key_and_hash, reqwest_with_pin},
 };
 
 /// Validate and then register a new Tool.
 pub(crate) async fn register_tool(
     ident: ToolIdent,
+    key_path: Option<PathBuf>,
     collateral_coin: Option<sui::ObjectID>,
     invocation_cost: u64,
     batch: bool,
+    server_cert_hash: Option<String>, // TODO: Move this out, only for testing
     sui_gas_coin: Option<sui::ObjectID>,
     sui_gas_budget: u64,
 ) -> AnyResult<(), NexusCliError> {
@@ -32,8 +35,14 @@ pub(crate) async fn register_tool(
             todo!("TODO: <https://github.com/Talus-Network/nexus-next/issues/96>");
         };
 
-        // Fetch all tools on the webserver.
-        let response = reqwest::Client::new()
+        // Fetch all tools on the webserver using pinned TLS client.
+        let client = if let Some(ref hash) = server_cert_hash {
+            reqwest_with_pin(hash).map_err(NexusCliError::Any)?
+        } else {
+            reqwest::Client::new() // Fallback to default client if no hash provided
+        };
+
+        let response = client
             .get(url.join("/tools").expect("Joining URL must be valid"))
             .send()
             .await
@@ -66,6 +75,36 @@ pub(crate) async fn register_tool(
             fqn = meta.fqn,
             url = meta.url
         );
+
+        // Generate TLS key if path is provided and key doesn't already exist
+        let tls_key_hash = if let Some(ref path) = key_path {
+            if path.exists() {
+                command_title!("Using existing TLS key at '{path}'", path = path.display());
+                notify_success!("TLS key already exists, skipping generation");
+                // TODO: We should still compute and return the hash of the existing key
+                // For now, returning None - this may need to be adjusted based on requirements
+                None
+            } else {
+                command_title!("Generating TLS key to '{path}'", path = path.display());
+
+                let generation_handle = loading!("Generating TLS key...");
+
+                let hash = match generate_key_and_hash(&path) {
+                    Ok(hash) => hash,
+                    Err(e) => {
+                        generation_handle.error();
+                        return Err(NexusCliError::Any(e));
+                    }
+                };
+
+                generation_handle.success();
+                notify_success!("TLS key generated successfully");
+
+                Some(hash)
+            }
+        } else {
+            None
+        };
 
         // Load CLI configuration.
         let conf = CliConf::load().await.unwrap_or_default();
@@ -110,6 +149,7 @@ pub(crate) async fn register_tool(
             address.into(),
             &collateral_coin,
             invocation_cost,
+            tls_key_hash.as_ref(),
         ) {
             tx_handle.error();
 
@@ -220,12 +260,20 @@ pub(crate) async fn register_tool(
 
         save_handle.success();
 
-        registration_results.push(json!({
+        let mut result = json!({
             "digest": response.digest,
             "tool_fqn": meta.fqn,
             "owner_cap_over_tool_id": over_tool_id,
             "owner_cap_over_gas_id": over_gas_id,
-        }))
+        });
+
+        // Add TLS key information if generated
+        if let (Some(path), Some(hash)) = (&key_path, &tls_key_hash) {
+            result["tls_key_path"] = json!(path);
+            result["tls_key_hash"] = json!(hex::encode(hash));
+        }
+
+        registration_results.push(result);
     }
 
     json_output(&registration_results)?;

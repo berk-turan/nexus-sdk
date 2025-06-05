@@ -82,7 +82,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_endpoints_generated_correctly() {
-        tokio::spawn(async move { bootstrap!(([127, 0, 0, 1], 8043), DummyTool) });
+        tokio::spawn(async move {
+            bootstrap!(
+                std::net::SocketAddr::from(([127, 0, 0, 1], 8043)),
+                DummyTool
+            )
+        });
 
         // Give the webserver some time to start.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -138,7 +143,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_422_when_input_malformed() {
-        tokio::spawn(async move { bootstrap!(([127, 0, 0, 1], 8044), DummyTool) });
+        tokio::spawn(async move {
+            bootstrap!(
+                std::net::SocketAddr::from(([127, 0, 0, 1], 8044)),
+                DummyTool
+            )
+        });
 
         // Give the webserver some time to start.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -159,7 +169,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_500_when_execution_fails() {
-        tokio::spawn(async move { bootstrap!(([127, 0, 0, 1], 8045), [DummyErrTool]) });
+        tokio::spawn(async move {
+            bootstrap!(
+                std::net::SocketAddr::from(([127, 0, 0, 1], 8045)),
+                [DummyErrTool]
+            )
+        });
 
         // Give the webserver some time to start.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -194,7 +209,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_tools() {
-        tokio::spawn(async move { bootstrap!(([127, 0, 0, 1], 8046), [DummyTool, DummyErrTool]) });
+        tokio::spawn(async move {
+            bootstrap!(
+                std::net::SocketAddr::from(([127, 0, 0, 1], 8046)),
+                [DummyTool, DummyErrTool]
+            )
+        });
 
         // Give the webserver some time to start.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;

@@ -170,9 +170,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_oks_valid_off_chain_tools() {
-        tokio::spawn(
-            async move { bootstrap!(([127, 0, 0, 1], 8042), [DummyTool, DummyToolWithPath]) },
-        );
+        tokio::spawn(async move {
+            bootstrap!(
+                std::net::SocketAddr::from(([127, 0, 0, 1], 8042)),
+                [DummyTool, DummyToolWithPath]
+            )
+        });
 
         // Give the webserver some time to start.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
