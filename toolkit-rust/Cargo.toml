@@ -13,36 +13,37 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-anyhow.workspace = true
-reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_path_to_error.workspace = true
-warp.workspace = true
 env_logger.workspace = true
 log.workspace = true
 hyper-rustls.workspace = true
 # TLS dependencies
-rustls.workspace = true
 ring.workspace = true
-hex.workspace = true
-ed25519-dalek.workspace = true
 pkcs8.workspace = true
 rand_core.workspace = true
 rand.workspace = true
-sha2.workspace = true
-subtle.workspace = true
+rustls = { version = "0.23", features = ["ring"] }
+anyhow = "1"
+futures-util = { version = "0.3", features = ["sink", "std"] }
+hex = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+sha2 = "0.10"
+subtle = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-rustls.workspace = true
+warp = "0.3"
+ed25519-dalek = { version = "2.1", features = ["rand_core", "pkcs8"] }
 # === Nexus deps ===
 nexus-sdk.workspace = true
-
-# Additional async dependencies not in workspace
-tokio = { version = "1.0", features = ["full"] }
-tokio-rustls.workspace = true
-tokio-stream = { version = "0.1", features = ["net"] }
-futures-util = { version = "0.3", features = ["sink", "std"] }
 
 
 [dev-dependencies]
 reqwest = { version = "0.12.14", features = ["json"] }
 tokio = { version = "1.44.1", features = ["macros"] }
+tempfile = "3.8"
+rustls = { version = "0.23", features = ["ring"] }
+serial_test = "3.0"

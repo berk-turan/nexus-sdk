@@ -12,7 +12,7 @@ use {
         idents::{primitives, workflow},
         transactions::tool,
     },
-    nexus_toolkit::tls::{generate_key_and_hash, reqwest_with_pin},
+    nexus_toolkit::{compute_key_hash, tls::reqwest_with_pin},
 };
 
 /// Validate and then register a new Tool.
@@ -22,7 +22,7 @@ pub(crate) async fn register_tool(
     collateral_coin: Option<sui::ObjectID>,
     invocation_cost: u64,
     batch: bool,
-    server_cert_hash: Option<String>, // TODO: Move this out, only for testing
+    pub_key_hash: String,
     sui_gas_coin: Option<sui::ObjectID>,
     sui_gas_budget: u64,
 ) -> AnyResult<(), NexusCliError> {
@@ -36,11 +36,8 @@ pub(crate) async fn register_tool(
         };
 
         // Fetch all tools on the webserver using pinned TLS client.
-        let client = if let Some(ref hash) = server_cert_hash {
-            reqwest_with_pin(hash).map_err(NexusCliError::Any)?
-        } else {
-            reqwest::Client::new() // Fallback to default client if no hash provided
-        };
+        let client =
+            reqwest_with_pin(std::iter::once(pub_key_hash.as_str())).map_err(NexusCliError::Any)?;
 
         let response = client
             .get(url.join("/tools").expect("Joining URL must be valid"))
@@ -75,36 +72,6 @@ pub(crate) async fn register_tool(
             fqn = meta.fqn,
             url = meta.url
         );
-
-        // Generate TLS key if path is provided and key doesn't already exist
-        let tls_key_hash = if let Some(ref path) = key_path {
-            if path.exists() {
-                command_title!("Using existing TLS key at '{path}'", path = path.display());
-                notify_success!("TLS key already exists, skipping generation");
-                // TODO: We should still compute and return the hash of the existing key
-                // For now, returning None - this may need to be adjusted based on requirements
-                None
-            } else {
-                command_title!("Generating TLS key to '{path}'", path = path.display());
-
-                let generation_handle = loading!("Generating TLS key...");
-
-                let hash = match generate_key_and_hash(&path) {
-                    Ok(hash) => hash,
-                    Err(e) => {
-                        generation_handle.error();
-                        return Err(NexusCliError::Any(e));
-                    }
-                };
-
-                generation_handle.success();
-                notify_success!("TLS key generated successfully");
-
-                Some(hash)
-            }
-        } else {
-            None
-        };
 
         // Load CLI configuration.
         let conf = CliConf::load().await.unwrap_or_default();
@@ -142,6 +109,24 @@ pub(crate) async fn register_tool(
 
         let mut tx = sui::ProgrammableTransactionBuilder::new();
 
+        // Compute TLS key hash from existing key - key_path is required for secure operation
+        let Some(ref path) = key_path else {
+            return Err(NexusCliError::Any(anyhow!(
+                "TLS key path is required to register the tool securely on-chain"
+            )));
+        };
+        let tls_key_hash = compute_key_hash(path).map_err(|e| NexusCliError::Any(e))?;
+
+        // Convert hex string to bytes
+        let bytes = hex::decode(&tls_key_hash).map_err(|e| NexusCliError::Any(e.into()))?;
+        if bytes.len() != 32 {
+            return Err(NexusCliError::Any(anyhow::anyhow!(
+                "TLS key hash must be 32 bytes"
+            )));
+        }
+        let mut tls_key_hash_bytes = [0u8; 32];
+        tls_key_hash_bytes.copy_from_slice(&bytes);
+
         if let Err(e) = tool::register_off_chain_for_self(
             &mut tx,
             objects,
@@ -149,7 +134,7 @@ pub(crate) async fn register_tool(
             address.into(),
             &collateral_coin,
             invocation_cost,
-            tls_key_hash.as_ref(),
+            Some(&tls_key_hash_bytes),
         ) {
             tx_handle.error();
 
@@ -267,11 +252,9 @@ pub(crate) async fn register_tool(
             "owner_cap_over_gas_id": over_gas_id,
         });
 
-        // Add TLS key information if generated
-        if let (Some(path), Some(hash)) = (&key_path, &tls_key_hash) {
-            result["tls_key_path"] = json!(path);
-            result["tls_key_hash"] = json!(hex::encode(hash));
-        }
+        // Add TLS key information
+        result["tls_key_path"] = json!(path);
+        result["tls_key_hash"] = json!(tls_key_hash);
 
         registration_results.push(result);
     }

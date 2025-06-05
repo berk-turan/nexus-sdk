@@ -21,7 +21,7 @@ pub use {
     secret::{BestEncryptionEver, EncryptionStrategy, Secret},
     serde_tracked::*,
     tls_utils::{
-        generate_key,
+        compute_key_hash,
         generate_key_and_hash,
         reqwest_with_pin,
         server_cfg,
