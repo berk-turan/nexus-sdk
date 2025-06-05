@@ -72,9 +72,11 @@ tokio-rustls   = "0.26"
 ring           = "0.17"
 x509-parser    = "0.16"
 ed25519-dalek  = { version = "2", features = ["pkcs8"] } 
+futures-util = { version = "0.3", features = ["sink", "std"] }
 pkcs8 = "0.10"
 sha2 = "0.10"
 subtle = "2.6"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 # === Nexus deps ===
 nexus-toolkit = { path = "toolkit-rust" }

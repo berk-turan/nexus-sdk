@@ -25,17 +25,17 @@ ring.workspace = true
 pkcs8.workspace = true
 rand_core.workspace = true
 rand.workspace = true
-rustls = { version = "0.23", features = ["ring"] }
-anyhow = "1"
-futures-util = { version = "0.3", features = ["sink", "std"] }
-hex = "0.4"
+rustls.workspace = true
+anyhow.workspace = true
+futures-util.workspace = true
+hex.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-sha2 = "0.10"
-subtle = "2"
-tokio = { version = "1", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["net"] }
+sha2.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
 tokio-rustls.workspace = true
-warp = "0.3"
+warp.workspace = true
 ed25519-dalek = { version = "2.1", features = ["rand_core", "pkcs8"] }
 # === Nexus deps ===
 nexus-sdk.workspace = true
