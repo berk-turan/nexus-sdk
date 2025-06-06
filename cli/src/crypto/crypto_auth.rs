@@ -37,7 +37,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let tx_handle = loading!("Crafting transaction...");
     let mut tx_builder = sui::ProgrammableTransactionBuilder::new();
     // Ignore the return value, it's probably empty
-    if let Err(e) = claim_pre_key_for_self(&mut tx_builder, &objects) {
+    if let Err(e) = claim_pre_key_for_self(&mut tx_builder, objects) {
         tx_handle.error();
         return Err(NexusCliError::Any(e));
     }
@@ -104,7 +104,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let first_message = b"nexus auth";
     let (initial_msg, session) = {
         let identity_key = crypto_secret.identity_key.as_ref().unwrap();
-        Session::initiate(&identity_key, &peer_bundle, first_message)
+        Session::initiate(identity_key, &peer_bundle, first_message)
             .map_err(|e| NexusCliError::Any(e.into()))?
     };
 
@@ -141,7 +141,7 @@ pub(crate) async fn crypto_auth(gas: GasArgs) -> AnyResult<(), NexusCliError> {
     let mut tx_builder = sui::ProgrammableTransactionBuilder::new();
     if let Err(e) = associate_pre_key_with_sender(
         &mut tx_builder,
-        &objects,
+        objects,
         &prekey_object_ref,
         initial_message.clone(),
     ) {

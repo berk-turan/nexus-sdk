@@ -15,7 +15,7 @@ pub fn crypto_key_status() -> AnyResult<(), NexusCliError> {
 
     let check_handle = loading!("Checking key sources...");
 
-    let status = if let Ok(_) = std::env::var("NEXUS_CLI_STORE_PASSPHRASE") {
+    let status = if std::env::var("NEXUS_CLI_STORE_PASSPHRASE").is_ok() {
         "source: ENV var"
     } else if let Ok(_) = Entry::new(SERVICE, "passphrase")
         .map_err(|e| NexusCliError::Any(e.into()))?
