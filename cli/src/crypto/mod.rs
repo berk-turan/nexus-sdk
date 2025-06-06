@@ -5,7 +5,7 @@ use crypto_auth::crypto_auth;
 
 #[derive(clap::Subcommand, Clone, Debug)]
 pub(crate) enum CryptoCommand {
-    #[command(about = "Establish a secure session with a the network.")]
+    #[command(about = "Establish a secure session with the network.")]
     Auth {
         #[command(flatten)]
         gas: GasArgs,
