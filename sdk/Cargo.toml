@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["tool_fqn", "crypto"]
+default = ["tool_fqn"]
 
 # Tool FQN feature enables the use of the `ToolFqn` struct and `fqn!` macro.
 # This feature is enabled by default.

@@ -1710,7 +1710,7 @@ mod tests {
             let (ref expected_msg, ref hdr, ref payload) = messages[idx];
             let decrypted = receiver
                 .ratchet_decrypt_he(hdr, payload, ad)
-                .expect(&format!("Failed to decrypt message {}", idx));
+                .unwrap_or_else(|_| panic!("Failed to decrypt message {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
 
@@ -1757,7 +1757,7 @@ mod tests {
         for (i, (ref expected_msg, ref hdr, ref payload)) in drafts.iter().enumerate() {
             let decrypted = sender
                 .decrypt_outgoing(hdr, payload, ad)
-                .expect(&format!("Failed to decrypt draft {}", i));
+                .unwrap_or_else(|| panic!("Failed to decrypt draft {}", i));
             assert_eq!(&decrypted, expected_msg);
         }
 
@@ -1789,7 +1789,7 @@ mod tests {
             let (ref expected_msg, ref hdr, ref payload) = drafts[idx];
             let decrypted = sender
                 .decrypt_outgoing(hdr, payload, ad)
-                .expect(&format!("Sender failed to decrypt its own draft {}", idx));
+                .unwrap_or_else(|| panic!("Sender failed to decrypt its own draft {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
 
@@ -1803,7 +1803,7 @@ mod tests {
             let (ref expected_msg, ref hdr, ref payload) = drafts[idx];
             let decrypted = receiver
                 .ratchet_decrypt_he(hdr, payload, ad)
-                .expect(&format!("Receiver failed to decrypt message {}", idx));
+                .unwrap_or_else(|_| panic!("Receiver failed to decrypt message {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
 
@@ -1943,7 +1943,7 @@ mod tests {
             let (ref expected_msg, ref hdr, ref payload) = messages[idx];
             let decrypted = sender
                 .decrypt_outgoing(hdr, payload, ad)
-                .expect(&format!("Sender should decrypt own draft {}", idx));
+                .unwrap_or_else(|| panic!("Sender should decrypt own draft {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
 
@@ -2053,7 +2053,7 @@ mod tests {
             let (ref expected_msg, ref hdr, ref payload) = all_drafts[idx];
             let decrypted = sender
                 .decrypt_outgoing(hdr, payload, ad)
-                .expect(&format!("Sender should decrypt own draft {}", idx));
+                .unwrap_or_else(|| panic!("Sender should decrypt own draft {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
         println!("Phase 4: Sender can decrypt all its own drafts regardless of receiver state");
@@ -2108,7 +2108,7 @@ mod tests {
             let (ref expected_msg, ref hdr, ref payload) = new_chain_messages[idx];
             let decrypted = receiver
                 .ratchet_decrypt_he(hdr, payload, ad)
-                .expect(&format!("Failed to decrypt new chain message {}", idx));
+                .unwrap_or_else(|_| panic!("Failed to decrypt new chain message {}", idx));
             assert_eq!(&decrypted, expected_msg);
         }
 
@@ -2225,7 +2225,7 @@ mod tests {
         for i in 1..=5 {
             let decrypted = sender
                 .decrypt_outgoing(&enc_hdr, &payload, ad)
-                .expect(&format!("Failed to decrypt draft on attempt {}", i));
+                .unwrap_or_else(|| panic!("Failed to decrypt draft on attempt {}", i));
             assert_eq!(&decrypted, msg, "Decryption {} should match original", i);
         }
 

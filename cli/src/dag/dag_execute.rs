@@ -387,7 +387,7 @@ mod tests {
         // The complex JSON should be encrypted
         assert!(input["vertex1"]["port1"].is_array());
         // It should no longer contain the original nested structure
-        assert!(!input["vertex1"]["port1"].get("nested").is_some());
+        assert!(input["vertex1"]["port1"].get("nested").is_none());
     }
 
     #[test]

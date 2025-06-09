@@ -516,7 +516,7 @@ mod tests {
         // Create TLS client with proper pinning
         let client = nexus_toolkit::reqwest_with_pin([spki_hash.as_str()]).unwrap();
         let response = client
-            .get(&format!("https://127.0.0.1:{}/health", free_port))
+            .get(format!("http://127.0.0.1:{}/health", free_port))
             .send()
             .await
             .expect("Failed to send GET request to health endpoint");
@@ -652,9 +652,7 @@ mod tests {
         }"#;
         let input: Input = serde_json::from_str(json).unwrap();
 
-        assert!(
-            matches!(input.prompt, MessageBag::One(Message::Short(s)) if s == "hello".to_string())
-        );
+        assert!(matches!(input.prompt, MessageBag::One(Message::Short(s)) if s == *"hello"));
 
         let json = r#"{
             "api_key": "best-encryption-ever-\"your_api_key\"",

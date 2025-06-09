@@ -17,19 +17,18 @@ pub async fn crypto_init_key(force: bool) -> AnyResult<(), NexusCliError> {
     // 1. Abort if any persistent key already exists (unless --force)
     let check_handle = loading!("Checking for existing keys...");
 
-    if Entry::new(SERVICE, "passphrase")
+    if (Entry::new(SERVICE, "passphrase")
         .map_err(|e| NexusCliError::Any(e.into()))?
         .get_password()
         .is_ok()
         || Entry::new(SERVICE, USER)
             .map_err(|e| NexusCliError::Any(e.into()))?
             .get_password()
-            .is_ok()
+            .is_ok())
+        && !force
     {
-        if !force {
-            check_handle.error();
-            return Err(NexusCliError::Any(MasterKeyError::KeyAlreadyExists.into()));
-        }
+        check_handle.error();
+        return Err(NexusCliError::Any(MasterKeyError::KeyAlreadyExists.into()));
     }
 
     check_handle.success();
