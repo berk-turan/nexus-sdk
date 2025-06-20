@@ -11,7 +11,10 @@
     "build": "wasm-pack build --target web --out-dir pkg",
     "build:node": "wasm-pack build --target nodejs --out-dir pkg-node",
     "build:bundler": "wasm-pack build --target bundler --out-dir pkg-bundler",
-    "build:all": "npm run build && npm run build:node && npm run build:bundler"
+    "build:all": "npm run build && npm run build:node && npm run build:bundler",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "repository": {
     "type": "git",
@@ -25,5 +28,26 @@
     "blockchain"
   ],
   "author": "Talus Engineers <engineering@taluslabs.xyz>",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "jest": "^30.0.2",
+    "@jest/globals": "^30.0.2"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.js",
+      "**/?(*.)+(spec|test).js"
+    ],
+    "collectCoverageFrom": [
+      "**/*.js",
+      "!**/node_modules/**",
+      "!**/pkg*/**"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/pkg/",
+      "<rootDir>/pkg-node/",
+      "<rootDir>/pkg-bundler/"
+    ]
+  }
 }
