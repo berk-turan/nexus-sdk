@@ -1,6 +1,6 @@
 [package]
-name = "nexus-cli-wasm"
-description = "Nexus CLI WASM bindings for browser/web usage"
+name = "nexus-sdk-wasm"
+description = "Nexus SDK WASM bindings for browser/web usage"
 
 edition.workspace = true
 version.workspace = true
