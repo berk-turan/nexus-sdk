@@ -5043,7 +5043,6 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "nexus-sdk",
- "petgraph 0.7.1",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

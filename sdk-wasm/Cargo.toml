@@ -30,9 +30,6 @@ serde-wasm-bindgen = "0.4"
 anyhow.workspace = true
 thiserror.workspace = true
 
-# Graph library for DAG validation
-petgraph.workspace = true
-
 # Web API bindings
 [dependencies.web-sys]
 version = "0.3"
@@ -43,7 +40,7 @@ features = [
 # === Nexus deps ===
 [dependencies.nexus-sdk]
 workspace = true
-features = ["wasm_types"]
+features = ["wasm_types", "dag"]
 
 [dependencies.wasm-bindgen-futures]
 version = "0.4" 
