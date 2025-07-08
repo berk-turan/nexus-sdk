@@ -11,15 +11,17 @@ check-toolchain-version: _check-cargo
 
     set -euo pipefail
 
+    cd $(git rev-parse --show-toplevel)
+
     cargo_version=$(cargo --version | awk '{print $2}')
-    toolchain_version=$(grep '^channel *= *"[^"]\+"' ../rust-toolchain.toml | sed -E 's/.*"([^"]+)".*/\1/')
+    toolchain_version=$(grep '^channel *= *"[^"]\+"' rust-toolchain.toml | sed -E 's/.*"([^"]+)".*/\1/')
 
     echo "Cargo version: $cargo_version"
     echo "Toolchain version: $toolchain_version"
 
     # cargo_version is 1.86.0 and toolchain_version is 1.86, so we need to compare them
     if [[ "$cargo_version" != "$toolchain_version"* ]]; then
-      echo "Cargo version ($cargo_version) does not match toolchain version ($toolchain_version)." >&2
+      echo "❌ Cargo version ($cargo_version) does not match toolchain version ($toolchain_version)." >&2
       exit 1
     fi
 
@@ -36,7 +38,7 @@ cargo-nightly-fmt: _check-cargo
     #!/usr/bin/env bash
 
     cargo +nightly-2025-01-06 fmt --all --check || {
-        echo "== Formatting failed. Please run 'cargo +nightly fmt --all' to format the code." >&2
+        echo "❌ Formatting failed. Please run 'cargo +nightly fmt --all' to format the code." >&2
         exit 1
     }
 
@@ -60,7 +62,8 @@ cargo-nextest-build: _check-cargo-nextest
 # the failure, so there is no need to keep running the remaining tests...
 # cargo nextest run --locked --fail-fast --workspace --all-features --bins --examples --tests
 cargo-nextest-run: _check-cargo-nextest
-    # Note that tests require docker to be running. Perhaps we should add a check for that?
+    # Note that tests require docker to be running.
+    # TODO: Perhaps we should add a check for that?
     cargo nextest run --locked --fail-fast --workspace --all-features --bins --examples --tests
 
 
