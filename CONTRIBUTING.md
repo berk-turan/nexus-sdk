@@ -15,7 +15,7 @@ This project adheres to a [Code of Conduct]. By participating, you are expected 
 
 1. **Fork the repository** and create your branch from `main`.
 2. **Follow the coding style** used in the project.
-3. **Install the pre-commit hooks** by running:
+3. **Install the pre-commit hook** by running:
    ```bash
    ./.pre-commit/pre-commit --install
    ```

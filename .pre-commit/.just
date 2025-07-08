@@ -8,8 +8,10 @@ _default:
 check-toolchain-version: _check-cargo
     #!/usr/bin/env bash
 
+    set -euo pipefail
+
     cargo_version=$(cargo --version | awk '{print $2}')
-    toolchain_version=$(grep '^channel *= *"[^"]\+"' rust-toolchain.toml | sed -E 's/.*"([^"]+)".*/\1/')
+    toolchain_version=$(grep '^channel *= *"[^"]\+"' ../rust-toolchain.toml | sed -E 's/.*"([^"]+)".*/\1/')
 
     echo "Cargo version: $cargo_version"
     echo "Toolchain version: $toolchain_version"
@@ -53,11 +55,11 @@ cargo-clippy-strict: _check-cargo
 
 
 # cargo nextest run --locked --no-run --workspace --all-features --bins --examples --tests
-cargo-nextest-build: _check-cargo
+cargo-nextest-build: _check-cargo-nextest
     cargo nextest run --locked --no-run --workspace --all-features --bins --examples --tests
 
 # Note: The idea for `--fail-fast` is that the change we are commiting is the one responsible for
 # the failure, so there is no need to keep running the remaining tests...
 # cargo nextest run --locked --fail-fast --workspace --all-features --bins --examples --tests
-cargo-nextest-run: _check-cargo
+cargo-nextest-run: _check-cargo-nextest
     cargo nextest run --locked --fail-fast --workspace --all-features --bins --examples --tests
