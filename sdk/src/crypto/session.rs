@@ -127,7 +127,7 @@ pub enum Message {
 
 /// A live end-to-end encrypted session.
 ///
-/// Both parties maintain a copy containing identical symmetric state.  
+/// Both parties maintain a copy containing identical symmetric state.
 /// Cloning is disallowed to avoid accidental divergence.
 pub struct Session {
     /// Stable database key (32-byte, random-looking).
@@ -391,7 +391,7 @@ impl Session {
     /// **Sender-side "commit":** irrevocably forget cached **outgoing** message-keys.
     ///
     /// * Pass `Some(n)` to forget everything ≤ `n` in the current sending
-    ///   chain;  
+    ///   chain;
     /// * Pass `None` to wipe the entire cache.
     pub fn commit_sender(&mut self, max_n: Option<u32>) {
         self.ratchet.commit_sender(max_n);
@@ -884,7 +884,7 @@ mod tests {
             leader_sessions[idx] = Some(sess);
         }
 
-        // 3.  User send work(encypted data)
+        // 3.  User send work(encrypted data)
         let mut work_pkts: Vec<(usize, Vec<u8>, Message)> = Vec::new();
         for (idx, user_sess) in user_sessions.iter_mut().enumerate() {
             let len = rng.gen_range(24..65);
@@ -943,7 +943,7 @@ mod tests {
         for (idx, ans, pkt) in finals {
             let out = user_sessions[idx]
                 .decrypt(&pkt)
-                .expect("user decrypt final failed"); // user decrypt all the data the leader sent(even that in the edges and that intermidiate data), after reding advances the chain
+                .expect("user decrypt final failed"); // user decrypt all the data the leader sent(even that in the edges and that intermediate data), after reading advances the chain
             assert_eq!(out, ans, "final mismatch user {idx}");
         }
     }
