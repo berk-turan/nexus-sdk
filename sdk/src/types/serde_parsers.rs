@@ -271,6 +271,24 @@ mod tests {
     }
 
     #[test]
+    fn test_single_element_valid_json_object() {
+        let test = TestStruct {
+            value: json!([{"key": "value"}]),
+        };
+
+        let ser = serde_json::to_string(&test).unwrap();
+        // This byte array corresponds to the JSON string
+        // '{"value":[{"key":"value"}]}'.
+        assert_eq!(
+            ser,
+            r#"{"value":[[123,34,107,101,121,34,58,34,118,97,108,117,101,34,125]]}"#
+        );
+
+        let result: TestStruct = serde_json::from_str(&ser).unwrap();
+        assert_eq!(test.value, result.value);
+    }
+
+    #[test]
     fn test_multiple_elements_valid_json() {
         // Two elements:
         // First element: [34,118,97,108,117,101,34] corresponds to "\"value\""
