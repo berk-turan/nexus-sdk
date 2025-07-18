@@ -308,6 +308,14 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_array_inner() {
+        // Empty byte arrays should error.
+        let input = r#"{"value":[[]]}"#;
+        let result = serde_json::from_str::<TestStruct>(input);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_single_value() {
         let test = TestStruct {
             value: json!({"key": "value"}),
@@ -319,6 +327,24 @@ mod tests {
         assert_eq!(
             ser,
             r#"{"value":[[123,34,118,97,108,117,101,34,58,123,34,107,101,121,34,58,34,118,97,108,117,101,34,125,44,34,95,95,110,101,120,117,115,95,115,105,110,103,108,101,95,118,97,108,117,101,34,58,116,114,117,101,125]]}"#
+        );
+
+        let result: TestStruct = serde_json::from_str(&ser).unwrap();
+        assert_eq!(test.value, result.value);
+    }
+
+    #[test]
+    fn test_single_null_value() {
+        let test = TestStruct {
+            value: serde_json::Value::Null,
+        };
+
+        let ser = serde_json::to_string(&test).unwrap();
+        // This byte array corresponds to the JSON string
+        // '{"value":null,"__nexus_single_value":true}'.
+        assert_eq!(
+            ser,
+            r#"{"value":[[123,34,118,97,108,117,101,34,58,110,117,108,108,44,34,95,95,110,101,120,117,115,95,115,105,110,103,108,101,95,118,97,108,117,101,34,58,116,114,117,101,125]]}"#
         );
 
         let result: TestStruct = serde_json::from_str(&ser).unwrap();

@@ -173,5 +173,23 @@ mod parser {
 
             assert_eq!(dag_data, deserialized);
         }
+
+        #[test]
+        #[should_panic(
+            expected = "not yet implemented: TODO: <https://github.com/Talus-Network/nexus-next/issues/30>"
+        )]
+        fn test_dag_data_only_supports_inline_ser() {
+            let data = NexusData::Remote {};
+            let _ = serde_json::to_string(&data);
+        }
+
+        #[test]
+        #[should_panic(
+            expected = "not yet implemented: TODO: <https://github.com/Talus-Network/nexus-next/issues/30>"
+        )]
+        fn test_dag_data_only_supports_inline_deser() {
+            let data = r#"{"storage":[1,2,3],"data":[[123,34,107,101,121,34,58,34,118,97,108,117,101,34,125],[123,34,107,101,121,34,58,34,118,97,108,117,101,34,125]],"encrypted":false}"#;
+            let _ = serde_json::from_str::<NexusData>(&data);
+        }
     }
 }
