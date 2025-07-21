@@ -145,26 +145,55 @@ fn encrypt_entry_ports_once(
                 .ok_or_else(|| NexusCliError::Any(anyhow!("Input JSON has no {vertex}.{port}")))?;
 
             let plaintext = slot.take();
-            let bytes =
-                serde_json::to_vec(&plaintext).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
 
-            // Encrypt
-            let msg = session
-                .encrypt(&bytes)
-                .map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+            if let serde_json::Value::Array(values) = plaintext {
+                // Encrypt each array element separately to keep the array structure
+                let mut encrypted_values = Vec::with_capacity(values.len());
 
-            // Session must always return a Standard packet here
-            let Message::Standard(pkt) = msg else {
-                return Err(NexusCliError::Any(anyhow!(
-                    "Session returned non-standard packet"
-                )));
-            };
+                for value in values {
+                    let bytes =
+                        serde_json::to_vec(&value).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
 
-            // Serialize the StandardMessage with bincode
-            let serialized =
-                bincode::serialize(&pkt).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
-            *slot =
-                serde_json::to_value(&serialized).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+                    // Encrypt
+                    let msg = session
+                        .encrypt(&bytes)
+                        .map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+
+                    // Session must always return a Standard packet here
+                    let Message::Standard(pkt) = msg else {
+                        return Err(NexusCliError::Any(anyhow!(
+                            "Session returned non-standard packet"
+                        )));
+                    };
+
+                    // Serialize the StandardMessage with serde.
+                    let encrypted_value =
+                        serde_json::to_value(&pkt).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+
+                    encrypted_values.push(encrypted_value);
+                }
+
+                // Replace the slot with the encrypted values
+                *slot = serde_json::Value::Array(encrypted_values);
+            } else {
+                let bytes =
+                    serde_json::to_vec(&plaintext).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+
+                // Encrypt
+                let msg = session
+                    .encrypt(&bytes)
+                    .map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+
+                // Session must always return a Standard packet here
+                let Message::Standard(pkt) = msg else {
+                    return Err(NexusCliError::Any(anyhow!(
+                        "Session returned non-standard packet"
+                    )));
+                };
+
+                // Serialize the StandardMessage with serde.
+                *slot = serde_json::to_value(&pkt).map_err(|e| NexusCliError::Any(anyhow!(e)))?;
+            }
         }
     }
 
