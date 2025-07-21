@@ -9,7 +9,6 @@ use {
         sui::*,
     },
     anyhow::anyhow,
-    bincode,
     nexus_sdk::{
         crypto::session::{Message, Session},
         idents::workflow,

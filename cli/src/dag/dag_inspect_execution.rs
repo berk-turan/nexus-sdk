@@ -8,7 +8,6 @@ use {
         prelude::*,
         sui::*,
     },
-    bincode,
     nexus_sdk::{
         crypto::session::{Message, StandardMessage},
         events::{NexusEvent, NexusEventKind},
@@ -228,11 +227,34 @@ fn process_port_data(
             data,
             encrypted: true,
         } => {
-            // 1) back to bytes
-            let raw: Vec<u8> = serde_json::from_value(data.clone())?;
+            if let serde_json::Value::Array(values) = data {
+                // If the data is an array, we decrypt each element separately
+                let mut decrypted_values = Vec::with_capacity(values.len());
 
-            // 2) bincode → StandardMessage → decrypt
-            let pkt = bincode::deserialize::<StandardMessage>(&raw)?;
+                for value in values {
+                    // 1) bytes → StandardMessage
+                    let pkt: StandardMessage =
+                        serde_json::from_value::<StandardMessage>(value.clone())?;
+
+                    // 2) decrypt StandardMessage
+                    let plain = session.decrypt(&Message::Standard(pkt))?;
+
+                    // 3) bytes → JSON
+                    let val: serde_json::Value = serde_json::from_slice(&plain)?;
+
+                    decrypted_values.push(val);
+                }
+
+                return Ok((
+                    format!("{decrypted_values:?}"),
+                    json!({ "port": port.name, "data": decrypted_values, "was_encrypted": true }),
+                ));
+            }
+
+            // 1) bytes → StandardMessage
+            let pkt = serde_json::from_value::<StandardMessage>(data.clone())?;
+
+            // 2) decrypt StandardMessage
             let plain = session.decrypt(&Message::Standard(pkt))?;
 
             // 3) bytes → JSON
@@ -362,6 +384,29 @@ mod tests {
         session: &mut Session,
         data: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        if let serde_json::Value::Array(values) = data {
+            // If the data is an array, we encrypt each element separately
+            let mut encrypted_values = Vec::with_capacity(values.len());
+
+            for value in values {
+                // Serialize to bytes
+                let bytes = serde_json::to_vec(value)?;
+
+                // Encrypt
+                let msg = session.encrypt(&bytes)?;
+
+                // Session must return a Standard packet
+                let Message::Standard(pkt) = msg else {
+                    return Err("Session returned non-standard packet".into());
+                };
+
+                // Convert to JSON value (array of bytes)
+                encrypted_values.push(serde_json::to_value(&pkt)?);
+            }
+
+            return Ok(serde_json::Value::Array(encrypted_values));
+        }
+
         // Serialize to bytes
         let bytes = serde_json::to_vec(data)?;
 
@@ -373,11 +418,8 @@ mod tests {
             return Err("Session returned non-standard packet".into());
         };
 
-        // Serialize the StandardMessage with bincode
-        let serialized = bincode::serialize(&pkt)?;
-
         // Convert to JSON value (array of bytes)
-        Ok(serde_json::to_value(&serialized)?)
+        Ok(serde_json::to_value(&pkt)?)
     }
 
     #[test]
