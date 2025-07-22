@@ -484,18 +484,34 @@ impl Session {
             // Decrypt each element.
             for value in values {
                 let msg: StandardMessage = serde_json::from_value(value.clone())?;
-                let bytes = self.decrypt(&Message::Standard(msg))?;
+                let msg = Message::Standard(msg);
 
-                let decrypted_value: serde_json::Value = serde_json::from_slice(&bytes)?;
+                // Was this message sent by us?
+                if let Some(bytes) = self.read_own_msg(&msg) {
+                    decrypted_values.push(serde_json::from_slice(&bytes)?);
 
-                decrypted_values.push(decrypted_value);
+                    continue;
+                }
+
+                // If not, just decrypt it normally.
+                let bytes = self.decrypt(&msg)?;
+
+                decrypted_values.push(serde_json::from_slice(&bytes)?);
             }
 
             return Ok(serde_json::Value::Array(decrypted_values));
         }
 
         let msg: StandardMessage = serde_json::from_value(data.clone())?;
-        let bytes = self.decrypt(&Message::Standard(msg))?;
+        let msg = Message::Standard(msg);
+
+        // Was this message sent by us?
+        if let Some(bytes) = self.read_own_msg(&msg) {
+            return Ok(serde_json::from_slice(&bytes)?);
+        }
+
+        // If not, just decrypt it normally.
+        let bytes = self.decrypt(&msg)?;
 
         Ok(serde_json::from_slice(&bytes)?)
     }
@@ -1322,6 +1338,43 @@ mod tests {
             decrypted_data,
             json!({"key1": "value1", "key2": "value2"}),
             "Decrypted data should match original object"
+        );
+
+        // == Reading own messages ==
+
+        // Encrypt a message and read it back
+        let mut data = json!({"own_key": "own_value"});
+
+        let _ = receiver_sess
+            .encrypt_nexus_data_json(&mut data)
+            .expect("Sender encrypt own message failed");
+
+        // Sender should be able to read their own message
+        let own_pt = receiver_sess
+            .decrypt_nexus_data_json(&data)
+            .expect("Sender decrypt own message failed");
+
+        assert_eq!(
+            own_pt,
+            json!({"own_key": "own_value"}),
+            "Sender should read their own message correctly"
+        );
+
+        // Sender should also be able to read own messages in an array
+        let mut arr_data = json!([{"own_key": "own_value"}, {"another_key": "another_value"}]);
+
+        let _ = receiver_sess
+            .encrypt_nexus_data_json(&mut arr_data)
+            .expect("Sender encrypt own array message failed");
+
+        let own_pt_arr = receiver_sess
+            .decrypt_nexus_data_json(&arr_data)
+            .expect("Sender decrypt own array message failed");
+
+        assert_eq!(
+            own_pt_arr,
+            json!([{"own_key": "own_value"}, {"another_key": "another_value"}]),
+            "Sender should read their own array message correctly"
         );
     }
 }
