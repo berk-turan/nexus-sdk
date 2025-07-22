@@ -248,7 +248,7 @@ mod tests {
     use {
         super::*,
         nexus_sdk::crypto::{
-            session::{Message, Session},
+            session::{Message, Session, StandardMessage},
             x3dh::{IdentityKey, PreKeyBundle},
         },
         serde_json::json,
@@ -321,8 +321,9 @@ mod tests {
         // port2 should remain unchanged
         assert_eq!(input["vertex1"]["port2"], "other_value");
 
-        // The encrypted value should be a JSON array of bytes
-        assert!(input["vertex1"]["port1"].is_array());
+        // The value should be encrypted and serialized as a `StandardMessage`
+        let msg = serde_json::from_value::<StandardMessage>(input["vertex1"]["port1"].take());
+        assert!(msg.is_ok(), "Failed to deserialize StandardMessage");
     }
 
     #[test]
@@ -350,15 +351,14 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // All targeted ports should be encrypted
-        assert!(input["vertex1"]["port1"].is_array());
-        assert!(input["vertex1"]["port2"].is_array());
-        assert!(input["vertex2"]["port3"].is_array());
+        // All targeted ports should be encrypted and serialized as `StandardMessage`
+        let msg1 = serde_json::from_value::<StandardMessage>(input["vertex1"]["port1"].take());
+        let msg2 = serde_json::from_value::<StandardMessage>(input["vertex1"]["port2"].take());
+        let msg3 = serde_json::from_value::<StandardMessage>(input["vertex2"]["port3"].take());
 
-        // Original values should no longer be present
-        assert_ne!(input["vertex1"]["port1"], "value1");
-        assert_ne!(input["vertex1"]["port2"], "value2");
-        assert_ne!(input["vertex2"]["port3"], "value3");
+        assert!(msg1.is_ok(), "Failed to deserialize StandardMessage");
+        assert!(msg2.is_ok(), "Failed to deserialize StandardMessage");
+        assert!(msg3.is_ok(), "Failed to deserialize StandardMessage");
     }
 
     #[test]
@@ -442,10 +442,9 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // The complex JSON should be encrypted
-        assert!(input["vertex1"]["port1"].is_array());
-        // It should no longer contain the original nested structure
-        assert!(input["vertex1"]["port1"].get("nested").is_none());
+        // The complex JSON should be encrypted and serialized as a `StandardMessage`
+        let msg = serde_json::from_value::<StandardMessage>(input["vertex1"]["port1"].take());
+        assert!(msg.is_ok(), "Failed to deserialize StandardMessage");
     }
 
     #[test]
@@ -466,10 +465,12 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // Both values should be encrypted, but since we advance the ratchet only once,
-        // subsequent encryptions should use static encryption
-        assert!(input["vertex1"]["port1"].is_array());
-        assert!(input["vertex1"]["port2"].is_array());
+        // Both values should be encrypted and serialized as a `StandardMessage`
+        let msg1 = serde_json::from_value::<StandardMessage>(input["vertex1"]["port1"].take());
+        let msg2 = serde_json::from_value::<StandardMessage>(input["vertex1"]["port2"].take());
+
+        assert!(msg1.is_ok(), "Failed to deserialize StandardMessage");
+        assert!(msg2.is_ok(), "Failed to deserialize StandardMessage");
 
         // The encrypted values should be different even for the same session
         // (due to nonces), but we can't easily test the ratchet state directly
