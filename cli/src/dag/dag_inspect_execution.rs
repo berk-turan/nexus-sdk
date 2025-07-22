@@ -9,7 +9,6 @@ use {
         sui::*,
     },
     nexus_sdk::{
-        crypto::session::{Message, StandardMessage},
         events::{NexusEvent, NexusEventKind},
         idents::primitives,
         types::{NexusData, TypeName},
@@ -227,42 +226,11 @@ fn process_port_data(
             data,
             encrypted: true,
         } => {
-            if let serde_json::Value::Array(values) = data {
-                // If the data is an array, we decrypt each element separately
-                let mut decrypted_values = Vec::with_capacity(values.len());
-
-                for value in values {
-                    // 1) bytes → StandardMessage
-                    let pkt: StandardMessage =
-                        serde_json::from_value::<StandardMessage>(value.clone())?;
-
-                    // 2) decrypt StandardMessage
-                    let plain = session.decrypt(&Message::Standard(pkt))?;
-
-                    // 3) bytes → JSON
-                    let val: serde_json::Value = serde_json::from_slice(&plain)?;
-
-                    decrypted_values.push(val);
-                }
-
-                return Ok((
-                    format!("{decrypted_values:?}"),
-                    json!({ "port": port.name, "data": decrypted_values, "was_encrypted": true }),
-                ));
-            }
-
-            // 1) bytes → StandardMessage
-            let pkt = serde_json::from_value::<StandardMessage>(data.clone())?;
-
-            // 2) decrypt StandardMessage
-            let plain = session.decrypt(&Message::Standard(pkt))?;
-
-            // 3) bytes → JSON
-            let val: serde_json::Value = serde_json::from_slice(&plain)?;
+            let decrypted = session.decrypt_nexus_data_json(data)?;
 
             Ok((
-                format!("{val:?}"),
-                json!({ "port": port.name, "data": val, "was_encrypted": true }),
+                format!("{decrypted:?}"),
+                json!({ "port": port.name, "data": decrypted, "was_encrypted": true }),
             ))
         }
 
@@ -379,49 +347,6 @@ mod tests {
         (sender_sess, receiver_sess)
     }
 
-    /// Helper to encrypt data the same way as Nexus does
-    fn encrypt_data_like_nexus(
-        session: &mut Session,
-        data: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        if let serde_json::Value::Array(values) = data {
-            // If the data is an array, we encrypt each element separately
-            let mut encrypted_values = Vec::with_capacity(values.len());
-
-            for value in values {
-                // Serialize to bytes
-                let bytes = serde_json::to_vec(value)?;
-
-                // Encrypt
-                let msg = session.encrypt(&bytes)?;
-
-                // Session must return a Standard packet
-                let Message::Standard(pkt) = msg else {
-                    return Err("Session returned non-standard packet".into());
-                };
-
-                // Convert to JSON value (array of bytes)
-                encrypted_values.push(serde_json::to_value(&pkt)?);
-            }
-
-            return Ok(serde_json::Value::Array(encrypted_values));
-        }
-
-        // Serialize to bytes
-        let bytes = serde_json::to_vec(data)?;
-
-        // Encrypt
-        let msg = session.encrypt(&bytes)?;
-
-        // Session must return a Standard packet
-        let Message::Standard(pkt) = msg else {
-            return Err("Session returned non-standard packet".into());
-        };
-
-        // Convert to JSON value (array of bytes)
-        Ok(serde_json::to_value(&pkt)?)
-    }
-
     #[test]
     fn test_process_port_data_plain_data() {
         let (mut _sender, mut receiver) = create_test_sessions();
@@ -464,7 +389,7 @@ mod tests {
             name: "encrypted_port".to_string(),
         };
 
-        let original_data = json!({
+        let original = json!({
             "secret": "top secret message",
             "value": 12345,
             "nested": {
@@ -472,12 +397,15 @@ mod tests {
             }
         });
 
+        let mut encrypted = original.clone();
+
         // Encrypt the data using Nexus session (simulating system encrypting output)
-        let encrypted_json = encrypt_data_like_nexus(&mut nexus_session, &original_data)
+        nexus_session
+            .encrypt_nexus_data_json(&mut encrypted)
             .expect("Failed to encrypt test data");
 
         let nexus_data = NexusData::Inline {
-            data: encrypted_json,
+            data: encrypted,
             encrypted: true,
         };
 
@@ -492,7 +420,7 @@ mod tests {
 
         // Check JSON result structure
         assert_eq!(json_result["port"], "encrypted_port");
-        assert_eq!(json_result["data"], original_data);
+        assert_eq!(json_result["data"], original);
         assert_eq!(json_result["was_encrypted"], true);
     }
 
@@ -504,14 +432,16 @@ mod tests {
             name: "string_port".to_string(),
         };
 
-        let original_data = json!("simple encrypted string");
+        let original = json!("simple encrypted string");
+        let mut encrypted = original.clone();
 
         // Encrypt the data using Nexus session (simulating system encrypting output)
-        let encrypted_json = encrypt_data_like_nexus(&mut nexus_session, &original_data)
+        nexus_session
+            .encrypt_nexus_data_json(&mut encrypted)
             .expect("Failed to encrypt test data");
 
         let nexus_data = NexusData::Inline {
-            data: encrypted_json,
+            data: encrypted,
             encrypted: true,
         };
 
@@ -525,7 +455,7 @@ mod tests {
 
         // Check JSON result structure
         assert_eq!(json_result["port"], "string_port");
-        assert_eq!(json_result["data"], original_data);
+        assert_eq!(json_result["data"], original);
         assert_eq!(json_result["was_encrypted"], true);
     }
 
@@ -537,7 +467,7 @@ mod tests {
             name: "complex_port".to_string(),
         };
 
-        let original_data = json!({
+        let original = json!({
             "user": {
                 "id": 123,
                 "name": "Alice",
@@ -555,12 +485,15 @@ mod tests {
             }
         });
 
+        let mut encrypted = original.clone();
+
         // Encrypt the data using Nexus session (simulating system encrypting output)
-        let encrypted_json = encrypt_data_like_nexus(&mut nexus_session, &original_data)
+        nexus_session
+            .encrypt_nexus_data_json(&mut encrypted)
             .expect("Failed to encrypt test data");
 
         let nexus_data = NexusData::Inline {
-            data: encrypted_json,
+            data: encrypted,
             encrypted: true,
         };
 
@@ -576,7 +509,7 @@ mod tests {
 
         // Check JSON result structure
         assert_eq!(json_result["port"], "complex_port");
-        assert_eq!(json_result["data"], original_data);
+        assert_eq!(json_result["data"], original);
         assert_eq!(json_result["was_encrypted"], true);
     }
 
@@ -614,17 +547,19 @@ mod tests {
             ("port5", json!(true)),
         ];
 
-        for (port_name, original_data) in test_cases {
+        for (port_name, original) in test_cases {
             let port = TypeName {
                 name: port_name.to_string(),
             };
 
-            // Encrypt the data using Nexus session (simulating system encrypting output)
-            let encrypted_json = encrypt_data_like_nexus(&mut nexus_session, &original_data)
+            let mut encrypted = original.clone();
+
+            nexus_session
+                .encrypt_nexus_data_json(&mut encrypted)
                 .expect("Failed to encrypt test data");
 
             let nexus_data = NexusData::Inline {
-                data: encrypted_json,
+                data: encrypted,
                 encrypted: true,
             };
 
@@ -634,7 +569,7 @@ mod tests {
 
             let (_display_data, json_result) = result.unwrap();
             assert_eq!(json_result["port"], port_name);
-            assert_eq!(json_result["data"], original_data);
+            assert_eq!(json_result["data"], original);
             assert_eq!(json_result["was_encrypted"], true);
         }
     }

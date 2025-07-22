@@ -57,6 +57,7 @@ use {
             X3dhError,
         },
     },
+    anyhow::bail,
     hkdf::Hkdf,
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     sha2::{Digest, Sha256},
@@ -127,7 +128,7 @@ pub enum Message {
 
 /// A live end-to-end encrypted session.
 ///
-/// Both parties maintain a copy containing identical symmetric state.  
+/// Both parties maintain a copy containing identical symmetric state.
 /// Cloning is disallowed to avoid accidental divergence.
 pub struct Session {
     /// Stable database key (32-byte, random-looking).
@@ -391,7 +392,7 @@ impl Session {
     /// **Sender-side "commit":** irrevocably forget cached **outgoing** message-keys.
     ///
     /// * Pass `Some(n)` to forget everything ≤ `n` in the current sending
-    ///   chain;  
+    ///   chain;
     /// * Pass `None` to wipe the entire cache.
     pub fn commit_sender(&mut self, max_n: Option<u32>) {
         self.ratchet.commit_sender(max_n);
@@ -432,6 +433,71 @@ impl Session {
     /// Get a reference to the remote identity public key
     pub fn remote_identity(&self) -> &PublicKey {
         &self.remote_identity
+    }
+
+    // === Nexus-specific ===
+
+    /// Encrypts the provided [`crate::types::NexusData`] JSON. It distinguishes
+    /// between the JSON being an array type or a single object. In the case of
+    /// an array, it encrypts each object individually.
+    pub fn encrypt_nexus_data_json(&mut self, data: &mut serde_json::Value) -> anyhow::Result<()> {
+        if let serde_json::Value::Array(values) = data {
+            let mut encrypted_values = Vec::with_capacity(values.len());
+
+            // Serialize and encrypt each element.
+            for value in values {
+                let bytes = serde_json::to_vec(value)?;
+
+                let Message::Standard(msg) = self.encrypt(&bytes)? else {
+                    bail!("Invalid message type, expected StandardMessage");
+                };
+
+                encrypted_values.push(serde_json::to_value(&msg)?);
+            }
+
+            *data = serde_json::Value::Array(encrypted_values);
+
+            return Ok(());
+        }
+
+        let bytes = serde_json::to_vec(data)?;
+
+        let Message::Standard(msg) = self.encrypt(&bytes)? else {
+            bail!("Invalid message type, expected StandardMessage");
+        };
+
+        *data = serde_json::to_value(&msg)?;
+
+        Ok(())
+    }
+
+    /// Opposite of [`Self::encrypt_nexus_data_json`], decrypts the provided
+    /// `serde_json::Value` and returns the decrypted JSON data. If the value
+    /// is an array, it decrypts each object individually.
+    pub fn decrypt_nexus_data_json(
+        &mut self,
+        data: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        if let serde_json::Value::Array(values) = data {
+            let mut decrypted_values = Vec::with_capacity(values.len());
+
+            // Decrypt each element.
+            for value in values {
+                let msg: StandardMessage = serde_json::from_value(value.clone())?;
+                let bytes = self.decrypt(&Message::Standard(msg))?;
+
+                let decrypted_value: serde_json::Value = serde_json::from_slice(&bytes)?;
+
+                decrypted_values.push(decrypted_value);
+            }
+
+            return Ok(serde_json::Value::Array(decrypted_values));
+        }
+
+        let msg: StandardMessage = serde_json::from_value(data.clone())?;
+        let bytes = self.decrypt(&Message::Standard(msg))?;
+
+        Ok(serde_json::from_slice(&bytes)?)
     }
 }
 
@@ -1179,5 +1245,83 @@ mod tests {
 
         // Test receiver commit for future use cases
         receiver_sess.commit_receiver(None, Some(100)); // This should be a no-op for current state
+    }
+
+    #[test]
+    fn test_nexus_data_json_encrypt_decrypt_roundtrip() {
+        use serde_json::json;
+
+        // 1. bootstrap a normal session
+        let sender_id = IdentityKey::generate();
+        let receiver_id = IdentityKey::generate();
+        let spk_secret = StaticSecret::random_from_rng(OsRng);
+        let bundle = PreKeyBundle::new(&receiver_id, 1, &spk_secret, None, None);
+
+        let (init_msg, mut sender_sess) =
+            Session::initiate(&sender_id, &bundle, b"handshake").unwrap();
+
+        // Extract the initial message
+        let initial_message = match &init_msg {
+            Message::Initial(m) => m,
+            _ => unreachable!(),
+        };
+
+        // Initialize the receiver session
+        let (mut receiver_sess, _) =
+            Session::recv(&receiver_id, &spk_secret, &bundle, initial_message, None).unwrap();
+
+        // == Send an array ==
+
+        let mut data = json!([{"key1": "value1"}, {"key2": "value2"}]);
+        let _ = sender_sess
+            .encrypt_nexus_data_json(&mut data)
+            .expect("Sender encrypt array failed");
+
+        // It should be a JSON array of serialized `StandardMessage` objects.
+        assert!(data.is_array(), "Data should be an array after encryption");
+
+        for item in data.as_array().unwrap() {
+            let msg = serde_json::from_value::<StandardMessage>(item.clone());
+
+            assert!(msg.is_ok(), "Each item should be a valid StandardMessage");
+        }
+
+        // Receiver decrypts the array.
+        let decrypted_data = receiver_sess
+            .decrypt_nexus_data_json(&data)
+            .expect("Receiver decrypt array failed");
+
+        // Verify the decrypted data matches the original array.
+        assert_eq!(
+            decrypted_data,
+            json!([{"key1": "value1"}, {"key2": "value2"}]),
+            "Decrypted data should match original array"
+        );
+
+        // == Send an object ==
+
+        let mut data = json!({"key1": "value1", "key2": "value2"});
+        let _ = sender_sess
+            .encrypt_nexus_data_json(&mut data)
+            .expect("Sender encrypt object failed");
+
+        // This should be a serialized `StandardMessage` object.
+        let msg = serde_json::from_value::<StandardMessage>(data.clone());
+        assert!(
+            msg.is_ok(),
+            "Data should be a valid StandardMessage after encryption"
+        );
+
+        // Receiver decrypts the object.
+        let decrypted_data = receiver_sess
+            .decrypt_nexus_data_json(&data)
+            .expect("Receiver decrypt object failed");
+
+        // Verify the decrypted data matches the original object.
+        assert_eq!(
+            decrypted_data,
+            json!({"key1": "value1", "key2": "value2"}),
+            "Decrypted data should match original object"
+        );
     }
 }
