@@ -1,8 +1,9 @@
 use wasm_bindgen::prelude::*;
 
+mod dag_publish;
 mod dag_validate;
 
-pub use dag_validate::*;
+pub use {dag_publish::*, dag_validate::*};
 
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
