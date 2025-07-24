@@ -13,3 +13,6 @@ cli-wasm/pkg-bundler/
 
 # IDEs
 .idea
+
+# macOS
+.DS_Store
