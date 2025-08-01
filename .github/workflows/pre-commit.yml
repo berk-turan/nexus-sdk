@@ -37,19 +37,20 @@ jobs:
 
       # Install Rust
       - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v1.13.0
         with:
           toolchain: stable, nightly-2025-01-06
           override: true
           components: rustfmt, clippy
+#          cache-directories: ~/.npm
 
-      # Install Rust cache
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-targets: true
-          cache-on-failure: true
-          cache-all-crates: true
+#      # Install Rust cache
+#      - name: Rust cache
+#        uses: Swatinem/rust-cache@v2
+#        with:
+#          cache-targets: true
+#          cache-on-failure: true
+#          cache-all-crates: true
 
       # Extra cache for anything that is not cached by rust-cache
       - name: Extra cache
