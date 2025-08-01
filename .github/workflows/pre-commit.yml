@@ -76,6 +76,7 @@ jobs:
           command -v markdownlint-cli2 || \
           while read -r tool; do
             npm install -g "$tool"
+            which "$tool"
           done < helpers/npm-install-g.txt
 
       - run: cargo +stable --version && cargo +nightly-2025-01-06 --version
