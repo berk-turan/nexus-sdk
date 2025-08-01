@@ -7,7 +7,15 @@ on:
     branches:
       - main
 
-# Fix for OOM.
+# NOTE: The following values seem to be a fix for OOM, in case they are needed again.
+#
+#   RUST_CACHE_VERBOSE: true
+#   CARGO_BUILD_JOBS: 1
+#   CARGO_INCREMENTAL: 0
+#   RUSTFLAGS: >
+#     -C codegen-units=1
+#
+# but we have reverted CARGO_INCREMENTAL to 1 to speed up builds.
 env:
   RUST_CACHE_VERBOSE: true
   CARGO_BUILD_JOBS: 1
@@ -16,17 +24,17 @@ env:
     -C codegen-units=1
 
 jobs:
-  detect-changes:
-    uses: ./.github/workflows/detect_changes.yml
-    with:
-      files: |
-        **/**
+#  detect-changes:
+#    uses: ./.github/workflows/detect_changes.yml
+#    with:
+#      files: |
+#        **/**
 
   build-and-test:
-    name: Build and test
+    name: Run pre-commit checks and build
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.changed == 'true'
+#    needs: detect-changes
+#    if: needs.detect-changes.outputs.changed == 'true'
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -36,6 +44,7 @@ jobs:
         uses: docker/setup-docker-action@v4
 
       # Install Rust
+      # See: https://github.com/actions-rust-lang/setup-rust-toolchain
       # Note that it can handle the Rust cache automatically (via Swatinem/rust-cache),
       # but we use a custom cache for NPM stuff.
       - name: Install Rust
