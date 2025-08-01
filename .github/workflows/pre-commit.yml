@@ -44,7 +44,9 @@ jobs:
           toolchain: stable, nightly-2025-01-06
           override: true
           components: rustfmt, clippy
-          cache-directories: ~/.npm
+          cache-directories: |
+            ~/.npm
+            /usr/local/bin
 
 #      # Install Rust cache
 #      - name: Rust cache
