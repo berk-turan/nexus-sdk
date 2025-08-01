@@ -1,0 +1,60 @@
+# GitHub workflow to run the pre-commit hook.
+
+name: Nexus SDK
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Fix for OOM.
+env:
+  CARGO_BUILD_JOBS: 1
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: >
+    -C codegen-units=1
+
+jobs:
+  detect-changes:
+    uses: ./.github/workflows/detect_changes.yml
+    with:
+      files: |
+        **/**
+
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.changed == 'true'
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      # Set up Docker for tests
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v4
+
+      # Install Rust
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable, nightly-2025-01-06
+          override: true
+          components: rustfmt, clippy
+
+      # Install Rust cache
+      - name: Cache Build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: true
+          cache-workspace-crates: true
+          cache-on-failure: true
+          cache-all-crates: true
+
+      # Install just
+      - uses: taiki-e/install-action@just
+
+      # Build, fmt, clippy and test the Nexus SDK
+      - run: cargo +stable --version
+      - run: cargo +nightly-2025-01-06 --version
+      - run: ./.pre-commit/pre-commit

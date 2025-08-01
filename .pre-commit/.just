@@ -1,4 +1,4 @@
-import '../just/_helpers.just'
+import '../helpers/helpers.just'
 
 [private]
 _default:
