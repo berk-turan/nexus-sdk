@@ -24,17 +24,9 @@ env:
     -C codegen-units=1
 
 jobs:
-#  detect-changes:
-#    uses: ./.github/workflows/detect_changes.yml
-#    with:
-#      files: |
-#        **/**
-
   build-and-test:
-    name: Run pre-commit checks and build
+    name: Run pre-commit checks
     runs-on: ubuntu-latest
-#    needs: detect-changes
-#    if: needs.detect-changes.outputs.changed == 'true'
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -57,23 +49,6 @@ jobs:
             ~/.npm
             /usr/local/bin
 
-#      # Install Rust cache
-#      - name: Rust cache
-#        uses: Swatinem/rust-cache@v2
-#        with:
-#          cache-targets: true
-#          cache-on-failure: true
-#          cache-all-crates: true
-
-#      # Extra cache for anything that is not cached by rust-cache
-#      - name: Extra cache
-#        uses: actions/cache@v4
-#        with:
-#          path: ~/.npm
-#          key: ${{ runner.os }}-npm-${{ hashFiles('helpers/npm-install-g.txt') }}
-#          restore-keys: |
-#            ${{ runner.os }}-npm-
-
       # Install Rust tools
       # For more tools, see: https://github.com/taiki-e/install-action/blob/main/TOOLS.md
       - name: Install Rust tools
@@ -81,13 +56,13 @@ jobs:
         with:
           tool: cargo-binstall,just,cargo-nextest,typos
 
-      # Install NPM stuff (markdownlint-cli2)
-      - name: Install NPM stuff (markdownlint-cli2)
+      # Install NPM stuff from helpers/npm-install-g.txt
+      - name: Install NPM stuff from helpers/npm-install-g.txt
         run: |
-          command -v markdownlint-cli2 || \
           while read -r tool; do
-            npm install -g "$tool"
-            which "$(echo "$tool" | cut -d'@' -f1)"
+            if ! command -v "$tool" &> /dev/null; then
+              npm install -g "$tool"
+            fi
           done < helpers/npm-install-g.txt
 
       - run: cargo +stable --version && cargo +nightly-2025-01-06 --version
