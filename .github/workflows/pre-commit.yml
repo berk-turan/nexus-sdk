@@ -54,14 +54,14 @@ jobs:
 #          cache-on-failure: true
 #          cache-all-crates: true
 
-      # Extra cache for anything that is not cached by rust-cache
-      - name: Extra cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('helpers/npm-install-g.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+#      # Extra cache for anything that is not cached by rust-cache
+#      - name: Extra cache
+#        uses: actions/cache@v4
+#        with:
+#          path: ~/.npm
+#          key: ${{ runner.os }}-npm-${{ hashFiles('helpers/npm-install-g.txt') }}
+#          restore-keys: |
+#            ${{ runner.os }}-npm-
 
       # Install Rust tools
       # For more tools, see: https://github.com/taiki-e/install-action/blob/main/TOOLS.md
