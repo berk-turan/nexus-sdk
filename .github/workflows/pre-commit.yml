@@ -1,6 +1,6 @@
 # GitHub workflow to run the pre-commit hook.
 
-name: Nexus SDK
+name: Pre-commit hook
 on:
   pull_request:
   push:
