@@ -44,13 +44,21 @@ jobs:
           components: rustfmt, clippy
 
       # Install Rust cache
-      - name: Cache Build
+      - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-targets: true
-          cache-workspace-crates: true
           cache-on-failure: true
           cache-all-crates: true
+
+      # Extra cache for anything that is not cached by rust-cache
+      - name: Extra cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('helpers/npm-install-g.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
       # Install Rust tools
       # For more tools, see: https://github.com/taiki-e/install-action/blob/main/TOOLS.md
@@ -59,9 +67,13 @@ jobs:
         with:
           tool: cargo-binstall,just,cargo-nextest,typos
 
-      # Install markdownlint-cli2
-      - name: Install markdownlint-cli2
-        run: npm install -g markdownlint-cli2
+      # Install NPM stuff (markdownlint-cli2)
+      - name: Install NPM stuff (markdownlint-cli2)
+        run: |
+          command -v markdownlint-cli2 || \
+          while read -r tool; do
+            npm install -g "$tool"
+          done < helpers/npm-install-g.txt
 
       - run: cargo +stable --version && cargo +nightly-2025-01-06 --version
       - run: ./.pre-commit/pre-commit
