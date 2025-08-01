@@ -9,6 +9,7 @@ on:
 
 # Fix for OOM.
 env:
+  RUST_CACHE_VERBOSE: true
   CARGO_BUILD_JOBS: 1
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: >
@@ -51,8 +52,10 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
-      # Install just
-      - uses: taiki-e/install-action@just
+      # Install cargo-nextest
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall,just,cargo-nextest
 
       # Install typos
       - name: typos-action
