@@ -28,6 +28,8 @@ jobs:
   build-and-test:
     name: Run pre-commit checks
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: 1
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
