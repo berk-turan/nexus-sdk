@@ -46,11 +46,6 @@ jobs:
           toolchain: stable, nightly-2025-01-06
           override: true
           components: rustfmt, clippy
-          cache-all-crates: true
-          cache-workspace-crates: true
-          cache-directories: |
-            ~/.npm
-            /usr/local/bin
 
       # Install Rust tools
       #
