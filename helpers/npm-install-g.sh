@@ -9,6 +9,7 @@ cd $(git rev-parse --show-toplevel)
 while read -r tool_at_version; do
   # Split the tool name and version
   tool=$(echo "$tool_at_version" | cut -d'@' -f1)
+
   if ! command -v "$tool" &> /dev/null; then
     echo "Installing tool: $tool_at_version"
     npm install -g "$tool_at_version"
