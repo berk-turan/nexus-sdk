@@ -19,7 +19,7 @@ on:
 env:
   RUST_CACHE_VERBOSE: true
   CARGO_BUILD_JOBS: 1
-  CARGO_INCREMENTAL: 1
+  CARGO_INCREMENTAL: 1 # NOTE: unfortunately this does not propagate to steps below.
   RUSTFLAGS: >
     -C codegen-units=1
 
@@ -32,16 +32,11 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      # Set up Docker for tests
-#      - name: Set up Docker for tests
-#        uses: docker/setup-docker-action@v4
-
       # Install Rust
       #
       # See: https://github.com/actions-rust-lang/setup-rust-toolchain
-      # Note that it can handle the Rust cache automatically (via Swatinem/rust-cache),
-      # and even take care of (=cache) other directories.
-      - name: Install Rust
+      # Note that it can handle the Rust cache automatically (via Swatinem/rust-cache).
+      - name: Install Rust and setup Rust cache
         uses: actions-rust-lang/setup-rust-toolchain@v1.13.0
         with:
           toolchain: stable, nightly-2025-01-06
