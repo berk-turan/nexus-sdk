@@ -57,15 +57,13 @@ jobs:
           tool: cargo-binstall,just,cargo-nextest,typos
 
       # Install NPM stuff from helpers/npm-install-g.txt
-      #
-      # Why have a separate file?
-      # The spirit is that we can run things locally and then reuse the same stuff in CI,
-      # not code everything in CI and then try to reverse engineer how it could run locally.
-      #
       - name: Install NPM stuff from helpers/npm-install-g.txt
         run: ./helpers/npm-install-g.sh
 
+      # Just print some versions
       - run: cargo +stable --version && cargo +nightly-2025-01-06 --version
+
+      # Finally, run the pre-commit hook
       - run: ./.pre-commit/pre-commit
         env:
           CARGO_INCREMENTAL: 1
