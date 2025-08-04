@@ -36,20 +36,24 @@ jobs:
         uses: docker/setup-docker-action@v4
 
       # Install Rust
+      #
       # See: https://github.com/actions-rust-lang/setup-rust-toolchain
       # Note that it can handle the Rust cache automatically (via Swatinem/rust-cache),
-      # but we use a custom cache for NPM stuff.
+      # and even take care of (=cache) other directories.
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1.13.0
         with:
           toolchain: stable, nightly-2025-01-06
           override: true
           components: rustfmt, clippy
+          cache-all-crates: true
+          cache-workspace-crates: true
           cache-directories: |
             ~/.npm
             /usr/local/bin
 
       # Install Rust tools
+      #
       # For more tools, see: https://github.com/taiki-e/install-action/blob/main/TOOLS.md
       - name: Install Rust tools
         uses: taiki-e/install-action@v2
@@ -57,11 +61,18 @@ jobs:
           tool: cargo-binstall,just,cargo-nextest,typos
 
       # Install NPM stuff from helpers/npm-install-g.txt
+      #
+      # Why have a separate file?
+      # The spirit is that we can run things locally and then reuse the same stuff in CI,
+      # not code everything in CI and then try to reverse engineer how it could run locally.
       - name: Install NPM stuff from helpers/npm-install-g.txt
         run: |
           while read -r tool; do
             if ! command -v "$tool" &> /dev/null; then
+              echo "Installing tool: $tool"
               npm install -g "$tool"
+            else
+                echo "Tool already installed: $tool"
             fi
           done < helpers/npm-install-g.txt
 
