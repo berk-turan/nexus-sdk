@@ -194,3 +194,31 @@ test-cli-completions:
     #!/usr/bin/env bash
 
     source <(cargo +stable run --package nexus-cli completion bash)
+
+executable-scripts:
+    #!/usr/bin/env bash
+
+    set -euo pipefail
+
+    error=0
+
+    cd $(git rev-parse --show-toplevel)
+
+    for f in $(git ls-files); do
+        first_line=$(head -n 1 "$f")
+
+        # see if the first line is a shell shebang
+        if [[ "$first_line" =~ ^(#! *) ]]; then
+            # ... of the correct format, we checked that in another script.
+            if [[ "$first_line" =~ ^(#! */usr/bin/env *) ]]; then
+                if [[ ! -x "$f" ]]; then
+                  echo "❌  $f is not executable" >&2
+                  error=1
+                else
+                  echo "✅  $f" >&2
+                fi
+            fi
+        fi
+    done
+
+    exit $error
