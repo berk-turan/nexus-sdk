@@ -29,7 +29,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    #[command(subcommand, about = "Manage Nexus Tools")]
+    #[command(subcommand, about = "Manage Nexus Tool(s)")]
     Tool(tool::ToolCommand),
     #[command(subcommand, about = "Manage Nexus Configuration")]
     Conf(conf::ConfCommand),
