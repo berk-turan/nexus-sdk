@@ -1,6 +1,7 @@
 use crate::{
     idents::{sui_framework::Address, ModuleAndNameIdent},
     sui,
+    types::EdgeKind,
     ToolFqn,
 };
 
@@ -48,6 +49,41 @@ impl Dag {
     pub const DAG_EXECUTION: ModuleAndNameIdent = ModuleAndNameIdent {
         module: DAG_MODULE,
         name: sui::move_ident_str!("DAGExecution"),
+    };
+    /// Create a break edge kind.
+    ///
+    /// `nexus_workflow::dag::edge_kind_break`
+    pub const EDGE_KIND_BREAK: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("edge_kind_break"),
+    };
+    /// Create a collect edge kind.
+    ///
+    /// `nexus_workflow::dag::edge_kind_collect`
+    pub const EDGE_KIND_COLLECT: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("edge_kind_collect"),
+    };
+    /// Create a do-while edge kind.
+    ///
+    /// `nexus_workflow::dag::edge_kind_do_while`
+    pub const EDGE_KIND_DO_WHILE: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("edge_kind_do_while"),
+    };
+    /// Create a for-each edge kind.
+    ///
+    /// `nexus_workflow::dag::edge_kind_for_each`
+    pub const EDGE_KIND_FOR_EACH: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("edge_kind_for_each"),
+    };
+    /// Create a normal edge kind.
+    ///
+    /// `nexus_workflow::dag::edge_kind_normal`
+    pub const EDGE_KIND_NORMAL: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("edge_kind_normal"),
     };
     /// Create an encrypted InputPort from an ASCII string.
     ///
@@ -354,6 +390,29 @@ impl Dag {
             vec![],
             vec![str],
         ))
+    }
+
+    /// Create an edge kind from an enum variant.
+    pub fn edge_kind_from_enum(
+        tx: &mut sui::ProgrammableTransactionBuilder,
+        workflow_pkg_id: sui::ObjectID,
+        edge_kind: &EdgeKind,
+    ) -> sui::Argument {
+        let ident = match edge_kind {
+            EdgeKind::Normal => Self::EDGE_KIND_NORMAL,
+            EdgeKind::ForEach => Self::EDGE_KIND_FOR_EACH,
+            EdgeKind::Collect => Self::EDGE_KIND_COLLECT,
+            EdgeKind::DoWhile => Self::EDGE_KIND_DO_WHILE,
+            EdgeKind::Break => Self::EDGE_KIND_BREAK,
+        };
+
+        tx.programmable_move_call(
+            workflow_pkg_id,
+            ident.module.into(),
+            ident.name.into(),
+            vec![],
+            vec![],
+        )
     }
 }
 
