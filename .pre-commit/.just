@@ -188,3 +188,9 @@ typos: _check-typos
     cd $(git rev-parse --show-toplevel)
 
     typos
+
+# Test completions (bash for now)
+test-cli-completions:
+    #!/usr/bin/env bash
+
+    source <(cargo +stable run --package nexus-cli completion bash)

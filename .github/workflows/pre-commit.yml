@@ -65,16 +65,9 @@ jobs:
       # Why have a separate file?
       # The spirit is that we can run things locally and then reuse the same stuff in CI,
       # not code everything in CI and then try to reverse engineer how it could run locally.
+      #
       - name: Install NPM stuff from helpers/npm-install-g.txt
-        run: |
-          while read -r tool; do
-            if ! command -v "$tool" &> /dev/null; then
-              echo "Installing tool: $tool"
-              npm install -g "$tool"
-            else
-                echo "Tool already installed: $tool"
-            fi
-          done < helpers/npm-install-g.txt
+        run: ./helpers/npm-install-g.sh
 
       - run: cargo +stable --version && cargo +nightly-2025-01-06 --version
       - run: ./.pre-commit/pre-commit

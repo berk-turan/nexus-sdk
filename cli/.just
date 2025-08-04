@@ -24,12 +24,6 @@ check: _check-cargo
 test: _check-cargo
     cargo +stable test --package {{ package }}
 
-# Test completions (bash for now)
-test-completions: build
-    #!/usr/bin/env bash
-
-    source <(cargo +stable run --package {{ package }} completion bash)
-
 # Run rustfmt on the CLI project
 fmt-check: _check-cargo
     cargo +nightly-2025-01-06 fmt --package {{ package }} --check
