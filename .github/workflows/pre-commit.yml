@@ -47,6 +47,7 @@ jobs:
       # Install Rust tools
       #
       # For more tools, see: https://github.com/taiki-e/install-action/blob/main/TOOLS.md
+      
       - name: Install Rust tools
         uses: taiki-e/install-action@v2
         with:
