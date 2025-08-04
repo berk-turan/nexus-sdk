@@ -23,6 +23,7 @@ env:
   RUSTFLAGS: >
     -C codegen-units=1
 
+
 jobs:
   build-and-test:
     name: Run pre-commit checks
