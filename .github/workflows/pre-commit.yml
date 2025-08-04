@@ -42,6 +42,7 @@ jobs:
           toolchain: stable, nightly-2025-01-06
           override: true
           components: rustfmt, clippy
+          cache-shared-key: v1-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       # Install Rust tools
       #
