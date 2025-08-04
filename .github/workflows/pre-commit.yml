@@ -25,11 +25,9 @@ env:
 
 
 jobs:
-  build-and-test:
+  run-pre-commit:
     name: Run pre-commit checks
     runs-on: ubuntu-latest
-    env:
-      CARGO_INCREMENTAL: 1
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -69,3 +67,5 @@ jobs:
 
       - run: cargo +stable --version && cargo +nightly-2025-01-06 --version
       - run: ./.pre-commit/pre-commit
+        env:
+          CARGO_INCREMENTAL: 1
