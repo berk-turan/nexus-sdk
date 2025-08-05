@@ -26,6 +26,7 @@ pub struct Dag {
 #[serde(tag = "variant", rename_all = "snake_case")]
 pub enum VertexKind {
     OffChain {
+        // comment
         tool_fqn: ToolFqn,
     },
     OnChain {

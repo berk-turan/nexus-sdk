@@ -10,7 +10,6 @@ package := 'nexus-toolkit'
 
 [private]
 _default:
-
     @just --list toolkit-rust
 
 # Build the Toolkit for Rust project
