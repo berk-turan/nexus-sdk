@@ -156,7 +156,7 @@ pub struct WalkAdvancedEvent {
     )]
     pub walk_index: u64,
     /// Which vertex was just executed.
-    pub vertex: TypeName,
+    pub vertex: RuntimeVertex,
     /// Which output variant was evaluated.
     pub variant: TypeName,
     /// What data is associated with the variant.
@@ -175,7 +175,7 @@ pub struct EndStateReachedEvent {
     )]
     pub walk_index: u64,
     /// Which vertex was just executed.
-    pub vertex: TypeName,
+    pub vertex: RuntimeVertex,
     /// Which output variant was evaluated.
     pub variant: TypeName,
     /// What data is associated with the variant.

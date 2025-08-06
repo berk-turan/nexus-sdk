@@ -1,7 +1,7 @@
 use crate::{
     idents::{sui_framework::Address, ModuleAndNameIdent},
     sui,
-    types::EdgeKind,
+    types::{EdgeKind, RuntimeVertex},
     ToolFqn,
 };
 
@@ -168,6 +168,20 @@ impl Dag {
     pub const REQUEST_WALK_EXECUTION: ModuleAndNameIdent = ModuleAndNameIdent {
         module: DAG_MODULE,
         name: sui::move_ident_str!("request_walk_execution"),
+    };
+    /// Create a `RuntimeVertex::Plain` from a string.
+    ///
+    /// `nexus_workflow::dag::runtime_vertex_plain_from_string`
+    pub const RUNTIME_VERTEX_PLAIN_FROM_STRING: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("runtime_vertex_plain_from_string"),
+    };
+    /// Create a `RuntimeVertex::WithIterator` from a string.
+    ///
+    /// `nexus_workflow::dag::runtime_vertex_with_iterator_from_string`
+    pub const RUNTIME_VERTEX_WITH_ITERATOR_FROM_STRING: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: DAG_MODULE,
+        name: sui::move_ident_str!("runtime_vertex_with_iterator_from_string"),
     };
     /// One of the functions to call when an off-chain tool is evaluated to submit
     /// its result to the workflow.
@@ -413,6 +427,44 @@ impl Dag {
             vec![],
             vec![],
         )
+    }
+
+    /// Create a runtime vertex from an enum variant
+    pub fn runtime_vertex_from_enum(
+        tx: &mut sui::ProgrammableTransactionBuilder,
+        workflow_pkg_id: sui::ObjectID,
+        runtime_vertex: &RuntimeVertex,
+    ) -> anyhow::Result<sui::Argument> {
+        match runtime_vertex {
+            RuntimeVertex::Plain { vertex } => {
+                let name = super::move_std::Ascii::ascii_string_from_str(tx, &vertex.name)?;
+
+                Ok(tx.programmable_move_call(
+                    workflow_pkg_id,
+                    Self::RUNTIME_VERTEX_PLAIN_FROM_STRING.module.into(),
+                    Self::RUNTIME_VERTEX_PLAIN_FROM_STRING.name.into(),
+                    vec![],
+                    vec![name],
+                ))
+            }
+            RuntimeVertex::WithIterator {
+                vertex,
+                iteration,
+                out_of,
+            } => {
+                let name = super::move_std::Ascii::ascii_string_from_str(tx, &vertex.name)?;
+                let iteration = tx.pure(*iteration)?;
+                let out_of = tx.pure(*out_of)?;
+
+                Ok(tx.programmable_move_call(
+                    workflow_pkg_id,
+                    Self::RUNTIME_VERTEX_WITH_ITERATOR_FROM_STRING.module.into(),
+                    Self::RUNTIME_VERTEX_WITH_ITERATOR_FROM_STRING.name.into(),
+                    vec![],
+                    vec![name, iteration, out_of],
+                ))
+            }
+        }
     }
 }
 
