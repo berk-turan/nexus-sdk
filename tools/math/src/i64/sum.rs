@@ -59,5 +59,78 @@ impl NexusTool for I64Sum {
             )
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-// TODO: tests, docs
+    #[tokio::test]
+    async fn test_sum_empty_vec() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![] };
+        match tool.invoke(input).await {
+            Output::Ok { result } => assert_eq!(result, 0),
+            _ => panic!("Expected Ok variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sum_single_element() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![42] };
+        match tool.invoke(input).await {
+            Output::Ok { result } => assert_eq!(result, 42),
+            _ => panic!("Expected Ok variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sum_multiple_elements() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![1, 2, 3, 4, 5] };
+        match tool.invoke(input).await {
+            Output::Ok { result } => assert_eq!(result, 15),
+            _ => panic!("Expected Ok variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sum_negative_numbers() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![-1, -2, -3] };
+        match tool.invoke(input).await {
+            Output::Ok { result } => assert_eq!(result, -6),
+            _ => panic!("Expected Ok variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sum_mixed_numbers() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![10, -5, 3, -2] };
+        match tool.invoke(input).await {
+            Output::Ok { result } => assert_eq!(result, 6),
+            _ => panic!("Expected Ok variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sum_overflow() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![i64::MAX, 1] };
+        match tool.invoke(input).await {
+            Output::Err { reason } => assert!(reason.contains("overflow")),
+            _ => panic!("Expected Err variant"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sum_underflow() {
+        let tool = I64Sum::new().await;
+        let input = Input { vec: vec![i64::MIN, -1] };
+        match tool.invoke(input).await {
+            Output::Err { reason } => assert!(reason.contains("overflow")),
+            _ => panic!("Expected Err variant"),
+        }
+    }
+}
+
