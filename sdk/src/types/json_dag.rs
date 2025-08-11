@@ -86,7 +86,7 @@ pub struct Edge {
 }
 
 // TODO: validator changes and tests
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     #[default]
