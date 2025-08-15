@@ -1,9 +1,11 @@
 use wasm_bindgen::prelude::*;
 
+mod crypto;
+mod dag_execute;
 mod dag_publish;
 mod dag_validate;
 
-pub use {dag_publish::*, dag_validate::*};
+pub use {crypto::*, dag_execute::*, dag_publish::*, dag_validate::*};
 
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
