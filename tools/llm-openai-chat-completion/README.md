@@ -8,9 +8,9 @@ It uses the [`async_openai`] crate to interact with the OpenAI API.
 
 ## Input
 
-**`api_key`: [`Secret<String>`]**
+**`api_key`: [`String`]**
 
-The API key to invoke the OpenAI API with. Encrypted with the Tool's key pair.
+The API key to invoke the OpenAI API with.
 
 TODO: <https://github.com/Talus-Network/nexus-sdk/issues/29>.
 
