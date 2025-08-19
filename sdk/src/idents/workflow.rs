@@ -364,6 +364,14 @@ pub struct ToolRegistry;
 const TOOL_REGISTRY_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("tool_registry");
 
 impl ToolRegistry {
+    /// Add an address to the allowlist for tool registration.
+    /// Only callable by the holder of OverSlashing cap.
+    ///
+    /// `nexus_workflow::tool_registry::add_allowed_owner`
+    pub const ADD_ALLOWED_OWNER: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: TOOL_REGISTRY_MODULE,
+        name: sui::move_ident_str!("add_allowed_owner"),
+    };
     /// Claim collateral for a tool and transfer the balance to the tx sender.
     ///
     /// `nexus_workflow::tool_registry::claim_collateral_for_self`
@@ -407,6 +415,14 @@ impl ToolRegistry {
     pub const REGISTER_OFF_CHAIN_TOOL_FOR_SELF: ModuleAndNameIdent = ModuleAndNameIdent {
         module: TOOL_REGISTRY_MODULE,
         name: sui::move_ident_str!("register_off_chain_tool_for_self"),
+    };
+    /// Remove an address from the allowlist for tool registration.
+    /// Only callable by the holder of OverSlashing cap.
+    ///
+    /// `nexus_workflow::tool_registry::remove_allowed_owner`
+    pub const REMOVE_ALLOWED_OWNER: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: TOOL_REGISTRY_MODULE,
+        name: sui::move_ident_str!("remove_allowed_owner"),
     };
     /// The ToolRegistry struct type.
     ///
@@ -546,34 +562,54 @@ impl Gas {
     }
 }
 
-// == `nexus_workflow::default_gas_extension` ==
+// == `nexus_workflow::gas_extension` ==
 
-pub struct DefaultGasExtension;
+pub struct GasExtension;
 
-const DEFAULT_GAS_EXTENSION_MODULE: &sui::MoveIdentStr =
-    sui::move_ident_str!("default_gas_extension");
+const GAS_EXTENSION_MODULE: &sui::MoveIdentStr = sui::move_ident_str!("gas_extension");
 
-impl DefaultGasExtension {
+impl GasExtension {
     /// Buy an expiry gas extension ticket.
     ///
-    /// `nexus_workflow::default_gas_extension::buy_expiry_gas_ticket`
+    /// `nexus_workflow::gas_extension::buy_expiry_gas_ticket`
     pub const BUY_EXPIRY_GAS_TICKET: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: DEFAULT_GAS_EXTENSION_MODULE,
+        module: GAS_EXTENSION_MODULE,
         name: sui::move_ident_str!("buy_expiry_gas_ticket"),
+    };
+    /// Buy a limited invocations gas extension ticket.
+    ///
+    /// `nexus_workflow::gas_extension::buy_limited_invocations_gas_ticket`
+    pub const BUY_LIMITED_INVOCATIONS_GAS_TICKET: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: GAS_EXTENSION_MODULE,
+        name: sui::move_ident_str!("buy_limited_invocations_gas_ticket"),
     };
     /// Disable expiry gas extension for a tool.
     ///
-    /// `nexus_workflow::default_gas_extension::disable_expiry`
+    /// `nexus_workflow::gas_extension::disable_expiry`
     pub const DISABLE_EXPIRY: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: DEFAULT_GAS_EXTENSION_MODULE,
+        module: GAS_EXTENSION_MODULE,
         name: sui::move_ident_str!("disable_expiry"),
+    };
+    /// Disable limited invocations gas extension for a tool.
+    ///
+    /// `nexus_workflow::gas_extension::disable_limited_invocations`
+    pub const DISABLE_LIMITED_INVOCATIONS: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: GAS_EXTENSION_MODULE,
+        name: sui::move_ident_str!("disable_limited_invocations"),
     };
     /// Enable expiry gas extension for a tool.
     ///
-    /// `nexus_workflow::default_gas_extension::enable_expiry`
+    /// `nexus_workflow::gas_extension::enable_expiry`
     pub const ENABLE_EXPIRY: ModuleAndNameIdent = ModuleAndNameIdent {
-        module: DEFAULT_GAS_EXTENSION_MODULE,
+        module: GAS_EXTENSION_MODULE,
         name: sui::move_ident_str!("enable_expiry"),
+    };
+    /// Enable limited invocations gas extension for a tool.
+    ///
+    /// `nexus_workflow::gas_extension::enable_limited_invocations`
+    pub const ENABLE_LIMITED_INVOCATIONS: ModuleAndNameIdent = ModuleAndNameIdent {
+        module: GAS_EXTENSION_MODULE,
+        name: sui::move_ident_str!("enable_limited_invocations"),
     };
 }
 
