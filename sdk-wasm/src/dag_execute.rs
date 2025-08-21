@@ -495,3 +495,72 @@ pub fn build_dag_execution_transaction(
         },
     }
 }
+
+/// ✅ Simple validation for DAG execution readiness
+#[wasm_bindgen]
+pub fn validate_dag_execution_readiness(
+    dag_id: &str,
+    entry_group: &str,
+    input_json: &str,
+) -> ExecutionResult {
+    // Parse input JSON to validate structure
+    let input_data: serde_json::Value = match serde_json::from_str(input_json) {
+        Ok(data) => data,
+        Err(e) => {
+            return ExecutionResult {
+                is_success: false,
+                error_message: Some(format!("Input JSON parsing error: {}", e)),
+                transaction_data: None,
+            }
+        }
+    };
+
+    // Basic validation checks
+    if dag_id.is_empty() {
+        return ExecutionResult {
+            is_success: false,
+            error_message: Some("DAG ID is required".to_string()),
+            transaction_data: None,
+        };
+    }
+
+    if entry_group.is_empty() {
+        return ExecutionResult {
+            is_success: false,
+            error_message: Some("Entry group is required".to_string()),
+            transaction_data: None,
+        };
+    }
+
+    // Check if input data is an object (required for vertex-port mapping)
+    if !input_data.is_object() {
+        return ExecutionResult {
+            is_success: false,
+            error_message: Some(
+                "Input data must be a JSON object with vertex-port structure".to_string(),
+            ),
+            transaction_data: None,
+        };
+    }
+
+    let readiness_info = serde_json::json!({
+        "dag_id": dag_id,
+        "entry_group": entry_group,
+        "input_vertices": input_data.as_object().unwrap().keys().collect::<Vec<_>>(),
+        "ready_for_execution": true,
+        "validation_timestamp": js_sys::Date::now() as u64 / 1000 // Unix timestamp
+    });
+
+    match serde_json::to_string(&readiness_info) {
+        Ok(serialized) => ExecutionResult {
+            is_success: true,
+            error_message: None,
+            transaction_data: Some(serialized),
+        },
+        Err(e) => ExecutionResult {
+            is_success: false,
+            error_message: Some(format!("Readiness validation error: {}", e)),
+            transaction_data: None,
+        },
+    }
+}
