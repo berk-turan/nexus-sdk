@@ -35,3 +35,37 @@ The spot price was retrieved successfully.
 The spot price request failed due to an error.
 
 - **`err.reason`: [`String`]** - A detailed error message describing what went wrong
+
+---
+
+# `xyz.taluslabs.exchanges.coinbase.get-product-ticker@1`
+
+Standard Nexus Tool that retrieves the current ticker information for a product from Coinbase Exchange API. Coinbase Exchange API [reference](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-ticker)
+
+## Input
+
+**`product_id`: [`String`]**
+
+The product ID (currency pair) to get ticker for (e.g., "BTC-USD", "ETH-EUR").
+
+## Output Variants & Ports
+
+**`ok`**
+
+The ticker information was retrieved successfully.
+
+- **`ok.ask`: [`String`]** - Best ask price
+- **`ok.bid`: [`String`]** - Best bid price
+- **`ok.volume`: [`String`]** - 24h volume
+- **`ok.trade_id`: [`u64`]** - Trade ID of the last trade
+- **`ok.price`: [`String`]** - Last trade price
+- **`ok.size`: [`String`]** - Last trade size
+- **`ok.time`: [`String`]** - Time of the last trade
+- **`ok.rfq_volume`: [`String`]** - RFQ volume
+- **`ok.conversions_volume`: [`String`] (optional)** - Conversions volume (only included if present)
+
+**`err`**
+
+The ticker request failed due to an error.
+
+- **`err.reason`: [`String`]** - A detailed error message describing what went wrong
