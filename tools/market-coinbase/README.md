@@ -4,9 +4,11 @@ Standard Nexus Tool that retrieves the current spot price for a currency pair fr
 
 ## Input
 
-**`currency_pair`: [`String`]**
+**`currency_pair`: [`String` | `Array`]**
 
-The currency pair to get spot price for (e.g., "BTC-USD", "ETH-EUR", "ADA-USD").
+The currency pair to get spot price for. Can be provided in two formats:
+- **String format**: `"BTC-USD"`, `"ETH-EUR"`, `"ADA-USD"`
+- **Array format**: `["BTC", "USD"]`, `["ETH", "EUR"]`, `["ADA", "USD"]`
 
 ## Output Variants & Ports
 

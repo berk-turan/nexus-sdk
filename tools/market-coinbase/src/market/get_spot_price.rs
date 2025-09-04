@@ -13,13 +13,47 @@ use {
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
     schemars::JsonSchema,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize},
+    serde_json::Value,
 };
+
+/// Custom deserializer for currency_pair that accepts both string and tuple formats
+fn deserialize_currency_pair<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+
+    match value {
+        Value::String(s) => {
+            // Direct string format like "BTC-USD"
+            Ok(s)
+        }
+        Value::Array(arr) => {
+            // Tuple format like ["BTC", "USD"]
+            if arr.len() == 2 {
+                let base = arr[0].as_str().ok_or_else(|| {
+                    serde::de::Error::custom("First element of currency pair array must be a string")
+                })?;
+                let quote = arr[1].as_str().ok_or_else(|| {
+                    serde::de::Error::custom("Second element of currency pair array must be a string")
+                })?;
+                Ok(format!("{}-{}", base, quote))
+            } else {
+                Err(serde::de::Error::custom("Currency pair array must contain exactly 2 elements"))
+            }
+        }
+        _ => Err(serde::de::Error::custom(
+            "Currency pair must be either a string (e.g., 'BTC-USD') or an array of two strings (e.g., ['BTC', 'USD'])"
+        )),
+    }
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    /// Currency pair to get spot price for (e.g., "BTC-USD", "ETH-EUR")
+    /// Currency pair to get spot price for (e.g., "BTC-USD", "ETH-EUR" or ["BTC", "USD"])
+    #[serde(deserialize_with = "deserialize_currency_pair")]
     currency_pair: String,
 }
 
@@ -135,6 +169,14 @@ mod tests {
         }
     }
 
+    fn create_test_input_from_tuple() -> Input {
+        // This simulates deserializing from JSON: ["BTC", "USD"]
+        let json = serde_json::json!({
+            "currency_pair": ["BTC", "USD"]
+        });
+        serde_json::from_value(json).expect("Failed to deserialize test input")
+    }
+
     #[tokio::test]
     async fn test_successful_spot_price() {
         // Create server and tool
@@ -160,6 +202,50 @@ mod tests {
 
         // Test the spot price request
         let result = tool.invoke(create_test_input()).await;
+
+        // Verify the response
+        match result {
+            Output::Ok {
+                amount,
+                base,
+                currency,
+            } => {
+                assert_eq!(amount, "45000.00");
+                assert_eq!(base, "BTC");
+                assert_eq!(currency, "USD");
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_successful_spot_price_with_tuple() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response
+        let mock = server
+            .mock("GET", "/v2/prices/BTC-USD/spot")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "data": {
+                        "amount": "45000.00",
+                        "base": "BTC",
+                        "currency": "USD"
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the spot price request with tuple format
+        let result = tool.invoke(create_test_input_from_tuple()).await;
 
         // Verify the response
         match result {
@@ -236,5 +322,59 @@ mod tests {
 
         // Verify that the mock was called
         mock.assert_async().await;
+    }
+
+    #[test]
+    fn test_deserialize_currency_pair_string() {
+        let json = serde_json::json!({
+            "currency_pair": "ETH-EUR"
+        });
+        let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
+        assert_eq!(input.currency_pair, "ETH-EUR");
+    }
+
+    #[test]
+    fn test_deserialize_currency_pair_tuple() {
+        let json = serde_json::json!({
+            "currency_pair": ["ETH", "EUR"]
+        });
+        let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
+        assert_eq!(input.currency_pair, "ETH-EUR");
+    }
+
+    #[test]
+    fn test_deserialize_currency_pair_invalid_tuple_length() {
+        let json = serde_json::json!({
+            "currency_pair": ["ETH"]
+        });
+        let result: Result<Input, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exactly 2 elements"));
+    }
+
+    #[test]
+    fn test_deserialize_currency_pair_invalid_tuple_type() {
+        let json = serde_json::json!({
+            "currency_pair": ["ETH", 123]
+        });
+        let result: Result<Input, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be a string"));
+    }
+
+    #[test]
+    fn test_deserialize_currency_pair_invalid_type() {
+        let json = serde_json::json!({
+            "currency_pair": 123
+        });
+        let result: Result<Input, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be either a string"));
     }
 }
