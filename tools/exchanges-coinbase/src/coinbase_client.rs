@@ -3,7 +3,7 @@
 //! This module provides a clean client for interacting with the Coinbase API.
 
 use {
-    crate::{error::CoinbaseErrorResponse, market::COINBASE_API_BASE},
+    crate::{error::CoinbaseErrorResponse, exchanges::COINBASE_API_BASE},
     reqwest::Client,
     serde::de::DeserializeOwned,
     std::sync::Arc,

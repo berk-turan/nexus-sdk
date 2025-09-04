@@ -1,11 +1,11 @@
-//! # `xyz.taluslabs.market.coinbase.get-spot-price@1`
+//! # `xyz.taluslabs.exchanges.coinbase.get-spot-price@1`
 //!
 //! Standard Nexus Tool that retrieves the current spot price for a currency pair from Coinbase.
 
 use {
     crate::{
         coinbase_client::CoinbaseClient,
-        market::{
+        exchanges::{
             models::{CoinbaseApiResponse, SpotPriceData},
             COINBASE_API_BASE,
         },
@@ -109,7 +109,7 @@ impl NexusTool for GetSpotPrice {
     }
 
     fn fqn() -> ToolFqn {
-        fqn!("xyz.taluslabs.market.coinbase.get-spot-price@1")
+        fqn!("xyz.taluslabs.exchanges.coinbase.get-spot-price@1")
     }
 
     fn path() -> &'static str {

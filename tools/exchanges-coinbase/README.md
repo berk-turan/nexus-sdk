@@ -1,4 +1,4 @@
-# `xyz.taluslabs.market.coinbase.get-spot-price@1`
+# `xyz.taluslabs.exchanges.coinbase.get-spot-price@1`
 
 Standard Nexus Tool that retrieves the current spot price for a currency pair from Coinbase. Coinbase API [reference](https://docs.cdp.coinbase.com/coinbase-app/track-apis/prices)
 

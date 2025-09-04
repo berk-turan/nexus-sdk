@@ -1,4 +1,4 @@
-//! Data models for Coinbase market endpoints
+//! Data models for Coinbase exchange endpoints
 
 use {
     schemars::JsonSchema,

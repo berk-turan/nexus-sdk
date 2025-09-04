@@ -4,9 +4,9 @@ use nexus_toolkit::bootstrap;
 
 mod coinbase_client;
 mod error;
-mod market;
+mod exchanges;
 
 #[tokio::main]
 async fn main() {
-    bootstrap!([market::get_spot_price::GetSpotPrice,]);
+    bootstrap!([exchanges::get_spot_price::GetSpotPrice,]);
 }
