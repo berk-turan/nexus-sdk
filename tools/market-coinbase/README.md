@@ -7,6 +7,7 @@ Standard Nexus Tool that retrieves the current spot price for a currency pair fr
 **`currency_pair`: [`String` | `Vec<String>`]**
 
 The currency pair to get spot price for. Can be provided in multiple formats:
+
 - **Full pair string**: `"BTC-USD"`, `"ETH-EUR"`, `"SUI-USD"`
 - **Array format**: `["BTC", "USD"]`, `["ETH", "EUR"]`, `["SUI", "USD"]`
 - **Base currency only**: `"BTC"`, `"ETH"`, `"SUI"` (when `quote_currency` is provided)
@@ -34,4 +35,3 @@ The spot price was retrieved successfully.
 The spot price request failed due to an error.
 
 - **`err.reason`: [`String`]** - A detailed error message describing what went wrong
-
