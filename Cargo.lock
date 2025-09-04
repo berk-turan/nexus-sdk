@@ -4213,6 +4213,7 @@ dependencies = [
 name = "market-coinbase"
 version = "0.2.0"
 dependencies = [
+ "chrono",
  "mockito",
  "nexus-sdk",
  "nexus-toolkit",

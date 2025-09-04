@@ -7,13 +7,17 @@ Standard Nexus Tool that retrieves the current spot price for a currency pair fr
 **`currency_pair`: [`String` | `Vec<String>`]**
 
 The currency pair to get spot price for. Can be provided in multiple formats:
-- **Full pair string**: `"BTC-USD"`, `"ETH-EUR"`, `"ADA-USD"`
-- **Array format**: `["BTC", "USD"]`, `["ETH", "EUR"]`, `["ADA", "USD"]`
-- **Base currency only**: `"BTC"`, `"ETH"`, `"ADA"` (when `quote_currency` is provided)
+- **Full pair string**: `"BTC-USD"`, `"ETH-EUR"`, `"SUI-USD"`
+- **Array format**: `["BTC", "USD"]`, `["ETH", "EUR"]`, `["SUI", "USD"]`
+- **Base currency only**: `"BTC"`, `"ETH"`, `"SUI"` (when `quote_currency` is provided)
 
 **`quote_currency`: [`String`] (optional)**
 
 The quote currency to pair with the base currency. When provided, `currency_pair` should contain only the base currency (e.g., `"BTC"` with `quote_currency: "USD"`).
+
+**`date`: [`String`] (optional)**
+
+The date for historical spot price in YYYY-MM-DD format (e.g., `"2025-08-21"`). If not provided, returns the current spot price.
 
 ## Output Variants & Ports
 

@@ -10,6 +10,7 @@ use {
             COINBASE_API_BASE,
         },
     },
+    chrono::{NaiveDate, Utc},
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
     schemars::JsonSchema,
@@ -49,6 +50,21 @@ where
     }
 }
 
+/// Validates that the date string is in YYYY-MM-DD format and is a valid date
+fn validate_date_format(date: &str) -> Result<(), String> {
+    // Parse the date using chrono
+    let parsed_date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| "Date must be in YYYY-MM-DD format".to_string())?;
+
+    // Check that the date is not in the future
+    let today = Utc::now().date_naive();
+    if parsed_date > today {
+        return Err("Date cannot be in the future".to_string());
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -58,6 +74,8 @@ pub(crate) struct Input {
     currency_pair: String,
     /// Optional quote currency (e.g., "USD", "EUR"). When provided, currency_pair should be just the base currency
     quote_currency: Option<String>,
+    /// Optional date for historical spot price (format: YYYY-MM-DD). If not provided, returns current spot price
+    date: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -131,8 +149,21 @@ impl NexusTool for GetSpotPrice {
             }
         };
 
+        // Validate date format if provided
+        if let Some(ref date) = request.date {
+            if let Err(validation_error) = validate_date_format(date) {
+                return Output::Err {
+                    reason: format!("Invalid date format: {}", validation_error),
+                };
+            }
+        }
+
         // Create the endpoint path
-        let endpoint = format!("v2/prices/{}/spot", final_currency_pair);
+        let endpoint = if let Some(ref date) = request.date {
+            format!("v2/prices/{}/spot?date={}", final_currency_pair, date)
+        } else {
+            format!("v2/prices/{}/spot", final_currency_pair)
+        };
 
         // Make the API request using the client
         match self
@@ -191,6 +222,7 @@ mod tests {
         Input {
             currency_pair: "BTC-USD".to_string(),
             quote_currency: None,
+            date: None,
         }
     }
 
@@ -206,6 +238,15 @@ mod tests {
         Input {
             currency_pair: "BTC".to_string(),
             quote_currency: Some("USD".to_string()),
+            date: None,
+        }
+    }
+
+    fn create_test_input_with_date() -> Input {
+        Input {
+            currency_pair: "BTC-USD".to_string(),
+            quote_currency: None,
+            date: Some("2023-12-01".to_string()),
         }
     }
 
@@ -304,6 +345,7 @@ mod tests {
         let input = Input {
             currency_pair: "".to_string(),
             quote_currency: None,
+            date: None,
         };
 
         let result = tool.invoke(input).await;
@@ -341,6 +383,7 @@ mod tests {
         let input = Input {
             currency_pair: "INVALID-PAIR".to_string(),
             quote_currency: None,
+            date: None,
         };
 
         // Test the spot price request
@@ -366,6 +409,7 @@ mod tests {
         let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
         assert_eq!(input.currency_pair, "ETH-EUR");
         assert_eq!(input.quote_currency, None);
+        assert_eq!(input.date, None);
     }
 
     #[test]
@@ -376,6 +420,7 @@ mod tests {
         let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
         assert_eq!(input.currency_pair, "ETH-EUR");
         assert_eq!(input.quote_currency, None);
+        assert_eq!(input.date, None);
     }
 
     #[test]
@@ -387,6 +432,7 @@ mod tests {
         let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
         assert_eq!(input.currency_pair, "ETH");
         assert_eq!(input.quote_currency, Some("EUR".to_string()));
+        assert_eq!(input.date, None);
     }
 
     #[test]
@@ -477,6 +523,7 @@ mod tests {
         let input = Input {
             currency_pair: "BTC-USD".to_string(),
             quote_currency: Some("EUR".to_string()),
+            date: None,
         };
 
         let result = tool.invoke(input).await;
@@ -496,6 +543,7 @@ mod tests {
         let input = Input {
             currency_pair: "".to_string(),
             quote_currency: Some("USD".to_string()),
+            date: None,
         };
 
         let result = tool.invoke(input).await;
@@ -518,6 +566,7 @@ mod tests {
         let input = Input {
             currency_pair: "BTC".to_string(),
             quote_currency: Some("".to_string()),
+            date: None,
         };
 
         let result = tool.invoke(input).await;
@@ -531,5 +580,218 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_deserialize_with_date() {
+        let json = serde_json::json!({
+            "currency_pair": "BTC-USD",
+            "date": "2023-12-01"
+        });
+        let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
+        assert_eq!(input.currency_pair, "BTC-USD");
+        assert_eq!(input.quote_currency, None);
+        assert_eq!(input.date, Some("2023-12-01".to_string()));
+    }
+
+    #[test]
+    fn test_validate_date_format_valid() {
+        assert!(validate_date_format("2023-12-01").is_ok());
+        assert!(validate_date_format("2000-01-01").is_ok());
+        assert!(validate_date_format("2020-12-31").is_ok());
+    }
+
+    #[test]
+    fn test_validate_date_format_invalid_format_clearly_wrong() {
+        let result = validate_date_format("not-a-date");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("YYYY-MM-DD format"));
+    }
+
+    #[test]
+    fn test_validate_date_format_invalid_format() {
+        let result = validate_date_format("2023/12/01");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("YYYY-MM-DD format"));
+    }
+
+    #[test]
+    fn test_validate_date_format_future_date() {
+        // Use a date that's definitely in the future (tomorrow)
+        let tomorrow = (Utc::now().date_naive() + chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let result = validate_date_format(&tomorrow);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be in the future"));
+    }
+
+    #[tokio::test]
+    async fn test_successful_spot_price_with_date() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response for historical price
+        let mock = server
+            .mock("GET", "/v2/prices/BTC-USD/spot?date=2023-12-01")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "data": {
+                        "amount": "42000.00",
+                        "base": "BTC",
+                        "currency": "USD"
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the spot price request with historical date
+        let result = tool.invoke(create_test_input_with_date()).await;
+
+        // Verify the response
+        match result {
+            Output::Ok {
+                amount,
+                base,
+                currency,
+            } => {
+                assert_eq!(amount, "42000.00");
+                assert_eq!(base, "BTC");
+                assert_eq!(currency, "USD");
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_invalid_date_format() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            currency_pair: "BTC-USD".to_string(),
+            quote_currency: None,
+            date: Some("2023/12/01".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(reason.contains("Invalid date format"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_both_currency_fields_empty() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            currency_pair: "".to_string(),
+            quote_currency: Some("".to_string()),
+            date: None,
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert_eq!(
+                    reason,
+                    "Both base currency and quote currency must be non-empty"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_currency_pair_with_special_characters() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            currency_pair: "BTC@USD".to_string(),
+            quote_currency: None,
+            date: None,
+        };
+
+        let result = tool.invoke(input).await;
+
+        // Should fail due to invalid currency pair format
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                // API should reject this as invalid
+                assert!(reason.contains("API error") || reason.contains("Invalid"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_date_format_edge_cases() {
+        // Test leap year
+        assert!(validate_date_format("2024-02-29").is_ok());
+
+        // Test non-leap year February 29th (should fail)
+        let result = validate_date_format("2023-02-29");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("YYYY-MM-DD format"));
+
+        // Test December 31st
+        assert!(validate_date_format("2023-12-31").is_ok());
+
+        // Test January 1st
+        assert!(validate_date_format("2023-01-01").is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_currency_pair_case_sensitivity() {
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Test with lowercase currency pair
+        let mock = server
+            .mock("GET", "/v2/prices/btc-usd/spot")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "data": {
+                        "amount": "45000.00",
+                        "base": "BTC",
+                        "currency": "USD"
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let input = Input {
+            currency_pair: "btc-usd".to_string(),
+            quote_currency: None,
+            date: None,
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => {
+                // Should succeed if API accepts lowercase
+            }
+            Output::Err { reason } => {
+                // Should fail if API is case-sensitive
+                assert!(reason.contains("API error") || reason.contains("Invalid"));
+            }
+        }
+
+        mock.assert_async().await;
     }
 }
