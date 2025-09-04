@@ -26,7 +26,7 @@ where
 
     match value {
         Value::String(s) => {
-            // Direct string format like "BTC-USD"
+            // Direct string format like "BTC-USD" or just base currency like "BTC"
             Ok(s)
         }
         Value::Array(arr) => {
@@ -53,8 +53,11 @@ where
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     /// Currency pair to get spot price for (e.g., "BTC-USD", "ETH-EUR" or ["BTC", "USD"])
+    /// Can also be just the base currency (e.g., "BTC") when quote_currency is provided
     #[serde(deserialize_with = "deserialize_currency_pair")]
     currency_pair: String,
+    /// Optional quote currency (e.g., "USD", "EUR"). When provided, currency_pair should be just the base currency
+    quote_currency: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -100,15 +103,36 @@ impl NexusTool for GetSpotPrice {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        // Validate currency pair format
-        if request.currency_pair.is_empty() {
-            return Output::Err {
-                reason: "Currency pair cannot be empty".to_string(),
-            };
-        }
+        // Validate and construct the final currency pair
+        let final_currency_pair = match (&request.currency_pair, &request.quote_currency) {
+            (base, Some(quote)) => {
+                // If quote_currency is provided, currency_pair should be just the base currency
+                if base.contains('-') {
+                    return Output::Err {
+                        reason: "When quote_currency is provided, currency_pair should be just the base currency (e.g., 'BTC'), not a full pair (e.g., 'BTC-USD')".to_string(),
+                    };
+                }
+                if base.is_empty() || quote.is_empty() {
+                    return Output::Err {
+                        reason: "Both base currency and quote currency must be non-empty"
+                            .to_string(),
+                    };
+                }
+                format!("{}-{}", base, quote)
+            }
+            (pair, None) => {
+                // If no quote_currency provided, currency_pair should be a complete pair
+                if pair.is_empty() {
+                    return Output::Err {
+                        reason: "Currency pair cannot be empty".to_string(),
+                    };
+                }
+                pair.clone()
+            }
+        };
 
         // Create the endpoint path
-        let endpoint = format!("v2/prices/{}/spot", request.currency_pair);
+        let endpoint = format!("v2/prices/{}/spot", final_currency_pair);
 
         // Make the API request using the client
         match self
@@ -166,6 +190,7 @@ mod tests {
     fn create_test_input() -> Input {
         Input {
             currency_pair: "BTC-USD".to_string(),
+            quote_currency: None,
         }
     }
 
@@ -175,6 +200,13 @@ mod tests {
             "currency_pair": ["BTC", "USD"]
         });
         serde_json::from_value(json).expect("Failed to deserialize test input")
+    }
+
+    fn create_test_input_with_quote_currency() -> Input {
+        Input {
+            currency_pair: "BTC".to_string(),
+            quote_currency: Some("USD".to_string()),
+        }
     }
 
     #[tokio::test]
@@ -271,6 +303,7 @@ mod tests {
 
         let input = Input {
             currency_pair: "".to_string(),
+            quote_currency: None,
         };
 
         let result = tool.invoke(input).await;
@@ -307,6 +340,7 @@ mod tests {
 
         let input = Input {
             currency_pair: "INVALID-PAIR".to_string(),
+            quote_currency: None,
         };
 
         // Test the spot price request
@@ -331,6 +365,7 @@ mod tests {
         });
         let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
         assert_eq!(input.currency_pair, "ETH-EUR");
+        assert_eq!(input.quote_currency, None);
     }
 
     #[test]
@@ -340,6 +375,18 @@ mod tests {
         });
         let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
         assert_eq!(input.currency_pair, "ETH-EUR");
+        assert_eq!(input.quote_currency, None);
+    }
+
+    #[test]
+    fn test_deserialize_with_quote_currency() {
+        let json = serde_json::json!({
+            "currency_pair": "ETH",
+            "quote_currency": "EUR"
+        });
+        let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
+        assert_eq!(input.currency_pair, "ETH");
+        assert_eq!(input.quote_currency, Some("EUR".to_string()));
     }
 
     #[test]
@@ -376,5 +423,113 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("must be either a string"));
+    }
+
+    #[tokio::test]
+    async fn test_successful_spot_price_with_quote_currency() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response
+        let mock = server
+            .mock("GET", "/v2/prices/BTC-USD/spot")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "data": {
+                        "amount": "45000.00",
+                        "base": "BTC",
+                        "currency": "USD"
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the spot price request with separate base and quote currencies
+        let result = tool.invoke(create_test_input_with_quote_currency()).await;
+
+        // Verify the response
+        match result {
+            Output::Ok {
+                amount,
+                base,
+                currency,
+            } => {
+                assert_eq!(amount, "45000.00");
+                assert_eq!(base, "BTC");
+                assert_eq!(currency, "USD");
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_invalid_combination_with_quote_currency() {
+        let (_, tool) = create_server_and_tool().await;
+
+        // Test with full currency pair and quote_currency (should fail)
+        let input = Input {
+            currency_pair: "BTC-USD".to_string(),
+            quote_currency: Some("EUR".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(reason.contains("currency_pair should be just the base currency"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_base_currency_with_quote() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            currency_pair: "".to_string(),
+            quote_currency: Some("USD".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert_eq!(
+                    reason,
+                    "Both base currency and quote currency must be non-empty"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_quote_currency_with_base() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            currency_pair: "BTC".to_string(),
+            quote_currency: Some("".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert_eq!(
+                    reason,
+                    "Both base currency and quote currency must be non-empty"
+                );
+            }
+        }
     }
 }
