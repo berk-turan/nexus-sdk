@@ -16,6 +16,29 @@ pub struct SpotPriceData {
     pub currency: String,
 }
 
+/// Product ticker data from Coinbase Exchange API
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProductTickerData {
+    /// Best ask price
+    pub ask: String,
+    /// Best bid price
+    pub bid: String,
+    /// 24h volume
+    pub volume: String,
+    /// Trade ID of the last trade
+    pub trade_id: u64,
+    /// Last trade price
+    pub price: String,
+    /// Last trade size
+    pub size: String,
+    /// Time of the last trade
+    pub time: String,
+    /// RFQ volume
+    pub rfq_volume: String,
+    /// Conversions volume (optional field)
+    pub conversions_volume: Option<String>,
+}
+
 /// Coinbase API response with potential errors
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CoinbaseApiResponse<T> {
