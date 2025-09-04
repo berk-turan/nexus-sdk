@@ -8,5 +8,8 @@ mod exchanges;
 
 #[tokio::main]
 async fn main() {
-    bootstrap!([exchanges::get_spot_price::GetSpotPrice,]);
+    bootstrap!([
+        exchanges::get_spot_price::GetSpotPrice,
+        exchanges::get_product_ticker::GetProductTicker,
+    ]);
 }
