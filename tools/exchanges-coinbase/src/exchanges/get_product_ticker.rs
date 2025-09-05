@@ -10,14 +10,51 @@ use {
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
     schemars::JsonSchema,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize},
+    serde_json::Value,
 };
+
+/// Custom deserializer for product_id that accepts both string and tuple formats
+fn deserialize_product_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+
+    match value {
+        Value::String(s) => {
+            // Direct string format like "BTC-USD" or just base currency like "BTC"
+            Ok(s)
+        }
+        Value::Array(arr) => {
+            // Tuple format like ["BTC", "USD"]
+            if arr.len() == 2 {
+                let base = arr[0].as_str().ok_or_else(|| {
+                    serde::de::Error::custom("First element of product ID array must be a string")
+                })?;
+                let quote = arr[1].as_str().ok_or_else(|| {
+                    serde::de::Error::custom("Second element of product ID array must be a string")
+                })?;
+                Ok(format!("{}-{}", base, quote))
+            } else {
+                Err(serde::de::Error::custom("Product ID array must contain exactly 2 elements"))
+            }
+        }
+        _ => Err(serde::de::Error::custom(
+            "Product ID must be either a string (e.g., 'BTC-USD') or an array of two strings (e.g., ['BTC', 'USD'])"
+        )),
+    }
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    /// Product ID (currency pair) to get ticker for (e.g., "BTC-USD", "ETH-EUR")
+    /// Product ID (currency pair) to get ticker for (e.g., "BTC-USD", "ETH-EUR" or ["BTC", "USD"])
+    /// Can also be just the base currency (e.g., "BTC") when quote_currency is provided
+    #[serde(deserialize_with = "deserialize_product_id")]
     product_id: String,
+    /// Optional quote currency (e.g., "USD", "EUR"). When provided, product_id should be just the base currency
+    quote_currency: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -76,15 +113,36 @@ impl NexusTool for GetProductTicker {
     }
 
     async fn invoke(&self, request: Self::Input) -> Self::Output {
-        // Validate product_id
-        if request.product_id.is_empty() {
-            return Output::Err {
-                reason: "Product ID cannot be empty".to_string(),
-            };
-        }
+        // Validate and construct the final product ID
+        let final_product_id = match (&request.product_id, &request.quote_currency) {
+            (base, Some(quote)) => {
+                // If quote_currency is provided, product_id should be just the base currency
+                if base.contains('-') {
+                    return Output::Err {
+                        reason: "When quote_currency is provided, product_id should be just the base currency (e.g., 'BTC'), not a full pair (e.g., 'BTC-USD')".to_string(),
+                    };
+                }
+                if base.is_empty() || quote.is_empty() {
+                    return Output::Err {
+                        reason: "Both base currency and quote currency must be non-empty"
+                            .to_string(),
+                    };
+                }
+                format!("{}-{}", base, quote)
+            }
+            (pair, None) => {
+                // If no quote_currency provided, product_id should be a complete pair
+                if pair.is_empty() {
+                    return Output::Err {
+                        reason: "Product ID cannot be empty".to_string(),
+                    };
+                }
+                pair.clone()
+            }
+        };
 
         // Create the endpoint path
-        let endpoint = format!("products/{}/ticker", request.product_id);
+        let endpoint = format!("products/{}/ticker", final_product_id);
 
         // Make the API request using the client
         match self.client.get::<ProductTickerData>(&endpoint).await {
@@ -123,6 +181,22 @@ mod tests {
     fn create_test_input() -> Input {
         Input {
             product_id: "BTC-USD".to_string(),
+            quote_currency: None,
+        }
+    }
+
+    fn create_test_input_from_tuple() -> Input {
+        // This simulates deserializing from JSON: ["BTC", "USD"]
+        let json = serde_json::json!({
+            "product_id": ["BTC", "USD"]
+        });
+        serde_json::from_value(json).expect("Failed to deserialize test input")
+    }
+
+    fn create_test_input_with_quote_currency() -> Input {
+        Input {
+            product_id: "BTC".to_string(),
+            quote_currency: Some("USD".to_string()),
         }
     }
 
@@ -186,11 +260,130 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_successful_ticker_request_with_tuple() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response
+        let mock = server
+            .mock("GET", "/products/BTC-USD/ticker")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "ask": "6267.71",
+                    "bid": "6265.15",
+                    "volume": "53602.03940154",
+                    "trade_id": 86326522,
+                    "price": "6268.48",
+                    "size": "0.00698254",
+                    "time": "2020-03-20T00:22:57.833Z",
+                    "rfq_volume": "123.122"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the ticker request with tuple format
+        let result = tool.invoke(create_test_input_from_tuple()).await;
+
+        // Verify the response
+        match result {
+            Output::Ok {
+                ask,
+                bid,
+                volume,
+                trade_id,
+                price,
+                size,
+                time,
+                rfq_volume,
+                conversions_volume,
+            } => {
+                assert_eq!(ask, "6267.71");
+                assert_eq!(bid, "6265.15");
+                assert_eq!(volume, "53602.03940154");
+                assert_eq!(trade_id, 86326522);
+                assert_eq!(price, "6268.48");
+                assert_eq!(size, "0.00698254");
+                assert_eq!(time, "2020-03-20T00:22:57.833Z");
+                assert_eq!(rfq_volume, "123.122");
+                assert_eq!(conversions_volume, None);
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_successful_ticker_request_with_quote_currency() {
+        // Create server and tool
+        let (mut server, tool) = create_server_and_tool().await;
+
+        // Set up mock response
+        let mock = server
+            .mock("GET", "/products/BTC-USD/ticker")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "ask": "6267.71",
+                    "bid": "6265.15",
+                    "volume": "53602.03940154",
+                    "trade_id": 86326522,
+                    "price": "6268.48",
+                    "size": "0.00698254",
+                    "time": "2020-03-20T00:22:57.833Z",
+                    "rfq_volume": "123.122"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Test the ticker request with separate base and quote currencies
+        let result = tool.invoke(create_test_input_with_quote_currency()).await;
+
+        // Verify the response
+        match result {
+            Output::Ok {
+                ask,
+                bid,
+                volume,
+                trade_id,
+                price,
+                size,
+                time,
+                rfq_volume,
+                conversions_volume,
+            } => {
+                assert_eq!(ask, "6267.71");
+                assert_eq!(bid, "6265.15");
+                assert_eq!(volume, "53602.03940154");
+                assert_eq!(trade_id, 86326522);
+                assert_eq!(price, "6268.48");
+                assert_eq!(size, "0.00698254");
+                assert_eq!(time, "2020-03-20T00:22:57.833Z");
+                assert_eq!(rfq_volume, "123.122");
+                assert_eq!(conversions_volume, None);
+            }
+            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+        }
+
+        // Verify that the mock was called
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_empty_product_id() {
         let (_, tool) = create_server_and_tool().await;
 
         let input = Input {
             product_id: "".to_string(),
+            quote_currency: None,
         };
 
         let result = tool.invoke(input).await;
@@ -199,6 +392,70 @@ mod tests {
             Output::Ok { .. } => panic!("Expected error, got success"),
             Output::Err { reason } => {
                 assert_eq!(reason, "Product ID cannot be empty");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_invalid_combination_with_quote_currency() {
+        let (_, tool) = create_server_and_tool().await;
+
+        // Test with full product ID and quote_currency (should fail)
+        let input = Input {
+            product_id: "BTC-USD".to_string(),
+            quote_currency: Some("EUR".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert!(reason.contains("product_id should be just the base currency"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_base_currency_with_quote() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            product_id: "".to_string(),
+            quote_currency: Some("USD".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert_eq!(
+                    reason,
+                    "Both base currency and quote currency must be non-empty"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_quote_currency_with_base() {
+        let (_, tool) = create_server_and_tool().await;
+
+        let input = Input {
+            product_id: "BTC".to_string(),
+            quote_currency: Some("".to_string()),
+        };
+
+        let result = tool.invoke(input).await;
+
+        match result {
+            Output::Ok { .. } => panic!("Expected error, got success"),
+            Output::Err { reason } => {
+                assert_eq!(
+                    reason,
+                    "Both base currency and quote currency must be non-empty"
+                );
             }
         }
     }
@@ -224,6 +481,7 @@ mod tests {
 
         let input = Input {
             product_id: "INVALID-PAIR".to_string(),
+            quote_currency: None,
         };
 
         // Test the ticker request
@@ -242,12 +500,70 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_input() {
+    fn test_deserialize_product_id_string() {
         let json = serde_json::json!({
             "product_id": "ETH-EUR"
         });
         let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
         assert_eq!(input.product_id, "ETH-EUR");
+        assert_eq!(input.quote_currency, None);
+    }
+
+    #[test]
+    fn test_deserialize_product_id_tuple() {
+        let json = serde_json::json!({
+            "product_id": ["ETH", "EUR"]
+        });
+        let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
+        assert_eq!(input.product_id, "ETH-EUR");
+        assert_eq!(input.quote_currency, None);
+    }
+
+    #[test]
+    fn test_deserialize_with_quote_currency() {
+        let json = serde_json::json!({
+            "product_id": "ETH",
+            "quote_currency": "EUR"
+        });
+        let input: Input = serde_json::from_value(json).expect("Failed to deserialize");
+        assert_eq!(input.product_id, "ETH");
+        assert_eq!(input.quote_currency, Some("EUR".to_string()));
+    }
+
+    #[test]
+    fn test_deserialize_product_id_invalid_tuple_length() {
+        let json = serde_json::json!({
+            "product_id": ["ETH"]
+        });
+        let result: Result<Input, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exactly 2 elements"));
+    }
+
+    #[test]
+    fn test_deserialize_product_id_invalid_tuple_type() {
+        let json = serde_json::json!({
+            "product_id": ["ETH", 123]
+        });
+        let result: Result<Input, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be a string"));
+    }
+
+    #[test]
+    fn test_deserialize_product_id_invalid_type() {
+        let json = serde_json::json!({
+            "product_id": 123
+        });
+        let result: Result<Input, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be either a string"));
     }
 
     #[tokio::test]

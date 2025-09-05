@@ -44,9 +44,17 @@ Standard Nexus Tool that retrieves the current ticker information for a product 
 
 ## Input
 
-**`product_id`: [`String`]**
+**`product_id`: [`String` | `Vec<String>`]**
 
-The product ID (currency pair) to get ticker for (e.g., "BTC-USD", "ETH-EUR").
+The product ID (currency pair) to get ticker for. Can be provided in multiple formats:
+
+- **Full pair string**: `"BTC-USD"`, `"ETH-EUR"`, `"SUI-USD"`
+- **Array format**: `["BTC", "USD"]`, `["ETH", "EUR"]`, `["SUI", "USD"]`
+- **Base currency only**: `"BTC"`, `"ETH"`, `"SUI"` (when `quote_currency` is provided)
+
+**`quote_currency`: [`String`] (optional)**
+
+The quote currency to pair with the base currency. When provided, `product_id` should contain only the base currency (e.g., `"BTC"` with `quote_currency: "USD"`).
 
 ## Output Variants & Ports
 
