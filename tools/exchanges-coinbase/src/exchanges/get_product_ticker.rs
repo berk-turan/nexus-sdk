@@ -5,6 +5,7 @@
 use {
     crate::{
         coinbase_client::CoinbaseClient,
+        error::CoinbaseErrorKind,
         exchanges::{
             deserialize_trading_pair,
             models::{CoinbaseApiResponse, ProductTickerData},
@@ -57,7 +58,7 @@ pub(crate) enum Output {
         /// Detailed error message
         reason: String,
         /// Type of error (network, server, auth, etc.)
-        kind: crate::error::CoinbaseErrorKind,
+        kind: CoinbaseErrorKind,
         /// HTTP status code if available
         #[serde(skip_serializing_if = "Option::is_none")]
         status_code: Option<u16>,
@@ -97,7 +98,7 @@ impl NexusTool for GetProductTicker {
                 if base.contains('-') {
                     return Output::Err {
                         reason: "When quote_currency is provided, product_id should be just the base currency (e.g., 'BTC'), not a full pair (e.g., 'BTC-USD')".to_string(),
-                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        kind:CoinbaseErrorKind::InvalidRequest,
                         status_code: None,
                     };
                 }
@@ -105,7 +106,7 @@ impl NexusTool for GetProductTicker {
                     return Output::Err {
                         reason: "Both base currency and quote currency must be non-empty"
                             .to_string(),
-                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        kind: CoinbaseErrorKind::InvalidRequest,
                         status_code: None,
                     };
                 }
@@ -116,7 +117,7 @@ impl NexusTool for GetProductTicker {
                 if pair.is_empty() {
                     return Output::Err {
                         reason: "Product ID cannot be empty".to_string(),
-                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        kind: CoinbaseErrorKind::InvalidRequest,
                         status_code: None,
                     };
                 }
@@ -142,7 +143,7 @@ impl NexusTool for GetProductTicker {
                                 .error_message
                                 .clone()
                                 .unwrap_or_else(|| "API error".to_string()),
-                            kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                            kind: CoinbaseErrorKind::InvalidRequest,
                             status_code: None,
                         };
                     }
@@ -164,7 +165,7 @@ impl NexusTool for GetProductTicker {
                 } else {
                     Output::Err {
                         reason: "No data in API response".to_string(),
-                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        kind: CoinbaseErrorKind::InvalidRequest,
                         status_code: None,
                     }
                 }
