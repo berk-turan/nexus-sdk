@@ -58,8 +58,13 @@ pub(crate) enum Output {
         currency: String,
     },
     Err {
-        /// Error message if the request failed
+        /// Detailed error message
         reason: String,
+        /// Type of error (network, server, auth, etc.)
+        kind: crate::error::CoinbaseErrorKind,
+        /// HTTP status code if available
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status_code: Option<u16>,
     },
 }
 
@@ -96,12 +101,16 @@ impl NexusTool for GetSpotPrice {
                 if base.contains('-') {
                     return Output::Err {
                         reason: "When quote_currency is provided, currency_pair should be just the base currency (e.g., 'BTC'), not a full pair (e.g., 'BTC-USD')".to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     };
                 }
                 if base.is_empty() || quote.is_empty() {
                     return Output::Err {
                         reason: "Both base currency and quote currency must be non-empty"
                             .to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     };
                 }
                 format!("{}-{}", base, quote)
@@ -111,6 +120,8 @@ impl NexusTool for GetSpotPrice {
                 if pair.is_empty() {
                     return Output::Err {
                         reason: "Currency pair cannot be empty".to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     };
                 }
                 pair.clone()
@@ -122,6 +133,8 @@ impl NexusTool for GetSpotPrice {
             if let Err(validation_error) = validate_date_format(date) {
                 return Output::Err {
                     reason: format!("Invalid date format: {}", validation_error),
+                    kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                    status_code: None,
                 };
             }
         }
@@ -148,6 +161,8 @@ impl NexusTool for GetSpotPrice {
                                 .error_message
                                 .clone()
                                 .unwrap_or_else(|| "API error".to_string()),
+                            kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                            status_code: None,
                         };
                     }
                 }
@@ -162,11 +177,15 @@ impl NexusTool for GetSpotPrice {
                 } else {
                     Output::Err {
                         reason: "No data in API response".to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     }
                 }
             }
             Err(error_response) => Output::Err {
                 reason: error_response.reason,
+                kind: error_response.kind,
+                status_code: error_response.status_code,
             },
         }
     }
@@ -255,7 +274,14 @@ mod tests {
                 assert_eq!(base, "BTC");
                 assert_eq!(currency, "USD");
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -299,7 +325,14 @@ mod tests {
                 assert_eq!(base, "BTC");
                 assert_eq!(currency, "USD");
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -320,8 +353,14 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(reason, "Currency pair cannot be empty");
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -360,8 +399,18 @@ mod tests {
         // Verify the error response
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(reason.contains("API error"));
+                assert!(matches!(
+                    kind,
+                    crate::error::CoinbaseErrorKind::InvalidRequest
+                        | crate::error::CoinbaseErrorKind::NotFound
+                ));
+                assert!(status_code.is_some());
             }
         }
 
@@ -476,7 +525,14 @@ mod tests {
                 assert_eq!(base, "BTC");
                 assert_eq!(currency, "USD");
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -498,8 +554,14 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(reason.contains("currency_pair should be just the base currency"));
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -518,11 +580,17 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -541,11 +609,17 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -631,7 +705,14 @@ mod tests {
                 assert_eq!(base, "BTC");
                 assert_eq!(currency, "USD");
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -652,8 +733,14 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(reason.contains("Invalid date format"));
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -672,11 +759,17 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -696,9 +789,15 @@ mod tests {
         // Should fail due to invalid currency pair format
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind: _,
+                status_code,
+            } => {
                 // API should reject this as invalid
                 assert!(reason.contains("API error") || reason.contains("Invalid"));
+                // Allow any error kind since this is testing invalid input
+                assert!(status_code.is_some());
             }
         }
     }
@@ -754,9 +853,19 @@ mod tests {
             Output::Ok { .. } => {
                 // Should succeed if API accepts lowercase
             }
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 // Should fail if API is case-sensitive
                 assert!(reason.contains("API error") || reason.contains("Invalid"));
+                assert!(matches!(
+                    kind,
+                    crate::error::CoinbaseErrorKind::InvalidRequest
+                        | crate::error::CoinbaseErrorKind::NotFound
+                ));
+                assert!(status_code.is_some());
             }
         }
 

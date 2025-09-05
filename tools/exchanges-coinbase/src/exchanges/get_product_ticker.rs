@@ -7,7 +7,7 @@ use {
         coinbase_client::CoinbaseClient,
         exchanges::{
             deserialize_trading_pair,
-            models::ProductTickerData,
+            models::{CoinbaseApiResponse, ProductTickerData},
             COINBASE_EXCHANGE_API_BASE,
         },
     },
@@ -128,18 +128,47 @@ impl NexusTool for GetProductTicker {
         let endpoint = format!("products/{}/ticker", final_product_id);
 
         // Make the API request using the client
-        match self.client.get::<ProductTickerData>(&endpoint).await {
-            Ok(ticker_data) => Output::Ok {
-                ask: ticker_data.ask,
-                bid: ticker_data.bid,
-                volume: ticker_data.volume,
-                trade_id: ticker_data.trade_id,
-                price: ticker_data.price,
-                size: ticker_data.size,
-                time: ticker_data.time,
-                rfq_volume: ticker_data.rfq_volume,
-                conversions_volume: ticker_data.conversions_volume,
-            },
+        match self
+            .client
+            .get::<CoinbaseApiResponse<ProductTickerData>>(&endpoint)
+            .await
+        {
+            Ok(api_response) => {
+                // Check for errors in the response
+                if let Some(errors) = api_response.errors {
+                    if let Some(first_error) = errors.first() {
+                        return Output::Err {
+                            reason: first_error
+                                .error_message
+                                .clone()
+                                .unwrap_or_else(|| "API error".to_string()),
+                            kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                            status_code: None,
+                        };
+                    }
+                }
+
+                // Extract the data
+                if let Some(data) = api_response.data {
+                    Output::Ok {
+                        ask: data.ask,
+                        bid: data.bid,
+                        volume: data.volume,
+                        trade_id: data.trade_id,
+                        price: data.price,
+                        size: data.size,
+                        time: data.time,
+                        rfq_volume: data.rfq_volume,
+                        conversions_volume: data.conversions_volume,
+                    }
+                } else {
+                    Output::Err {
+                        reason: "No data in API response".to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
+                    }
+                }
+            }
             Err(error_response) => Output::Err {
                 reason: error_response.reason,
                 kind: error_response.kind,
@@ -197,14 +226,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "ask": "6267.71",
-                    "bid": "6265.15",
-                    "volume": "53602.03940154",
-                    "trade_id": 86326522,
-                    "price": "6268.48",
-                    "size": "0.00698254",
-                    "time": "2020-03-20T00:22:57.833Z",
-                    "rfq_volume": "123.122"
+                    "data": {
+                        "ask": "6267.71",
+                        "bid": "6265.15",
+                        "volume": "53602.03940154",
+                        "trade_id": 86326522,
+                        "price": "6268.48",
+                        "size": "0.00698254",
+                        "time": "2020-03-20T00:22:57.833Z",
+                        "rfq_volume": "123.122"
+                    }
                 })
                 .to_string(),
             )
@@ -263,14 +294,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "ask": "6267.71",
-                    "bid": "6265.15",
-                    "volume": "53602.03940154",
-                    "trade_id": 86326522,
-                    "price": "6268.48",
-                    "size": "0.00698254",
-                    "time": "2020-03-20T00:22:57.833Z",
-                    "rfq_volume": "123.122"
+                    "data": {
+                        "ask": "6267.71",
+                        "bid": "6265.15",
+                        "volume": "53602.03940154",
+                        "trade_id": 86326522,
+                        "price": "6268.48",
+                        "size": "0.00698254",
+                        "time": "2020-03-20T00:22:57.833Z",
+                        "rfq_volume": "123.122"
+                    }
                 })
                 .to_string(),
             )
@@ -329,14 +362,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "ask": "6267.71",
-                    "bid": "6265.15",
-                    "volume": "53602.03940154",
-                    "trade_id": 86326522,
-                    "price": "6268.48",
-                    "size": "0.00698254",
-                    "time": "2020-03-20T00:22:57.833Z",
-                    "rfq_volume": "123.122"
+                    "data": {
+                        "ask": "6267.71",
+                        "bid": "6265.15",
+                        "volume": "53602.03940154",
+                        "trade_id": 86326522,
+                        "price": "6268.48",
+                        "size": "0.00698254",
+                        "time": "2020-03-20T00:22:57.833Z",
+                        "rfq_volume": "123.122"
+                    }
                 })
                 .to_string(),
             )
@@ -502,7 +537,10 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "message": "Invalid product ID"
+                    "errors": [{
+                        "message": "Invalid product ID",
+                        "type": "invalid_request"
+                    }]
                 })
                 .to_string(),
             )
