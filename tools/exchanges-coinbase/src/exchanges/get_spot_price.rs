@@ -6,6 +6,7 @@ use {
     crate::{
         coinbase_client::CoinbaseClient,
         exchanges::{
+            deserialize_trading_pair,
             models::{CoinbaseApiResponse, SpotPriceData},
             COINBASE_API_BASE,
         },
@@ -14,41 +15,8 @@ use {
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
     schemars::JsonSchema,
-    serde::{Deserialize, Deserializer, Serialize},
-    serde_json::Value,
+    serde::{Deserialize, Serialize},
 };
-
-/// Custom deserializer for currency_pair that accepts both string and tuple formats
-fn deserialize_currency_pair<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-
-    match value {
-        Value::String(s) => {
-            // Direct string format like "BTC-USD" or just base currency like "BTC"
-            Ok(s)
-        }
-        Value::Array(arr) => {
-            // Tuple format like ["BTC", "USD"]
-            if arr.len() == 2 {
-                let base = arr[0].as_str().ok_or_else(|| {
-                    serde::de::Error::custom("First element of currency pair array must be a string")
-                })?;
-                let quote = arr[1].as_str().ok_or_else(|| {
-                    serde::de::Error::custom("Second element of currency pair array must be a string")
-                })?;
-                Ok(format!("{}-{}", base, quote))
-            } else {
-                Err(serde::de::Error::custom("Currency pair array must contain exactly 2 elements"))
-            }
-        }
-        _ => Err(serde::de::Error::custom(
-            "Currency pair must be either a string (e.g., 'BTC-USD') or an array of two strings (e.g., ['BTC', 'USD'])"
-        )),
-    }
-}
 
 /// Validates that the date string is in YYYY-MM-DD format and is a valid date
 fn validate_date_format(date: &str) -> Result<(), String> {
@@ -70,7 +38,7 @@ fn validate_date_format(date: &str) -> Result<(), String> {
 pub(crate) struct Input {
     /// Currency pair to get spot price for (e.g., "BTC-USD", "ETH-EUR" or ["BTC", "USD"])
     /// Can also be just the base currency (e.g., "BTC") when quote_currency is provided
-    #[serde(deserialize_with = "deserialize_currency_pair")]
+    #[serde(deserialize_with = "deserialize_trading_pair")]
     currency_pair: String,
     /// Optional quote currency (e.g., "USD", "EUR"). When provided, currency_pair should be just the base currency
     quote_currency: Option<String>,

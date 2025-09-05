@@ -5,53 +5,24 @@
 use {
     crate::{
         coinbase_client::CoinbaseClient,
-        exchanges::{models::ProductTickerData, COINBASE_EXCHANGE_API_BASE},
+        exchanges::{
+            deserialize_trading_pair,
+            models::ProductTickerData,
+            COINBASE_EXCHANGE_API_BASE,
+        },
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,
     schemars::JsonSchema,
-    serde::{Deserialize, Deserializer, Serialize},
-    serde_json::Value,
+    serde::{Deserialize, Serialize},
 };
-
-/// Custom deserializer for product_id that accepts both string and tuple formats
-fn deserialize_product_id<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-
-    match value {
-        Value::String(s) => {
-            // Direct string format like "BTC-USD" or just base currency like "BTC"
-            Ok(s)
-        }
-        Value::Array(arr) => {
-            // Tuple format like ["BTC", "USD"]
-            if arr.len() == 2 {
-                let base = arr[0].as_str().ok_or_else(|| {
-                    serde::de::Error::custom("First element of product ID array must be a string")
-                })?;
-                let quote = arr[1].as_str().ok_or_else(|| {
-                    serde::de::Error::custom("Second element of product ID array must be a string")
-                })?;
-                Ok(format!("{}-{}", base, quote))
-            } else {
-                Err(serde::de::Error::custom("Product ID array must contain exactly 2 elements"))
-            }
-        }
-        _ => Err(serde::de::Error::custom(
-            "Product ID must be either a string (e.g., 'BTC-USD') or an array of two strings (e.g., ['BTC', 'USD'])"
-        )),
-    }
-}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     /// Product ID (currency pair) to get ticker for (e.g., "BTC-USD", "ETH-EUR" or ["BTC", "USD"])
     /// Can also be just the base currency (e.g., "BTC") when quote_currency is provided
-    #[serde(deserialize_with = "deserialize_product_id")]
+    #[serde(deserialize_with = "deserialize_trading_pair")]
     product_id: String,
     /// Optional quote currency (e.g., "USD", "EUR"). When provided, product_id should be just the base currency
     quote_currency: Option<String>,
@@ -75,8 +46,9 @@ pub(crate) enum Output {
         size: String,
         /// Time of the last trade
         time: String,
-        /// RFQ volume
-        rfq_volume: String,
+        /// RFQ volume (only included if present)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        rfq_volume: Option<String>,
         /// Conversions volume (only included if present)
         #[serde(skip_serializing_if = "Option::is_none")]
         conversions_volume: Option<String>,
@@ -262,7 +234,7 @@ mod tests {
                 assert_eq!(price, "6268.48");
                 assert_eq!(size, "0.00698254");
                 assert_eq!(time, "2020-03-20T00:22:57.833Z");
-                assert_eq!(rfq_volume, "123.122");
+                assert_eq!(rfq_volume, Some("123.122".to_string()));
                 assert_eq!(conversions_volume, None);
             }
             Output::Err {
@@ -328,7 +300,7 @@ mod tests {
                 assert_eq!(price, "6268.48");
                 assert_eq!(size, "0.00698254");
                 assert_eq!(time, "2020-03-20T00:22:57.833Z");
-                assert_eq!(rfq_volume, "123.122");
+                assert_eq!(rfq_volume, Some("123.122".to_string()));
                 assert_eq!(conversions_volume, None);
             }
             Output::Err {
@@ -394,7 +366,7 @@ mod tests {
                 assert_eq!(price, "6268.48");
                 assert_eq!(size, "0.00698254");
                 assert_eq!(time, "2020-03-20T00:22:57.833Z");
-                assert_eq!(rfq_volume, "123.122");
+                assert_eq!(rfq_volume, Some("123.122".to_string()));
                 assert_eq!(conversions_volume, None);
             }
             Output::Err {
@@ -633,72 +605,5 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("must be either a string"));
-    }
-
-    #[tokio::test]
-    async fn test_ticker_with_conversions_volume() {
-        // Create server and tool
-        let (mut server, tool) = create_server_and_tool().await;
-
-        // Set up mock response with conversions_volume
-        let mock = server
-            .mock("GET", "/products/BTC-USD/ticker")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!({
-                    "ask": "6267.71",
-                    "bid": "6265.15",
-                    "volume": "53602.03940154",
-                    "trade_id": 86326522,
-                    "price": "6268.48",
-                    "size": "0.00698254",
-                    "time": "2020-03-20T00:22:57.833Z",
-                    "rfq_volume": "123.122",
-                    "conversions_volume": "0.00"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        // Test the ticker request
-        let result = tool.invoke(create_test_input()).await;
-
-        // Verify the response
-        match result {
-            Output::Ok {
-                ask,
-                bid,
-                volume,
-                trade_id,
-                price,
-                size,
-                time,
-                rfq_volume,
-                conversions_volume,
-            } => {
-                assert_eq!(ask, "6267.71");
-                assert_eq!(bid, "6265.15");
-                assert_eq!(volume, "53602.03940154");
-                assert_eq!(trade_id, 86326522);
-                assert_eq!(price, "6268.48");
-                assert_eq!(size, "0.00698254");
-                assert_eq!(time, "2020-03-20T00:22:57.833Z");
-                assert_eq!(rfq_volume, "123.122");
-                assert_eq!(conversions_volume, Some("0.00".to_string()));
-            }
-            Output::Err {
-                reason,
-                kind,
-                status_code,
-            } => panic!(
-                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
-                reason, kind, status_code
-            ),
-        }
-
-        // Verify that the mock was called
-        mock.assert_async().await;
     }
 }

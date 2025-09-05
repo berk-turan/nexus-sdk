@@ -33,8 +33,8 @@ pub struct ProductTickerData {
     pub size: String,
     /// Time of the last trade
     pub time: String,
-    /// RFQ volume
-    pub rfq_volume: String,
+    /// RFQ volume (optional field)
+    pub rfq_volume: Option<String>,
     /// Conversions volume (optional field)
     pub conversions_volume: Option<String>,
 }
