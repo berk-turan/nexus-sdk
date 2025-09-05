@@ -53,16 +53,16 @@ pub struct ProductStatsData {
     pub volume: String,
     /// Last price (in quote currency)
     pub last: String,
-    /// 30-day volume (in base currency)
-    pub volume_30day: String,
-    /// 24h RFQ volume
-    pub rfq_volume_24hour: String,
-    /// 24h conversions volume
-    pub conversions_volume_24hour: String,
-    /// 30-day RFQ volume
-    pub rfq_volume_30day: String,
-    /// 30-day conversions volume
-    pub conversions_volume_30day: String,
+    /// 30-day volume (in base currency) (optional field)
+    pub volume_30day: Option<String>,
+    /// 24h RFQ volume (optional field)
+    pub rfq_volume_24hour: Option<String>,
+    /// 24h conversions volume (optional field)
+    pub conversions_volume_24hour: Option<String>,
+    /// 30-day RFQ volume (optional field)
+    pub rfq_volume_30day: Option<String>,
+    /// 30-day conversions volume (optional field)
+    pub conversions_volume_30day: Option<String>,
 }
 
 /// Coinbase API response with potential errors
