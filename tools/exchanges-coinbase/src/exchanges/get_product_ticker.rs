@@ -82,8 +82,13 @@ pub(crate) enum Output {
         conversions_volume: Option<String>,
     },
     Err {
-        /// Error message if the request failed
+        /// Detailed error message
         reason: String,
+        /// Type of error (network, server, auth, etc.)
+        kind: crate::error::CoinbaseErrorKind,
+        /// HTTP status code if available
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status_code: Option<u16>,
     },
 }
 
@@ -120,12 +125,16 @@ impl NexusTool for GetProductTicker {
                 if base.contains('-') {
                     return Output::Err {
                         reason: "When quote_currency is provided, product_id should be just the base currency (e.g., 'BTC'), not a full pair (e.g., 'BTC-USD')".to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     };
                 }
                 if base.is_empty() || quote.is_empty() {
                     return Output::Err {
                         reason: "Both base currency and quote currency must be non-empty"
                             .to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     };
                 }
                 format!("{}-{}", base, quote)
@@ -135,6 +144,8 @@ impl NexusTool for GetProductTicker {
                 if pair.is_empty() {
                     return Output::Err {
                         reason: "Product ID cannot be empty".to_string(),
+                        kind: crate::error::CoinbaseErrorKind::InvalidRequest,
+                        status_code: None,
                     };
                 }
                 pair.clone()
@@ -159,6 +170,8 @@ impl NexusTool for GetProductTicker {
             },
             Err(error_response) => Output::Err {
                 reason: error_response.reason,
+                kind: error_response.kind,
+                status_code: error_response.status_code,
             },
         }
     }
@@ -252,7 +265,14 @@ mod tests {
                 assert_eq!(rfq_volume, "123.122");
                 assert_eq!(conversions_volume, None);
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -311,7 +331,14 @@ mod tests {
                 assert_eq!(rfq_volume, "123.122");
                 assert_eq!(conversions_volume, None);
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -370,7 +397,14 @@ mod tests {
                 assert_eq!(rfq_volume, "123.122");
                 assert_eq!(conversions_volume, None);
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called
@@ -390,8 +424,14 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(reason, "Product ID cannot be empty");
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -410,8 +450,14 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(reason.contains("product_id should be just the base currency"));
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -429,11 +475,17 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -451,11 +503,17 @@ mod tests {
 
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert_eq!(
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
+                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(status_code, None);
             }
         }
     }
@@ -490,8 +548,19 @@ mod tests {
         // Verify the error response
         match result {
             Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err { reason } => {
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => {
                 assert!(reason.contains("API error") || reason.contains("Invalid"));
+                // API error should have proper kind and status_code
+                assert!(matches!(
+                    kind,
+                    crate::error::CoinbaseErrorKind::InvalidRequest
+                        | crate::error::CoinbaseErrorKind::NotFound
+                ));
+                assert!(status_code.is_some());
             }
         }
 
@@ -619,7 +688,14 @@ mod tests {
                 assert_eq!(rfq_volume, "123.122");
                 assert_eq!(conversions_volume, Some("0.00".to_string()));
             }
-            Output::Err { reason } => panic!("Expected success, got error: {}", reason),
+            Output::Err {
+                reason,
+                kind,
+                status_code,
+            } => panic!(
+                "Expected success, got error: {} (Kind: {:?}, Status Code: {:?})",
+                reason, kind, status_code
+            ),
         }
 
         // Verify that the mock was called

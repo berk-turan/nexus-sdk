@@ -22,8 +22,13 @@ impl CoinbaseClient {
     pub fn new(base_url: Option<&str>) -> Self {
         let base_url = base_url.unwrap_or(COINBASE_API_BASE).to_string();
 
+        let client = Client::builder()
+            .user_agent("nexus-sdk-coinbase-tool/1.0")
+            .build()
+            .expect("Failed to create HTTP client");
+
         Self {
-            client: Arc::new(Client::new()),
+            client: Arc::new(client),
             base_url,
         }
     }
@@ -62,14 +67,20 @@ impl CoinbaseClient {
         };
 
         if !status.is_success() {
+            println!(
+                "Coinbase API Error - Status: {}, Response: {}",
+                status, text
+            );
             // Try to parse the error response from Coinbase API
             match serde_json::from_str::<crate::error::CoinbaseApiError>(&text) {
                 Ok(api_error) => {
+                    println!("Parsed API error: {:?}", api_error);
                     return Err(api_error.to_error_response(status.as_u16()));
                 }
                 Err(_) => {
                     // If we can't parse the error response, fallback to status code mapping
                     let kind = crate::error::CoinbaseErrorKind::from_status_code(status.as_u16());
+                    println!("Fallback error - Status: {}, Kind: {:?}", status, kind);
                     return Err(CoinbaseErrorResponse {
                         reason: format!("API error ({}): {}", status, text),
                         kind,
