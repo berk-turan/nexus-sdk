@@ -35,6 +35,8 @@ The spot price was retrieved successfully.
 The spot price request failed due to an error.
 
 - **`err.reason`: [`String`]** - A detailed error message describing what went wrong
+- **`err.kind`: [`String`]** - Type of error (invalid_request, not_found, parse, etc.)
+- **`err.status_code`: [`u16`] (optional)** - HTTP status code if available
 
 ---
 
@@ -69,7 +71,7 @@ The ticker information was retrieved successfully.
 - **`ok.price`: [`String`]** - Last trade price
 - **`ok.size`: [`String`]** - Last trade size
 - **`ok.time`: [`String`]** - Time of the last trade
-- **`ok.rfq_volume`: [`String`]** - RFQ volume
+- **`ok.rfq_volume`: [`String`] (optional)** - RFQ volume (only included if present)
 - **`ok.conversions_volume`: [`String`] (optional)** - Conversions volume (only included if present)
 
 **`err`**
@@ -77,3 +79,5 @@ The ticker information was retrieved successfully.
 The ticker request failed due to an error.
 
 - **`err.reason`: [`String`]** - A detailed error message describing what went wrong
+- **`err.kind`: [`String`]** - Type of error (invalid_request, not_found, parse, etc.)
+- **`err.status_code`: [`u16`] (optional)** - HTTP status code if available
