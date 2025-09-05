@@ -98,7 +98,7 @@ impl NexusTool for GetProductTicker {
                 if base.contains('-') {
                     return Output::Err {
                         reason: "When quote_currency is provided, product_id should be just the base currency (e.g., 'BTC'), not a full pair (e.g., 'BTC-USD')".to_string(),
-                        kind:CoinbaseErrorKind::InvalidRequest,
+                        kind: CoinbaseErrorKind::InvalidRequest,
                         status_code: None,
                     };
                 }
