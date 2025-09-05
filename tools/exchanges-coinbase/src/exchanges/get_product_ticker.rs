@@ -438,7 +438,7 @@ mod tests {
                 status_code,
             } => {
                 assert_eq!(reason, "Product ID cannot be empty");
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -464,7 +464,7 @@ mod tests {
                 status_code,
             } => {
                 assert!(reason.contains("product_id should be just the base currency"));
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -492,7 +492,7 @@ mod tests {
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -520,7 +520,7 @@ mod tests {
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -568,8 +568,7 @@ mod tests {
                 // API error should have proper kind and status_code
                 assert!(matches!(
                     kind,
-                    crate::error::CoinbaseErrorKind::InvalidRequest
-                        | crate::error::CoinbaseErrorKind::NotFound
+                    CoinbaseErrorKind::InvalidRequest | CoinbaseErrorKind::NotFound
                 ));
                 assert!(status_code.is_some());
             }

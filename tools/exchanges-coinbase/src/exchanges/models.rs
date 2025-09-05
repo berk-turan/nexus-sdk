@@ -1,6 +1,7 @@
 //! Data models for Coinbase exchange endpoints
 
 use {
+    crate::error::CoinbaseApiError,
     schemars::JsonSchema,
     serde::{Deserialize, Serialize},
 };
@@ -45,5 +46,5 @@ pub struct CoinbaseApiResponse<T> {
     /// The response data
     pub data: Option<T>,
     /// List of errors if any
-    pub errors: Option<Vec<crate::error::CoinbaseApiError>>,
+    pub errors: Option<Vec<CoinbaseApiError>>,
 }

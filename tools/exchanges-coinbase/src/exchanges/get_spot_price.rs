@@ -360,7 +360,7 @@ mod tests {
                 status_code,
             } => {
                 assert_eq!(reason, "Currency pair cannot be empty");
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -408,8 +408,7 @@ mod tests {
                 assert!(reason.contains("API error"));
                 assert!(matches!(
                     kind,
-                    crate::error::CoinbaseErrorKind::InvalidRequest
-                        | crate::error::CoinbaseErrorKind::NotFound
+                    CoinbaseErrorKind::InvalidRequest | CoinbaseErrorKind::NotFound
                 ));
                 assert!(status_code.is_some());
             }
@@ -561,7 +560,7 @@ mod tests {
                 status_code,
             } => {
                 assert!(reason.contains("currency_pair should be just the base currency"));
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -590,7 +589,7 @@ mod tests {
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -619,7 +618,7 @@ mod tests {
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -740,7 +739,7 @@ mod tests {
                 status_code,
             } => {
                 assert!(reason.contains("Invalid date format"));
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -769,7 +768,7 @@ mod tests {
                     reason,
                     "Both base currency and quote currency must be non-empty"
                 );
-                assert_eq!(kind, crate::error::CoinbaseErrorKind::InvalidRequest);
+                assert_eq!(kind, CoinbaseErrorKind::InvalidRequest);
                 assert_eq!(status_code, None);
             }
         }
@@ -863,8 +862,7 @@ mod tests {
                 assert!(reason.contains("API error") || reason.contains("Invalid"));
                 assert!(matches!(
                     kind,
-                    crate::error::CoinbaseErrorKind::InvalidRequest
-                        | crate::error::CoinbaseErrorKind::NotFound
+                    CoinbaseErrorKind::InvalidRequest | CoinbaseErrorKind::NotFound
                 ));
                 assert!(status_code.is_some());
             }
