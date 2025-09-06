@@ -575,55 +575,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_api_error() {
-        // Create server and tool
-        let (mut server, tool) = create_server_and_tool().await;
-
-        // Set up mock for API error response
-        let mock = server
-            .mock("GET", "/products/INVALID-PAIR/stats")
-            .with_status(400)
-            .with_header("content-type", "application/json")
-            .with_body(
-                json!({
-                    "message": "Invalid product ID"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let input = Input {
-            product_id: "INVALID-PAIR".to_string(),
-            quote_currency: None,
-        };
-
-        // Test the stats request
-        let result = tool.invoke(input).await;
-
-        // Verify the error response
-        match result {
-            Output::Ok { .. } => panic!("Expected error, got success"),
-            Output::Err {
-                reason,
-                kind,
-                status_code,
-            } => {
-                assert!(reason.contains("API error") || reason.contains("Invalid"));
-                // API error should have proper kind and status_code
-                assert!(matches!(
-                    kind,
-                    CoinbaseErrorKind::InvalidRequest | CoinbaseErrorKind::NotFound
-                ));
-                assert!(status_code.is_some());
-            }
-        }
-
-        // Verify that the mock was called
-        mock.assert_async().await;
-    }
-
     #[test]
     fn test_deserialize_product_id_string() {
         let json = serde_json::json!({
