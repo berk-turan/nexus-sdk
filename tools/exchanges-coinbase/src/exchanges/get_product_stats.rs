@@ -8,7 +8,7 @@ use {
         error::CoinbaseErrorKind,
         exchanges::{
             deserialize_trading_pair,
-            models::{CoinbaseApiResponse, ProductStatsData},
+            models::ProductStatsData,
             COINBASE_EXCHANGE_API_BASE,
         },
     },
@@ -134,48 +134,19 @@ impl NexusTool for GetProductStats {
         let endpoint = format!("products/{}/stats", final_product_id);
 
         // Make the API request using the client
-        match self
-            .client
-            .get::<CoinbaseApiResponse<ProductStatsData>>(&endpoint)
-            .await
-        {
-            Ok(api_response) => {
-                // Check for errors in the response
-                if let Some(errors) = api_response.errors {
-                    if let Some(first_error) = errors.first() {
-                        return Output::Err {
-                            reason: first_error
-                                .error_message
-                                .clone()
-                                .unwrap_or_else(|| "API error".to_string()),
-                            kind: CoinbaseErrorKind::InvalidRequest,
-                            status_code: None,
-                        };
-                    }
-                }
-
-                // Extract the data
-                if let Some(data) = api_response.data {
-                    Output::Ok {
-                        open: data.open,
-                        high: data.high,
-                        low: data.low,
-                        volume: data.volume,
-                        last: data.last,
-                        volume_30day: data.volume_30day,
-                        rfq_volume_24hour: data.rfq_volume_24hour,
-                        conversions_volume_24hour: data.conversions_volume_24hour,
-                        rfq_volume_30day: data.rfq_volume_30day,
-                        conversions_volume_30day: data.conversions_volume_30day,
-                    }
-                } else {
-                    Output::Err {
-                        reason: "No data in API response".to_string(),
-                        kind: CoinbaseErrorKind::InvalidRequest,
-                        status_code: None,
-                    }
-                }
-            }
+        match self.client.get::<ProductStatsData>(&endpoint).await {
+            Ok(stats_data) => Output::Ok {
+                open: stats_data.open,
+                high: stats_data.high,
+                low: stats_data.low,
+                volume: stats_data.volume,
+                last: stats_data.last,
+                volume_30day: stats_data.volume_30day,
+                rfq_volume_24hour: stats_data.rfq_volume_24hour,
+                conversions_volume_24hour: stats_data.conversions_volume_24hour,
+                rfq_volume_30day: stats_data.rfq_volume_30day,
+                conversions_volume_30day: stats_data.conversions_volume_30day,
+            },
             Err(error_response) => Output::Err {
                 reason: error_response.reason,
                 kind: error_response.kind,
@@ -233,18 +204,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "data": {
-                        "open": "5414.18000000",
-                        "high": "6441.37000000",
-                        "low": "5261.69000000",
-                        "volume": "53687.76764233",
-                        "last": "6250.02000000",
-                        "volume_30day": "786763.72930864",
-                        "rfq_volume_24hour": "78.23",
-                        "conversions_volume_24hour": "0.000000",
-                        "rfq_volume_30day": "0.000000",
-                        "conversions_volume_30day": "0.000000"
-                    }
+                    "open": "5414.18000000",
+                    "high": "6441.37000000",
+                    "low": "5261.69000000",
+                    "volume": "53687.76764233",
+                    "last": "6250.02000000",
+                    "volume_30day": "786763.72930864",
+                    "rfq_volume_24hour": "78.23",
+                    "conversions_volume_24hour": "0.000000",
+                    "rfq_volume_30day": "0.000000",
+                    "conversions_volume_30day": "0.000000"
                 })
                 .to_string(),
             )
@@ -305,18 +274,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "data": {
-                        "open": "5414.18000000",
-                        "high": "6441.37000000",
-                        "low": "5261.69000000",
-                        "volume": "53687.76764233",
-                        "last": "6250.02000000",
-                        "volume_30day": "786763.72930864",
-                        "rfq_volume_24hour": "78.23",
-                        "conversions_volume_24hour": "0.000000",
-                        "rfq_volume_30day": "0.000000",
-                        "conversions_volume_30day": "0.000000"
-                    }
+                    "open": "5414.18000000",
+                    "high": "6441.37000000",
+                    "low": "5261.69000000",
+                    "volume": "53687.76764233",
+                    "last": "6250.02000000",
+                    "volume_30day": "786763.72930864",
+                    "rfq_volume_24hour": "78.23",
+                    "conversions_volume_24hour": "0.000000",
+                    "rfq_volume_30day": "0.000000",
+                    "conversions_volume_30day": "0.000000"
                 })
                 .to_string(),
             )
@@ -377,18 +344,16 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "data": {
-                        "open": "5414.18000000",
-                        "high": "6441.37000000",
-                        "low": "5261.69000000",
-                        "volume": "53687.76764233",
-                        "last": "6250.02000000",
-                        "volume_30day": "786763.72930864",
-                        "rfq_volume_24hour": "78.23",
-                        "conversions_volume_24hour": "0.000000",
-                        "rfq_volume_30day": "0.000000",
-                        "conversions_volume_30day": "0.000000"
-                    }
+                    "open": "5414.18000000",
+                    "high": "6441.37000000",
+                    "low": "5261.69000000",
+                    "volume": "53687.76764233",
+                    "last": "6250.02000000",
+                    "volume_30day": "786763.72930864",
+                    "rfq_volume_24hour": "78.23",
+                    "conversions_volume_24hour": "0.000000",
+                    "rfq_volume_30day": "0.000000",
+                    "conversions_volume_30day": "0.000000"
                 })
                 .to_string(),
             )
@@ -449,14 +414,12 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "data": {
-                        "open": "5414.18000000",
-                        "high": "6441.37000000",
-                        "low": "5261.69000000",
-                        "volume": "53687.76764233",
-                        "last": "6250.02000000",
-                        "volume_30day": "786763.72930864"
-                    }
+                    "open": "5414.18000000",
+                    "high": "6441.37000000",
+                    "low": "5261.69000000",
+                    "volume": "53687.76764233",
+                    "last": "6250.02000000",
+                    "volume_30day": "786763.72930864"
                 })
                 .to_string(),
             )
@@ -624,10 +587,7 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 json!({
-                    "errors": [{
-                        "message": "Invalid product ID",
-                        "type": "invalid_request"
-                    }]
+                    "message": "Invalid product ID"
                 })
                 .to_string(),
             )
