@@ -11,5 +11,6 @@ async fn main() {
     bootstrap!([
         exchanges::get_spot_price::GetSpotPrice,
         exchanges::get_product_ticker::GetProductTicker,
+        exchanges::get_order_book::GetOrderBook,
     ]);
 }

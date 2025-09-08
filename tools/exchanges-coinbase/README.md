@@ -81,3 +81,51 @@ The ticker request failed due to an error.
 - **`err.reason`: [`String`]** - A detailed error message describing what went wrong
 - **`err.kind`: [`String`]** - Type of error (invalid_request, not_found, parse, etc.)
 - **`err.status_code`: [`u16`] (optional)** - HTTP status code if available
+
+---
+
+# `xyz.taluslabs.exchanges.coinbase.get-order-book@1`
+
+Standard Nexus Tool that retrieves order book data (L1/L2/L3) for a product from Coinbase Exchange API. Coinbase Exchange API [reference](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-product-book)
+
+## Input
+
+**`product_id`: [`String` | `Vec<String>`]**
+
+The product ID to get order book for. Can be provided in multiple formats:
+
+- **Full pair string**: `"BTC-USD"`, `"ETH-EUR"`, `"SUI-USD"`
+- **Array format**: `["BTC", "USD"]`, `["ETH", "EUR"]`, `["SUI", "USD"]`
+- **Base currency only**: `"BTC"`, `"ETH"`, `"SUI"` (when `quote_currency` is provided)
+
+**`quote_currency`: [`String`] (optional)**
+
+The quote currency to pair with the base currency. When provided, `product_id` should contain only the base currency (e.g., `"BTC"` with `quote_currency: "USD"`).
+
+**`level`: [`String`] (optional)**
+
+Order book level (defaults to `"1"` if not provided):
+- `"1"` - Best bid/ask only (L1)
+- `"2"` - Aggregated order book (L2) 
+- `"3"` - Full order book with individual orders (L3)
+
+## Output Variants & Ports
+
+**`ok`**
+
+The order book data was retrieved successfully.
+
+- **`ok.bids`: [`Vec<(String, String, Value)>`]** - Bid orders: [price, size, num_orders/order_id]. For L1/L2: num_orders is integer, L3: order_id is string
+- **`ok.asks`: [`Vec<(String, String, Value)>`]** - Ask orders: [price, size, num_orders/order_id]. For L1/L2: num_orders is integer, L3: order_id is string
+- **`ok.sequence`: [`u64`]** - Sequence number for ordering
+- **`ok.auction_mode`: [`bool`]** - Auction mode status
+- **`ok.auction`: [`Value`] (optional)** - Auction details (nullable)
+- **`ok.time`: [`String`]** - Response timestamp
+
+**`err`**
+
+The order book request failed due to an error.
+
+- **`err.reason`: [`String`]** - A detailed error message describing what went wrong
+- **`err.kind`: [`String`]** - Type of error (invalid_request, not_found, parse, etc.)
+- **`err.status_code`: [`u16`] (optional)** - HTTP status code if available

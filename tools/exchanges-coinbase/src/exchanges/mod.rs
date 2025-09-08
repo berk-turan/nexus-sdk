@@ -10,6 +10,7 @@ pub(crate) const COINBASE_EXCHANGE_API_BASE: &str = "https://api.exchange.coinba
 
 pub(crate) mod get_product_ticker;
 pub(crate) mod get_spot_price;
+pub(crate) mod get_order_book;
 pub(crate) mod models;
 
 /// Custom deserializer for trading pair (currency pair/product ID) that accepts both string and tuple formats
