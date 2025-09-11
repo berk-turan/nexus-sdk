@@ -5,6 +5,7 @@ use nexus_toolkit::bootstrap;
 mod coinbase_client;
 mod error;
 mod tools;
+mod tools;
 
 #[tokio::main]
 async fn main() {
