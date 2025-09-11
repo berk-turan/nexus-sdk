@@ -6,11 +6,7 @@ use {
     crate::{
         coinbase_client::CoinbaseClient,
         error::CoinbaseErrorKind,
-        exchanges::{
-            deserialize_trading_pair,
-            models::ProductTickerData,
-            COINBASE_EXCHANGE_API_BASE,
-        },
+        tools::{deserialize_trading_pair, models::ProductTickerData, COINBASE_EXCHANGE_API_BASE},
     },
     nexus_sdk::{fqn, ToolFqn},
     nexus_toolkit::*,

@@ -5,7 +5,7 @@
 use {
     crate::{
         error::{CoinbaseApiError, CoinbaseErrorKind, CoinbaseErrorResponse},
-        exchanges::COINBASE_API_BASE,
+        tools::COINBASE_API_BASE,
     },
     reqwest::Client,
     serde::de::DeserializeOwned,
