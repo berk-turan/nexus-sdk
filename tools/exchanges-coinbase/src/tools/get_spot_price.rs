@@ -6,7 +6,7 @@ use {
     crate::{
         coinbase_client::CoinbaseClient,
         error::CoinbaseErrorKind,
-        exchanges::{
+        tools::{
             deserialize_trading_pair,
             models::{CoinbaseApiResponse, SpotPriceData},
             COINBASE_API_BASE,
