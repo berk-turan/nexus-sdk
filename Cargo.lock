@@ -3208,6 +3208,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-generic"
+version = "0.2.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "jsonschema",
+ "mockito",
+ "nexus-sdk",
+ "nexus-toolkit",
+ "reqwest",
+ "schemars 1.0.0-alpha.17",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+]
+
+[[package]]
 name = "http-range-header"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
