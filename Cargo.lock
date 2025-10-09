@@ -2364,7 +2364,7 @@ dependencies = [
 
 [[package]]
 name = "exchanges-coinbase"
-version = "0.2.0"
+version = "0.3.0-rc.1"
 dependencies = [
  "chrono",
  "mockito",
@@ -4254,22 +4254,6 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "url",
-]
-
-[[package]]
-name = "market-coinbase"
-version = "0.3.0-rc.1"
-dependencies = [
- "chrono",
- "mockito",
- "nexus-sdk",
- "nexus-toolkit",
- "reqwest",
- "schemars 1.0.0-alpha.17",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
- "tokio",
 ]
 
 [[package]]
